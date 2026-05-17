@@ -1,19 +1,17 @@
 /**
- * @appx/agent-server — pi-SDK-based agent orchestration, shared across Appx apps.
+ * @appx/agent-server — pi-SDK-based agent orchestration.
  *
- * Public surface:
- *   - AgentRuntime: stateful per-app orchestrator (sessions, auth, model registry)
- *   - createSessionsRouter: Express Router exposing REST + SSE over a runtime
- *   - SSE broker primitives (subscribe/publish/channelStats) for apps that want
- *     to publish their own non-session channels over the same plumbing
+ * Primary deployment is the standalone HTTP/SSE server in `./server.ts`,
+ * launched via `npm start` or the published `agent-server` bin.
  *
- * Re-exports pi types that callers commonly need so apps don't have to depend
- * on @earendil-works/pi-coding-agent directly for typings.
+ * Library exports below let advanced callers embed the runtime in a
+ * larger Node process (for tests, or for hosts that prefer to mount
+ * our routes inside their own Hono app).
  */
 export { AgentRuntime } from "./runtime.js";
 export type { AgentRuntimeConfig, SessionRow } from "./runtime.js";
-export { createSessionsRouter } from "./router.js";
-export { subscribe, publish, channelStats } from "./sse.js";
+export { createSessionsApp } from "./routes.js";
+export { subscribe, publish, channelStats } from "./sseBroker.js";
 export type {
 	AgentSession,
 	AgentSessionEvent,

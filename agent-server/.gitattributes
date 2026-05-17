@@ -1,0 +1,4 @@
+# openapi.json is the API contract — committed even though it's regenerated
+# from src/schemas.ts via `npm run openapi`. Mark as generated so reviewers
+# can skip it in diffs.
+openapi.json linguist-generated=true

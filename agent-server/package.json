@@ -1,8 +1,8 @@
 {
   "name": "@appx/agent-server",
   "private": true,
-  "version": "0.0.1",
-  "description": "Pi-SDK-based agent orchestration server, shared across Appx apps.",
+  "version": "0.1.0",
+  "description": "Pi-SDK-based agent orchestration server. Runs as a standalone HTTP/SSE service per Appx app.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,17 +12,27 @@
       "default": "./dist/index.js"
     }
   },
+  "bin": {
+    "agent-server": "dist/server.js"
+  },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "openapi": "tsx src/openapi.ts",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "*",
-    "express": "^5.1.0"
+    "@hono/node-server": "^1.13.7",
+    "@hono/swagger-ui": "^0.5.1",
+    "@hono/zod-openapi": "^0.19.2",
+    "hono": "^4.6.14",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }
 }
