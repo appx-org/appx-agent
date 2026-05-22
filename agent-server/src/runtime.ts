@@ -74,6 +74,12 @@ export type AgentRuntimeConfig = {
    * Supports local paths plus Pi package sources such as npm:<pkg> and git:<repo>.
    */
   extensionPaths?: string[];
+  /** Extra Pi skill file/directory paths to load for this runtime. */
+  skillPaths?: string[];
+  /** Extra Pi prompt template file/directory paths to load for this runtime. */
+  promptTemplatePaths?: string[];
+  /** Extra Pi theme file/directory paths to load for this runtime. */
+  themePaths?: string[];
   /** Inline extension factories, mostly useful for tests and embedded hosts. */
   extensionFactories?: ExtensionFactory[];
   /** Disable project/global extension discovery while still allowing extensionPaths/factories. */
@@ -191,6 +197,9 @@ export class AgentRuntime {
   private readonly defaultThinkingLevel: ThinkingLevel | undefined;
   private readonly modelThinkingDefaults: Record<string, ThinkingLevel>;
   private readonly extensionPaths: string[];
+  private readonly skillPaths: string[];
+  private readonly promptTemplatePaths: string[];
+  private readonly themePaths: string[];
   private readonly extensionFactories: ExtensionFactory[];
   private readonly noExtensions: boolean;
   private readonly noSkills: boolean;
@@ -213,6 +222,9 @@ export class AgentRuntime {
     this.defaultThinkingLevel = config.defaultThinkingLevel;
     this.modelThinkingDefaults = config.modelThinkingDefaults ?? {};
     this.extensionPaths = config.extensionPaths ?? [];
+    this.skillPaths = config.skillPaths ?? [];
+    this.promptTemplatePaths = config.promptTemplatePaths ?? [];
+    this.themePaths = config.themePaths ?? [];
     this.extensionFactories = config.extensionFactories ?? [];
     this.noExtensions = config.noExtensions ?? false;
     this.noSkills = config.noSkills ?? false;
@@ -356,6 +368,9 @@ export class AgentRuntime {
       agentDir: this.agentDir,
       settingsManager,
       additionalExtensionPaths: this.extensionPaths,
+      additionalSkillPaths: this.skillPaths,
+      additionalPromptTemplatePaths: this.promptTemplatePaths,
+      additionalThemePaths: this.themePaths,
       extensionFactories: this.extensionFactories,
       noExtensions: this.noExtensions,
       noSkills: this.noSkills,

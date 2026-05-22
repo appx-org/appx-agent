@@ -20,6 +20,9 @@
  *   ANTHROPIC_API_KEY      injected into pi's AuthStorage if set
  *   PI_EXTENSION_PATHS     comma-separated Pi extension/package sources loaded
  *                          as temporary extensions (npm:, git:, or paths)
+ *   PI_SKILL_PATHS         comma-separated Pi skill file/directory paths
+ *   PI_PROMPT_PATHS        comma-separated Pi prompt template paths
+ *   PI_THEME_PATHS         comma-separated Pi theme paths
  *   PI_NO_EXTENSIONS       if truthy, disables project/global extension
  *                          discovery except PI_EXTENSION_PATHS
  *   PI_NO_SKILLS           if truthy, disables project/global skill discovery
@@ -95,6 +98,9 @@ const runtime = new AgentRuntime({
 	agentsFile,
 	anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 	extensionPaths: optionalList("PI_EXTENSION_PATHS"),
+	skillPaths: optionalList("PI_SKILL_PATHS"),
+	promptTemplatePaths: optionalList("PI_PROMPT_PATHS"),
+	themePaths: optionalList("PI_THEME_PATHS"),
 	noExtensions: truthy("PI_NO_EXTENSIONS"),
 	noSkills: truthy("PI_NO_SKILLS"),
 	noPromptTemplates: truthy("PI_NO_PROMPTS"),
@@ -159,4 +165,7 @@ serve({ fetch: root.fetch, hostname: host, port }, (info) => {
 	if (agentDir) console.log(`[agent-server] agentDir=${agentDir}`);
 	console.log(`[agent-server] agentsFile=${agentsFile}`);
 	if (process.env.PI_EXTENSION_PATHS?.trim()) console.log(`[agent-server] PI_EXTENSION_PATHS=${process.env.PI_EXTENSION_PATHS}`);
+	if (process.env.PI_SKILL_PATHS?.trim()) console.log(`[agent-server] PI_SKILL_PATHS=${process.env.PI_SKILL_PATHS}`);
+	if (process.env.PI_PROMPT_PATHS?.trim()) console.log(`[agent-server] PI_PROMPT_PATHS=${process.env.PI_PROMPT_PATHS}`);
+	if (process.env.PI_THEME_PATHS?.trim()) console.log(`[agent-server] PI_THEME_PATHS=${process.env.PI_THEME_PATHS}`);
 });

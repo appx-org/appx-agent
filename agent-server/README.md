@@ -36,6 +36,9 @@ All via env vars (see `.env.example`):
 | `AGENTS_FILE`        | no       | `.pi/AGENTS.md`              | system prompt file (relative to `PROJECT_DIR` or absolute)            |
 | `ANTHROPIC_API_KEY`  | no       | —                            | injected into pi's AuthStorage; falls back to `~/.pi/agent/auth.json` |
 | `PI_EXTENSION_PATHS` | no       | —                            | comma-separated temporary Pi extension/package sources (`npm:`, `git:`, or paths) |
+| `PI_SKILL_PATHS`     | no       | —                            | comma-separated temporary Pi skill file/directory paths                |
+| `PI_PROMPT_PATHS`    | no       | —                            | comma-separated temporary Pi prompt template paths                     |
+| `PI_THEME_PATHS`     | no       | —                            | comma-separated temporary Pi theme paths                               |
 | `PI_NO_EXTENSIONS`   | no       | false                        | disables project/global extension discovery except `PI_EXTENSION_PATHS` |
 | `PI_NO_SKILLS`       | no       | false                        | disables project/global skill discovery                               |
 | `PI_NO_PROMPTS`      | no       | false                        | disables project/global prompt template discovery                     |
@@ -146,6 +149,12 @@ Pi packages and extensions execute code in the agent process. Keep the default
 configuration conservative, review package source before enabling it, and prefer
 project-local `.pi/settings.json` or `PI_EXTENSION_PATHS` over global installs
 for Appx-managed runtimes.
+
+For first-party app bundles, put prompt/skill/extension assets under the
+project's `.pi/` directory and let Pi discover them. `PI_EXTENSION_PATHS`,
+`PI_SKILL_PATHS`, `PI_PROMPT_PATHS`, and `PI_THEME_PATHS` are for app-managed
+temporary overlays or package sources that should not be committed to the
+project workspace.
 
 Practical candidates to close the OpenCode gap:
 
