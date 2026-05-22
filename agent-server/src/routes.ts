@@ -4,8 +4,15 @@
  * Surface (mounted on the server under no prefix; the server adds /v1):
  *   GET    /sessions                list sessions (disk + in-memory)
  *   POST   /sessions                create new session
+ *   GET    /sessions/models         list selectable models
  *   GET    /sessions/{id}           persisted message history
+ *   GET    /sessions/{id}/settings  return current model/thinking settings
+ *   PATCH  /sessions/{id}/settings  switch model and/or thinking level while idle
  *   GET    /sessions/{id}/events    SSE stream of pi AgentSessionEvents
+ *   GET    /sessions/{id}/extension-ui
+ *                                      list pending extension UI requests
+ *   POST   /sessions/{id}/extension-ui/{requestId}/response
+ *                                      answer extension UI request
  *   POST   /sessions/{id}/prompt    send a user prompt
  *   POST   /sessions/{id}/abort     abort in-flight run
  *   GET    /healthz                 liveness + channel stats
@@ -21,17 +28,31 @@ import type { AgentRuntime } from "./runtime.js";
 import {
   CreateSessionResponseSchema,
   ErrorResponseSchema,
+  ExtensionUiRequestIdParamSchema,
+  ExtensionUiResponseRequestSchema,
   HealthResponseSchema,
   ListSessionsResponseSchema,
+  ListModelsResponseSchema,
   OkResponseSchema,
+  PatchSessionSettingsRequestSchema,
+  PendingExtensionUiRequestsResponseSchema,
   PromptRequestSchema,
   SessionIdParamSchema,
   SessionMessagesResponseSchema,
+  SessionModelSettingsResponseSchema,
 } from "./schemas.js";
 import { channelStats, subscribe } from "./sseBroker.js";
 
 /** Heartbeat cadence for SSE keepalive. Keeps proxies / LBs from closing idle streams. */
 const SSE_HEARTBEAT_MS = 15_000;
+
+function settingsErrorStatus(err: unknown): 400 | 404 | 409 | 500 {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes("not found")) return 404;
+  if (message.includes("running")) return 409;
+  if (message.includes("No API key")) return 400;
+  return 500;
+}
 
 /**
  * Build the Hono app exposing the runtime. Versioning is the caller's
@@ -63,6 +84,25 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
     },
   );
 
+  // ── GET /sessions/models ────────────────────────────────────────
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/sessions/models",
+      tags: ["models"],
+      summary: "List models known to this runtime, including unavailable ones for diagnostics.",
+      responses: {
+        200: {
+          description: "Known models.",
+          content: {
+            "application/json": { schema: ListModelsResponseSchema },
+          },
+        },
+      },
+    }),
+    (c) => c.json({ models: runtime.listModels() }, 200),
+  );
+
   // ── POST /sessions ───────────────────────────────────────────────
   app.openapi(
     createRoute({
@@ -82,6 +122,94 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
     async (c) => {
       const created = await runtime.createNewSession();
       return c.json(created, 200);
+    },
+  );
+
+  // ── GET /sessions/{id}/settings ─────────────────────────────────
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/sessions/{id}/settings",
+      tags: ["models"],
+      summary: "Return the active model/thinking settings for a session.",
+      request: { params: SessionIdParamSchema },
+      responses: {
+        200: {
+          description: "Session model settings.",
+          content: {
+            "application/json": { schema: SessionModelSettingsResponseSchema },
+          },
+        },
+        404: {
+          description: "Unknown session id.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const settings = await runtime.getSessionModelSettings(id);
+      if (!settings) return c.json({ error: "session not found" }, 404);
+      return c.json(settings, 200);
+    },
+  );
+
+  // ── PATCH /sessions/{id}/settings ────────────────────────────────
+  app.openapi(
+    createRoute({
+      method: "patch",
+      path: "/sessions/{id}/settings",
+      tags: ["models"],
+      summary: "Switch model and/or thinking level while a session is idle.",
+      request: {
+        params: SessionIdParamSchema,
+        body: {
+          required: true,
+          content: { "application/json": { schema: PatchSessionSettingsRequestSchema } },
+        },
+      },
+      responses: {
+        200: {
+          description: "Effective session model settings.",
+          content: {
+            "application/json": { schema: SessionModelSettingsResponseSchema },
+          },
+        },
+        400: {
+          description: "Invalid settings body.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+        404: {
+          description: "Unknown session id or model id.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+        409: {
+          description: "Session is currently running.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+        500: {
+          description: "Unexpected settings update error.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const body = c.req.valid("json");
+      const hasProvider = Boolean(body.provider);
+      const hasModelId = Boolean(body.modelId);
+      if (hasProvider !== hasModelId) {
+        return c.json({ error: "provider and modelId must be supplied together" }, 400);
+      }
+      if (!body.provider && !body.thinkingLevel) {
+        return c.json({ error: "provider/modelId or thinkingLevel is required" }, 400);
+      }
+      try {
+        const settings = await runtime.updateSessionModelSettings(id, body);
+        return c.json(settings, 200);
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, settingsErrorStatus(err));
+      }
     },
   );
 
@@ -111,6 +239,69 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       const messages = await runtime.getSessionMessages(id);
       if (messages === null) return c.json({ error: "session not found" }, 404);
       return c.json({ id, messages }, 200);
+    },
+  );
+
+  // ── GET /sessions/{id}/extension-ui ─────────────────────────────
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/sessions/{id}/extension-ui",
+      tags: ["extensions"],
+      summary: "List pending extension UI requests for a session.",
+      request: { params: SessionIdParamSchema },
+      responses: {
+        200: {
+          description: "Pending extension UI request events.",
+          content: {
+            "application/json": { schema: PendingExtensionUiRequestsResponseSchema },
+          },
+        },
+        404: {
+          description: "Unknown session id.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const session = await runtime.ensureSession(id);
+      if (!session) return c.json({ error: "session not found" }, 404);
+      return c.json({ requests: runtime.pendingExtensionUiRequests(id) }, 200);
+    },
+  );
+
+  // ── POST /sessions/{id}/extension-ui/{requestId}/response ───────
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/sessions/{id}/extension-ui/{requestId}/response",
+      tags: ["extensions"],
+      summary: "Resolve a pending extension UI request.",
+      request: {
+        params: SessionIdParamSchema.merge(ExtensionUiRequestIdParamSchema),
+        body: {
+          required: true,
+          content: { "application/json": { schema: ExtensionUiResponseRequestSchema } },
+        },
+      },
+      responses: {
+        200: {
+          description: "Extension UI response accepted.",
+          content: { "application/json": { schema: OkResponseSchema } },
+        },
+        404: {
+          description: "Unknown session id or request id.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { id, requestId } = c.req.valid("param");
+      const body = c.req.valid("json");
+      const ok = runtime.resolveExtensionUiRequest(id, requestId, body);
+      if (!ok) return c.json({ error: "extension UI request not found" }, 404);
+      return c.json({ ok: true } as const, 200);
     },
   );
 
@@ -267,6 +458,9 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       });
 
       await stream.writeSSE({ data: `connected to ${id}` });
+      for (const request of runtime.pendingExtensionUiRequests(id)) {
+        await stream.writeSSE({ data: JSON.stringify(request) });
+      }
 
       let lastBeat = Date.now();
       while (!stream.aborted) {

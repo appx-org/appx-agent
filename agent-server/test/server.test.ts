@@ -30,6 +30,7 @@ import { type AddressInfo, createServer, type Server } from "node:net";
 import { after, before, describe, test } from "node:test";
 import { serve } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { litellmRuntimeConfig, resetLiteLlmConfigForTests, resolveLiteLlmConfig } from "../src/litellm.js";
 import { AgentRuntime } from "../src/runtime.js";
 import { createSessionsApp } from "../src/routes.js";
 import { publish } from "../src/sseBroker.js";
@@ -75,6 +76,7 @@ async function startServer(opts: {
 	const runtime = new AgentRuntime({
 		projectDir: opts.projectDir,
 		sessionsDir: resolve(opts.projectDir, "data/sessions"),
+		agentDir: resolve(opts.projectDir, ".pi-agent"),
 		agentsFile: ".pi/AGENTS.md",
 		// Silence the runtime's startup logs in test output.
 		logger: { log: () => {}, error: () => {} },
@@ -107,6 +109,91 @@ async function startServer(opts: {
 			}),
 	};
 }
+
+describe("agent-server: LiteLLM config", () => {
+	const envKeys = [
+		"LITELLM_BASE_URL",
+		"LITELLM_API_KEY",
+		"LITELLM_MODELS",
+		"LITELLM_MODELS_JSON",
+		"LITELLM_DEFAULT_MODEL",
+		"LITELLM_DEFAULT_THINKING",
+		"LITELLM_COMPAT_JSON",
+		"LITELLM_API",
+		"LITELLM_REASONING",
+		"LITELLM_CONTEXT_WINDOW",
+		"LITELLM_MAX_TOKENS",
+	];
+
+	after(() => {
+		resetLiteLlmConfigForTests();
+	});
+
+	test("registers configured LiteLLM models with thinking defaults", () => {
+		const previous = new Map(envKeys.map((key) => [key, process.env[key]]));
+		const project = makeProject();
+		try {
+			process.env.LITELLM_BASE_URL = "http://litellm.test/v1";
+			process.env.LITELLM_API_KEY = "test-key";
+			process.env.LITELLM_DEFAULT_MODEL = "openai/gpt-5.5";
+			process.env.LITELLM_DEFAULT_THINKING = "high";
+			process.env.LITELLM_MODELS_JSON = JSON.stringify([{ id: "openai/gpt-5.5" }]);
+			resetLiteLlmConfigForTests();
+
+			const runtime = new AgentRuntime({
+				projectDir: project.dir,
+				sessionsDir: resolve(project.dir, "data/sessions"),
+				agentDir: resolve(project.dir, ".pi-agent"),
+				agentsFile: ".pi/AGENTS.md",
+				logger: { log: () => {}, error: () => {} },
+				...litellmRuntimeConfig(),
+			});
+
+			const models = runtime.listModels().filter((model) => model.provider === "litellm");
+			assert.equal(models.length, 1);
+			assert.equal(models[0]!.id, "openai/gpt-5.5");
+			assert.equal(models[0]!.reasoning, true);
+			assert.equal(models[0]!.available, true);
+			assert.equal(models[0]!.defaultThinkingLevel, "xhigh");
+		} finally {
+			for (const key of envKeys) {
+				const value = previous.get(key);
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+			resetLiteLlmConfigForTests();
+			project.cleanup();
+		}
+	});
+
+	test("applies preset compat when only a default LiteLLM model is configured", () => {
+		const previous = new Map(envKeys.map((key) => [key, process.env[key]]));
+		try {
+			process.env.LITELLM_BASE_URL = "http://litellm.test/v1";
+			process.env.LITELLM_API_KEY = "test-key";
+			process.env.LITELLM_DEFAULT_MODEL = "openai/gpt-5.5";
+			delete process.env.LITELLM_MODELS;
+			delete process.env.LITELLM_MODELS_JSON;
+			delete process.env.LITELLM_COMPAT_JSON;
+			resetLiteLlmConfigForTests();
+
+			const config = resolveLiteLlmConfig();
+			const compat = config?.defaultModel.compat as Record<string, unknown> | undefined;
+			assert.equal(config?.defaultModel.api, "openai-responses");
+			assert.equal(config?.defaultModel.reasoning, true);
+			assert.equal(compat?.thinkingFormat, "openai");
+			assert.equal(compat?.supportsReasoningEffort, true);
+			assert.equal(compat?.maxTokensField, "max_output_tokens");
+		} finally {
+			for (const key of envKeys) {
+				const value = previous.get(key);
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+			resetLiteLlmConfigForTests();
+		}
+	});
+});
 
 describe("agent-server: REST surface", () => {
 	const project = makeProject();
@@ -148,6 +235,61 @@ describe("agent-server: REST surface", () => {
 		const list = await fetch(`${baseUrl}/v1/sessions`);
 		const { sessions } = (await list.json()) as { sessions: { id: string }[] };
 		assert.ok(sessions.some((s) => s.id === created.id));
+	});
+
+	test("GET /v1/sessions/models lists public model metadata", async () => {
+		const res = await fetch(`${baseUrl}/v1/sessions/models`);
+		assert.equal(res.status, 200);
+		const body = (await res.json()) as { models: Array<{ provider: string; id: string; available: boolean }> };
+		assert.ok(Array.isArray(body.models));
+		assert.ok(body.models.length > 0);
+		assert.equal(typeof body.models[0]!.provider, "string");
+		assert.equal(typeof body.models[0]!.id, "string");
+		assert.equal(typeof body.models[0]!.available, "boolean");
+	});
+
+	test("GET/PATCH /v1/sessions/{id}/settings exposes model and thinking controls", async () => {
+		const create = await fetch(`${baseUrl}/v1/sessions`, { method: "POST" });
+		const { id } = (await create.json()) as { id: string };
+
+		const settings = await fetch(`${baseUrl}/v1/sessions/${id}/settings`);
+		assert.equal(settings.status, 200);
+		const body = (await settings.json()) as {
+			thinkingLevel: string;
+			availableThinkingLevels: string[];
+			isStreaming: boolean;
+		};
+		assert.equal(typeof body.thinkingLevel, "string");
+		assert.ok(Array.isArray(body.availableThinkingLevels));
+		assert.equal(body.isStreaming, false);
+
+		const patch = await fetch(`${baseUrl}/v1/sessions/${id}/settings`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ thinkingLevel: "off" }),
+		});
+		assert.equal(patch.status, 200);
+		const patched = (await patch.json()) as { thinkingLevel: string };
+		assert.equal(patched.thinkingLevel, "off");
+	});
+
+	test("PATCH /v1/sessions/{id}/settings rejects incomplete model pairs and empty bodies", async () => {
+		const create = await fetch(`${baseUrl}/v1/sessions`, { method: "POST" });
+		const { id } = (await create.json()) as { id: string };
+
+		const missingModelId = await fetch(`${baseUrl}/v1/sessions/${id}/settings`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ provider: "anthropic" }),
+		});
+		assert.equal(missingModelId.status, 400);
+
+		const empty = await fetch(`${baseUrl}/v1/sessions/${id}/settings`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		assert.equal(empty.status, 400);
 	});
 
 	test("GET /v1/sessions/{id} returns persisted history (empty for new session)", async () => {
@@ -197,14 +339,34 @@ describe("agent-server: REST surface", () => {
 		const doc = (await res.json()) as { paths: Record<string, unknown> };
 		for (const path of [
 			"/v1/sessions",
+			"/v1/sessions/models",
 			"/v1/sessions/{id}",
+			"/v1/sessions/{id}/settings",
 			"/v1/sessions/{id}/prompt",
 			"/v1/sessions/{id}/abort",
 			"/v1/sessions/{id}/events",
+			"/v1/sessions/{id}/extension-ui",
+			"/v1/sessions/{id}/extension-ui/{requestId}/response",
 			"/v1/healthz",
 		]) {
 			assert.ok(doc.paths[path], `missing path ${path}`);
 		}
+	});
+
+	test("extension UI pending/response endpoints are wired", async () => {
+		const create = await fetch(`${baseUrl}/v1/sessions`, { method: "POST" });
+		const { id } = (await create.json()) as { id: string };
+
+		const pending = await fetch(`${baseUrl}/v1/sessions/${id}/extension-ui`);
+		assert.equal(pending.status, 200);
+		assert.deepEqual((await pending.json()) as { requests: unknown[] }, { requests: [] });
+
+		const response = await fetch(`${baseUrl}/v1/sessions/${id}/extension-ui/not-real/response`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ cancelled: true }),
+		});
+		assert.equal(response.status, 404);
 	});
 });
 

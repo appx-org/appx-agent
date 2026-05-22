@@ -9,8 +9,17 @@
  * our routes inside their own Hono app).
  */
 export { AgentRuntime } from "./runtime.js";
-export type { AgentRuntimeConfig, SessionRow } from "./runtime.js";
+export type {
+	AgentModelRow,
+	AgentRuntimeConfig,
+	ExtensionUiRequest,
+	ExtensionUiResponse,
+	SessionModelSettings,
+	SessionRow,
+	ThinkingLevel,
+} from "./runtime.js";
 export { createSessionsApp } from "./routes.js";
+export { litellmRuntimeConfig, logLiteLlmStartupConfig, resolveLiteLlmConfig } from "./litellm.js";
 export { subscribe, publish, channelStats } from "./sseBroker.js";
 export type {
 	AgentSession,

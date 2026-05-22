@@ -36,6 +36,49 @@ export const ListSessionsResponseSchema = z
 	})
 	.openapi("ListSessionsResponse");
 
+export const ThinkingLevelSchema = z
+	.enum(["off", "minimal", "low", "medium", "high", "xhigh"])
+	.openapi("ThinkingLevel");
+
+export const AgentModelRowSchema = z
+	.object({
+		provider: z.string(),
+		id: z.string(),
+		name: z.string(),
+		api: z.string(),
+		reasoning: z.boolean(),
+		available: z.boolean(),
+		input: z.array(z.enum(["text", "image"])),
+		contextWindow: z.number().int().nonnegative(),
+		maxTokens: z.number().int().nonnegative(),
+		defaultThinkingLevel: ThinkingLevelSchema.optional(),
+	})
+	.openapi("AgentModelRow");
+
+export const ListModelsResponseSchema = z
+	.object({
+		models: z.array(AgentModelRowSchema),
+	})
+	.openapi("ListModelsResponse");
+
+export const SessionModelSettingsResponseSchema = z
+	.object({
+		model: AgentModelRowSchema.nullable(),
+		thinkingLevel: ThinkingLevelSchema,
+		availableThinkingLevels: z.array(ThinkingLevelSchema),
+		supportsThinking: z.boolean(),
+		isStreaming: z.boolean(),
+	})
+	.openapi("SessionModelSettingsResponse");
+
+export const PatchSessionSettingsRequestSchema = z
+	.object({
+		provider: z.string().min(1).optional(),
+		modelId: z.string().min(1).optional(),
+		thinkingLevel: ThinkingLevelSchema.optional(),
+	})
+	.openapi("PatchSessionSettingsRequest");
+
 export const CreateSessionResponseSchema = z
 	.object({
 		id: z.string(),
@@ -69,6 +112,26 @@ export const OkResponseSchema = z
 		ok: z.literal(true),
 	})
 	.openapi("OkResponse");
+
+export const ExtensionUiRequestIdParamSchema = z.object({
+	requestId: z.string().min(1).openapi({ param: { name: "requestId", in: "path" } }),
+});
+
+export const ExtensionUiResponseRequestSchema = z
+	.union([
+		z.object({ value: z.string() }),
+		z.object({ confirmed: z.boolean() }),
+		z.object({ cancelled: z.literal(true) }),
+	])
+	.openapi("ExtensionUiResponseRequest");
+
+export const PendingExtensionUiRequestsResponseSchema = z
+	.object({
+		requests: z.array(z.unknown()).openapi({
+			description: "Pending extension UI request events. Shape follows Pi RPC extension_ui_request events.",
+		}),
+	})
+	.openapi("PendingExtensionUiRequestsResponse");
 
 export const ErrorResponseSchema = z
 	.object({

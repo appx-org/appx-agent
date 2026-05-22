@@ -49,6 +49,86 @@
           "sessions"
         ]
       },
+      "ThinkingLevel": {
+        "type": "string",
+        "enum": [
+          "off",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "AgentModelRow": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "api": {
+            "type": "string"
+          },
+          "reasoning": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "input": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "text",
+                "image"
+              ]
+            }
+          },
+          "contextWindow": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "defaultThinkingLevel": {
+            "$ref": "#/components/schemas/ThinkingLevel"
+          }
+        },
+        "required": [
+          "provider",
+          "id",
+          "name",
+          "api",
+          "reasoning",
+          "available",
+          "input",
+          "contextWindow",
+          "maxTokens"
+        ]
+      },
+      "ListModelsResponse": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentModelRow"
+            }
+          }
+        },
+        "required": [
+          "models"
+        ]
+      },
       "CreateSessionResponse": {
         "type": "object",
         "properties": {
@@ -63,6 +143,73 @@
           "id",
           "createdAt"
         ]
+      },
+      "SessionModelSettingsResponse": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AgentModelRow"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "thinkingLevel": {
+            "$ref": "#/components/schemas/ThinkingLevel"
+          },
+          "availableThinkingLevels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ThinkingLevel"
+            }
+          },
+          "supportsThinking": {
+            "type": "boolean"
+          },
+          "isStreaming": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model",
+          "thinkingLevel",
+          "availableThinkingLevels",
+          "supportsThinking",
+          "isStreaming"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "PatchSessionSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "minLength": 1
+          },
+          "modelId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "thinkingLevel": {
+            "$ref": "#/components/schemas/ThinkingLevel"
+          }
+        }
       },
       "SessionMessagesResponse": {
         "type": "object",
@@ -81,15 +228,17 @@
           "messages"
         ]
       },
-      "ErrorResponse": {
+      "PendingExtensionUiRequestsResponse": {
         "type": "object",
         "properties": {
-          "error": {
-            "type": "string"
+          "requests": {
+            "type": "array",
+            "items": {},
+            "description": "Pending extension UI request events. Shape follows Pi RPC extension_ui_request events."
           }
         },
         "required": [
-          "error"
+          "requests"
         ]
       },
       "OkResponse": {
@@ -104,6 +253,46 @@
         },
         "required": [
           "ok"
+        ]
+      },
+      "ExtensionUiResponseRequest": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "value"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "confirmed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "confirmed"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "cancelled": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "cancelled"
+            ]
+          }
         ]
       },
       "PromptRequest": {
@@ -194,6 +383,146 @@
         }
       }
     },
+    "/v1/sessions/models": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "List models known to this runtime, including unavailable ones for diagnostics.",
+        "responses": {
+          "200": {
+            "description": "Known models.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListModelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{id}/settings": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Return the active model/thinking settings for a session.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session model settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionModelSettingsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown session id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Switch model and/or thinking level while a session is idle.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchSessionSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Effective session model settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionModelSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid settings body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown session id or model id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Session is currently running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected settings update error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/sessions/{id}": {
       "get": {
         "tags": [
@@ -224,6 +553,107 @@
           },
           "404": {
             "description": "Unknown session id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{id}/extension-ui": {
+      "get": {
+        "tags": [
+          "extensions"
+        ],
+        "summary": "List pending extension UI requests for a session.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending extension UI request events.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingExtensionUiRequestsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown session id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{id}/extension-ui/{requestId}/response": {
+      "post": {
+        "tags": [
+          "extensions"
+        ],
+        "summary": "Resolve a pending extension UI request.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "requestId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtensionUiResponseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Extension UI response accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown session id or request id.",
             "content": {
               "application/json": {
                 "schema": {

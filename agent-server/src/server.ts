@@ -13,9 +13,17 @@
  * Optional env:
  *   SESSIONS_DIR           where pi writes session JSONL files
  *                          (default: <PROJECT_DIR>/data/sessions)
+ *   AGENT_DIR              pi agent config dir (default: ~/.pi/agent, or
+ *                          PI_CODING_AGENT_DIR if set)
  *   AGENTS_FILE            path to system-prompt markdown, relative to
  *                          PROJECT_DIR or absolute (default: .pi/AGENTS.md)
  *   ANTHROPIC_API_KEY      injected into pi's AuthStorage if set
+ *   PI_EXTENSION_PATHS     comma-separated Pi extension/package sources loaded
+ *                          as temporary extensions (npm:, git:, or paths)
+ *   PI_NO_EXTENSIONS       if truthy, disables project/global extension
+ *                          discovery except PI_EXTENSION_PATHS
+ *   PI_NO_SKILLS           if truthy, disables project/global skill discovery
+ *   LITELLM_*              optional LiteLLM provider/model config
  *   AGENT_SERVER_HOST      bind host (default: 127.0.0.1)
  *   AGENT_SERVER_PORT      bind port (default: 4001)
  *   AGENT_SERVER_TOKEN     if set, /v1/* requires `Authorization: Bearer <token>`
@@ -27,6 +35,7 @@ import { isAbsolute, resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { litellmRuntimeConfig, logLiteLlmStartupConfig } from "./litellm.js";
 import { AgentRuntime } from "./runtime.js";
 import { createSessionsApp } from "./routes.js";
 
@@ -44,6 +53,20 @@ function optional(name: string, fallback: string): string {
 	return v && v.trim() ? v : fallback;
 }
 
+function optionalList(name: string): string[] {
+	const v = process.env[name];
+	if (!v?.trim()) return [];
+	return v
+		.split(",")
+		.map((entry) => entry.trim())
+		.filter(Boolean);
+}
+
+function truthy(name: string): boolean {
+	const v = process.env[name]?.trim().toLowerCase();
+	return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
 const projectDir = resolve(required("PROJECT_DIR"));
 if (!existsSync(projectDir)) {
 	console.error(`[agent-server] PROJECT_DIR does not exist: ${projectDir}`);
@@ -55,17 +78,28 @@ const sessionsDir = isAbsolute(sessionsDirRaw)
 	? sessionsDirRaw
 	: resolve(projectDir, sessionsDirRaw);
 
+const agentDirRaw = process.env.AGENT_DIR?.trim();
+const agentDir = agentDirRaw ? (isAbsolute(agentDirRaw) ? agentDirRaw : resolve(projectDir, agentDirRaw)) : undefined;
 const agentsFile = optional("AGENTS_FILE", ".pi/AGENTS.md");
 
 const host = optional("AGENT_SERVER_HOST", "127.0.0.1");
 const port = Number(optional("AGENT_SERVER_PORT", "4001"));
 const token = process.env.AGENT_SERVER_TOKEN?.trim();
 
+logLiteLlmStartupConfig();
+
 const runtime = new AgentRuntime({
 	projectDir,
 	sessionsDir,
+	agentDir,
 	agentsFile,
 	anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+	extensionPaths: optionalList("PI_EXTENSION_PATHS"),
+	noExtensions: truthy("PI_NO_EXTENSIONS"),
+	noSkills: truthy("PI_NO_SKILLS"),
+	noPromptTemplates: truthy("PI_NO_PROMPTS"),
+	noThemes: truthy("PI_NO_THEMES"),
+	...litellmRuntimeConfig(),
 });
 
 const root = new OpenAPIHono();
@@ -122,5 +156,7 @@ serve({ fetch: root.fetch, hostname: host, port }, (info) => {
 	console.log(`[agent-server] listening on http://${info.address}:${info.port}`);
 	console.log(`[agent-server] projectDir=${projectDir}`);
 	console.log(`[agent-server] sessionsDir=${sessionsDir}`);
+	if (agentDir) console.log(`[agent-server] agentDir=${agentDir}`);
 	console.log(`[agent-server] agentsFile=${agentsFile}`);
+	if (process.env.PI_EXTENSION_PATHS?.trim()) console.log(`[agent-server] PI_EXTENSION_PATHS=${process.env.PI_EXTENSION_PATHS}`);
 });
