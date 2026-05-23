@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Standalone agent-server entrypoint.
  *
