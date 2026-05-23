@@ -11,7 +11,11 @@
 export { AgentRuntime } from "./runtime.js";
 export type {
 	AgentAuthProviderRow,
+	AgentCustomProviderApi,
+	AgentCustomProviderModel,
+	AgentCustomProviderRow,
 	AgentModelRow,
+	AgentOAuthFlowState,
 	AgentRuntimeConfig,
 	ExtensionUiRequest,
 	ExtensionUiResponse,

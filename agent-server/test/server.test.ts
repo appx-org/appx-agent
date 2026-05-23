@@ -31,7 +31,7 @@ import { after, before, describe, test } from "node:test";
 import { serve } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { litellmRuntimeConfig, resetLiteLlmConfigForTests, resolveLiteLlmConfig } from "../src/litellm.js";
-import { AgentRuntime } from "../src/runtime.js";
+import { AgentRuntime, type AgentRuntimeConfig } from "../src/runtime.js";
 import { createSessionsApp } from "../src/routes.js";
 import { publish } from "../src/sseBroker.js";
 
@@ -72,6 +72,7 @@ async function startServer(opts: {
 	projectDir: string;
 	port: number;
 	token?: string;
+	runtimeConfig?: Partial<AgentRuntimeConfig>;
 }): Promise<{ baseUrl: string; close: () => Promise<void> }> {
 	const runtime = new AgentRuntime({
 		projectDir: opts.projectDir,
@@ -80,6 +81,7 @@ async function startServer(opts: {
 		agentsFile: ".pi/AGENTS.md",
 		// Silence the runtime's startup logs in test output.
 		logger: { log: () => {}, error: () => {} },
+		...opts.runtimeConfig,
 	});
 
 	const root = new OpenAPIHono();
@@ -299,6 +301,147 @@ describe("agent-server: REST surface", () => {
 		}
 	});
 
+	test("subscription auth flow stores OAuth credentials without exposing tokens", async () => {
+		const project = makeProject();
+		const port = await pickPort();
+		const server = await startServer({
+			projectDir: project.dir,
+			port,
+			runtimeConfig: {
+				configureModelRegistry: (modelRegistry) => {
+					modelRegistry.registerProvider("test-oauth", {
+						name: "Test OAuth",
+						baseUrl: "https://example.test/v1",
+						api: "openai-completions",
+						oauth: {
+							name: "Test Subscription",
+							login: async (callbacks: any) => {
+								callbacks.onAuth?.({
+									url: "https://login.example.test/device",
+									instructions: "Paste the redirect URL.",
+								});
+								const code = await callbacks.onManualCodeInput?.();
+								if (code !== "ok") throw new Error("unexpected code");
+								return {
+									access: "oauth-access-token",
+									refresh: "oauth-refresh-token",
+									expires: Date.now() + 60_000,
+								};
+							},
+							refreshToken: async (credentials: any) => credentials,
+							getApiKey: (credentials: any) => credentials.access,
+						},
+						models: [
+							{
+								id: "test-model",
+								name: "Test Model",
+								api: "openai-completions",
+								reasoning: false,
+								input: ["text"],
+								cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+								contextWindow: 4096,
+								maxTokens: 1024,
+							},
+						],
+					});
+				},
+			},
+		});
+		try {
+			const start = await fetch(`${server.baseUrl}/v1/auth/providers/test-oauth/subscription/start`, {
+				method: "POST",
+			});
+			assert.equal(start.status, 200);
+			const flow = (await start.json()) as { id: string; status: string; authUrl?: string };
+			assert.equal(flow.status, "auth");
+			assert.equal(flow.authUrl, "https://login.example.test/device");
+
+			const cont = await fetch(`${server.baseUrl}/v1/auth/subscription/${flow.id}/continue`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ value: "ok" }),
+			});
+			assert.equal(cont.status, 200);
+			const completed = await cont.text();
+			assert.equal(completed.includes("oauth-access-token"), false);
+			const completedState = JSON.parse(completed) as { status: string };
+			assert.equal(completedState.status, "complete");
+
+			const providers = await fetch(`${server.baseUrl}/v1/auth/providers`);
+			const providerText = await providers.text();
+			assert.equal(providerText.includes("oauth-access-token"), false);
+			const providerBody = JSON.parse(providerText) as {
+				providers: Array<{ provider: string; configured: boolean; credentialType?: string; source?: string }>;
+			};
+			const provider = providerBody.providers.find((entry) => entry.provider === "test-oauth");
+			assert.equal(provider?.configured, true);
+			assert.equal(provider?.credentialType, "oauth");
+			assert.equal(provider?.source, "stored");
+		} finally {
+			await server.close();
+			project.cleanup();
+		}
+	});
+
+	test("custom provider API manages LiteLLM-style models without returning secrets", async () => {
+		const providerId = "litellm-ui-test";
+		const save = await fetch(`${baseUrl}/v1/custom/providers`, {
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				provider: providerId,
+				name: "LiteLLM UI Test",
+				baseUrl: "http://litellm.test/v1",
+				api: "openai-responses",
+				apiKey: "test-litellm-secret",
+				models: [
+					{
+						id: "openai/gpt-5.5",
+						name: "GPT 5.5 via LiteLLM",
+						api: "openai-responses",
+						reasoning: true,
+						thinkingLevelMap: {
+							off: "none",
+							minimal: "minimal",
+							low: "low",
+							medium: "medium",
+							high: "high",
+							xhigh: "xhigh",
+						},
+						input: ["text"],
+						contextWindow: 128000,
+						maxTokens: 16384,
+						compat: { supportsReasoningEffort: true, maxTokensField: "max_output_tokens" },
+					},
+				],
+			}),
+		});
+		assert.equal(save.status, 200);
+		const savedText = await save.text();
+		assert.equal(savedText.includes("test-litellm-secret"), false);
+		const saved = JSON.parse(savedText) as { provider: string; apiKeyConfigured: boolean; modelCount: number };
+		assert.equal(saved.provider, providerId);
+		assert.equal(saved.apiKeyConfigured, true);
+		assert.equal(saved.modelCount, 1);
+
+		const list = await fetch(`${baseUrl}/v1/custom/providers`);
+		const listText = await list.text();
+		assert.equal(listText.includes("test-litellm-secret"), false);
+		const listBody = JSON.parse(listText) as { providers: Array<{ provider: string; modelCount: number }> };
+		assert.ok(listBody.providers.some((provider) => provider.provider === providerId && provider.modelCount === 1));
+
+		const models = await fetch(`${baseUrl}/v1/sessions/models`);
+		const modelBody = (await models.json()) as {
+			models: Array<{ provider: string; id: string; available: boolean; reasoning: boolean }>;
+		};
+		const customModel = modelBody.models.find((model) => model.provider === providerId && model.id === "openai/gpt-5.5");
+		assert.equal(customModel?.available, true);
+		assert.equal(customModel?.reasoning, true);
+
+		const del = await fetch(`${baseUrl}/v1/custom/providers/${providerId}`, { method: "DELETE" });
+		assert.equal(del.status, 200);
+	});
+
 	test("GET/PATCH /v1/sessions/{id}/settings exposes model and thinking controls", async () => {
 		const create = await fetch(`${baseUrl}/v1/sessions`, { method: "POST" });
 		const { id } = (await create.json()) as { id: string };
@@ -391,7 +534,12 @@ describe("agent-server: REST surface", () => {
 		for (const path of [
 			"/v1/auth/providers",
 			"/v1/auth/providers/{provider}/api-key",
+			"/v1/auth/providers/{provider}/subscription/start",
 			"/v1/auth/providers/{provider}",
+			"/v1/auth/subscription/{flowId}",
+			"/v1/auth/subscription/{flowId}/continue",
+			"/v1/custom/providers",
+			"/v1/custom/providers/{provider}",
 			"/v1/sessions",
 			"/v1/sessions/models",
 			"/v1/sessions/{id}",

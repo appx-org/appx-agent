@@ -10,6 +10,18 @@
  *                                      store a provider API key in Pi auth storage
  *   DELETE /auth/providers/{provider}
  *                                      remove a stored provider credential
+ *   POST   /auth/providers/{provider}/subscription/start
+ *                                      start a Pi subscription OAuth flow
+ *   GET    /auth/subscription/{flowId}
+ *                                      read subscription OAuth flow state
+ *   POST   /auth/subscription/{flowId}/continue
+ *                                      continue OAuth prompt/code input
+ *   DELETE /auth/subscription/{flowId}
+ *                                      cancel a pending OAuth flow
+ *   GET    /custom/providers          list custom models.json providers
+ *   PUT    /custom/providers          create/update a custom provider
+ *   DELETE /custom/providers/{provider}
+ *                                      remove a custom provider
  *   GET    /sessions/{id}           persisted message history
  *   GET    /sessions/{id}/settings  return current model/thinking settings
  *   PATCH  /sessions/{id}/settings  switch model and/or thinking level while idle
@@ -32,13 +44,18 @@ import { streamSSE } from "hono/streaming";
 import type { AgentRuntime } from "./runtime.js";
 import {
   CreateSessionResponseSchema,
+  ContinueOAuthFlowRequestSchema,
+  CustomProviderRowSchema,
   ErrorResponseSchema,
   ExtensionUiRequestIdParamSchema,
   ExtensionUiResponseRequestSchema,
   HealthResponseSchema,
+  ListCustomProvidersResponseSchema,
   ListAuthProvidersResponseSchema,
   ListSessionsResponseSchema,
   ListModelsResponseSchema,
+  OAuthFlowIdParamSchema,
+  OAuthFlowStateSchema,
   OkResponseSchema,
   PatchSessionSettingsRequestSchema,
   PendingExtensionUiRequestsResponseSchema,
@@ -48,6 +65,7 @@ import {
   SessionIdParamSchema,
   SessionMessagesResponseSchema,
   SessionModelSettingsResponseSchema,
+  UpsertCustomProviderRequestSchema,
 } from "./schemas.js";
 import { channelStats, subscribe } from "./sseBroker.js";
 
@@ -190,6 +208,210 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       const { provider } = c.req.valid("param");
       try {
         runtime.removeProviderCredential(provider);
+        return c.json({ ok: true as const }, 200);
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+      }
+    },
+  );
+
+  // ── POST /auth/providers/{provider}/subscription/start ──────────
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/auth/providers/{provider}/subscription/start",
+      tags: ["auth"],
+      summary: "Start a Pi subscription OAuth login flow.",
+      request: { params: ProviderParamSchema },
+      responses: {
+        200: {
+          description: "Current flow state. Continue if a prompt or pasted redirect is required.",
+          content: { "application/json": { schema: OAuthFlowStateSchema } },
+        },
+        400: {
+          description: "Provider does not support subscription auth.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { provider } = c.req.valid("param");
+      try {
+        return c.json(await runtime.startProviderSubscriptionLogin(provider), 200);
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+      }
+    },
+  );
+
+  // ── GET /auth/subscription/{flowId} ──────────────────────────────
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/auth/subscription/{flowId}",
+      tags: ["auth"],
+      summary: "Return subscription login flow state.",
+      request: { params: OAuthFlowIdParamSchema },
+      responses: {
+        200: {
+          description: "Current flow state.",
+          content: { "application/json": { schema: OAuthFlowStateSchema } },
+        },
+        404: {
+          description: "Flow not found.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    (c) => {
+      const { flowId } = c.req.valid("param");
+      const state = runtime.getProviderSubscriptionLogin(flowId);
+      if (!state) return c.json({ error: "subscription auth flow not found" }, 404);
+      return c.json(state, 200);
+    },
+  );
+
+  // ── POST /auth/subscription/{flowId}/continue ────────────────────
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/auth/subscription/{flowId}/continue",
+      tags: ["auth"],
+      summary: "Continue a subscription login flow with prompt input or pasted redirect URL.",
+      request: {
+        params: OAuthFlowIdParamSchema,
+        body: {
+          required: true,
+          content: { "application/json": { schema: ContinueOAuthFlowRequestSchema } },
+        },
+      },
+      responses: {
+        200: {
+          description: "Updated flow state.",
+          content: { "application/json": { schema: OAuthFlowStateSchema } },
+        },
+        400: {
+          description: "Invalid input.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+        404: {
+          description: "Flow not found.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { flowId } = c.req.valid("param");
+      const { value } = c.req.valid("json");
+      try {
+        return c.json(await runtime.continueProviderSubscriptionLogin(flowId, value), 200);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({ error: message }, message.includes("not found") ? 404 : 400);
+      }
+    },
+  );
+
+  // ── DELETE /auth/subscription/{flowId} ───────────────────────────
+  app.openapi(
+    createRoute({
+      method: "delete",
+      path: "/auth/subscription/{flowId}",
+      tags: ["auth"],
+      summary: "Cancel a pending subscription login flow.",
+      request: { params: OAuthFlowIdParamSchema },
+      responses: {
+        200: {
+          description: "Cancelled flow state.",
+          content: { "application/json": { schema: OAuthFlowStateSchema } },
+        },
+        404: {
+          description: "Flow not found.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    (c) => {
+      const { flowId } = c.req.valid("param");
+      const state = runtime.cancelProviderSubscriptionLogin(flowId);
+      if (!state) return c.json({ error: "subscription auth flow not found" }, 404);
+      return c.json(state, 200);
+    },
+  );
+
+  // ── GET /custom/providers ────────────────────────────────────────
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/custom/providers",
+      tags: ["models"],
+      summary: "List custom models.json providers without secret values.",
+      responses: {
+        200: {
+          description: "Custom providers.",
+          content: { "application/json": { schema: ListCustomProvidersResponseSchema } },
+        },
+      },
+    }),
+    (c) => c.json({ providers: runtime.listCustomProviders() }, 200),
+  );
+
+  // ── PUT /custom/providers ────────────────────────────────────────
+  app.openapi(
+    createRoute({
+      method: "put",
+      path: "/custom/providers",
+      tags: ["models"],
+      summary: "Create or update a custom Pi provider in models.json.",
+      request: {
+        body: {
+          required: true,
+          content: { "application/json": { schema: UpsertCustomProviderRequestSchema } },
+        },
+      },
+      responses: {
+        200: {
+          description: "Custom provider saved.",
+          content: { "application/json": { schema: CustomProviderRowSchema } },
+        },
+        400: {
+          description: "Invalid custom provider config.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    (c) => {
+      try {
+        return c.json(runtime.upsertCustomProvider(c.req.valid("json")), 200);
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+      }
+    },
+  );
+
+  // ── DELETE /custom/providers/{provider} ──────────────────────────
+  app.openapi(
+    createRoute({
+      method: "delete",
+      path: "/custom/providers/{provider}",
+      tags: ["models"],
+      summary: "Remove a custom Pi provider from models.json.",
+      request: { params: ProviderParamSchema },
+      responses: {
+        200: {
+          description: "Custom provider removed if it existed.",
+          content: { "application/json": { schema: OkResponseSchema } },
+        },
+        400: {
+          description: "Invalid provider.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    (c) => {
+      const { provider } = c.req.valid("param");
+      try {
+        runtime.removeCustomProvider(provider);
         return c.json({ ok: true as const }, 200);
       } catch (err) {
         return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);

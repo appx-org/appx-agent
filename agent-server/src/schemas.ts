@@ -64,11 +64,15 @@ export const ListModelsResponseSchema = z
 export const AuthProviderRowSchema = z
 	.object({
 		provider: z.string(),
+		name: z.string(),
 		configured: z.boolean(),
+		credentialType: z.enum(["api_key", "oauth"]).optional(),
 		source: z
 			.enum(["stored", "runtime", "environment", "fallback", "models_json_key", "models_json_command"])
 			.optional(),
 		label: z.string().optional(),
+		supportsApiKey: z.boolean(),
+		supportsSubscription: z.boolean(),
 		modelCount: z.number().int().nonnegative(),
 		availableModelCount: z.number().int().nonnegative(),
 	})
@@ -85,6 +89,80 @@ export const SetProviderApiKeyRequestSchema = z
 		key: z.string().min(1),
 	})
 	.openapi("SetProviderApiKeyRequest");
+
+export const OAuthFlowStateSchema = z
+	.object({
+		id: z.string(),
+		provider: z.string(),
+		providerName: z.string(),
+		status: z.enum(["starting", "prompt", "auth", "waiting", "complete", "error", "cancelled"]),
+		authUrl: z.string().optional(),
+		instructions: z.string().optional(),
+		prompt: z
+			.object({
+				message: z.string(),
+				placeholder: z.string().optional(),
+				allowEmpty: z.boolean().optional(),
+			})
+			.optional(),
+		progress: z.array(z.string()),
+		error: z.string().optional(),
+		expiresAt: z.string(),
+	})
+	.openapi("OAuthFlowState");
+
+export const ContinueOAuthFlowRequestSchema = z
+	.object({
+		value: z.string(),
+	})
+	.openapi("ContinueOAuthFlowRequest");
+
+export const OAuthFlowIdParamSchema = z.object({
+	flowId: z.string().min(1).openapi({ param: { name: "flowId", in: "path" } }),
+});
+
+export const CustomProviderModelSchema = z
+	.object({
+		id: z.string().min(1),
+		name: z.string().optional(),
+		api: z.enum(["openai-completions", "openai-responses", "anthropic-messages"]).optional(),
+		reasoning: z.boolean().optional(),
+		thinkingLevelMap: z.record(z.union([z.string(), z.null()])).optional(),
+		input: z.array(z.enum(["text", "image"])).optional(),
+		contextWindow: z.number().int().positive().optional(),
+		maxTokens: z.number().int().positive().optional(),
+		compat: z.record(z.unknown()).optional(),
+	})
+	.openapi("CustomProviderModel");
+
+export const CustomProviderRowSchema = z
+	.object({
+		provider: z.string(),
+		name: z.string().optional(),
+		baseUrl: z.string().optional(),
+		api: z.enum(["openai-completions", "openai-responses", "anthropic-messages"]).optional(),
+		apiKeyConfigured: z.boolean(),
+		modelCount: z.number().int().nonnegative(),
+		models: z.array(CustomProviderModelSchema),
+	})
+	.openapi("CustomProviderRow");
+
+export const ListCustomProvidersResponseSchema = z
+	.object({
+		providers: z.array(CustomProviderRowSchema),
+	})
+	.openapi("ListCustomProvidersResponse");
+
+export const UpsertCustomProviderRequestSchema = z
+	.object({
+		provider: z.string().min(1).regex(/^[a-zA-Z0-9_.:-]+$/),
+		name: z.string().optional(),
+		baseUrl: z.string().url(),
+		api: z.enum(["openai-completions", "openai-responses", "anthropic-messages"]),
+		apiKey: z.string().optional(),
+		models: z.array(CustomProviderModelSchema).min(1),
+	})
+	.openapi("UpsertCustomProviderRequest");
 
 export const SessionModelSettingsResponseSchema = z
 	.object({

@@ -68,6 +68,13 @@ Mounted under `/v1`:
 | `GET`  | `/v1/auth/providers`       | List provider auth status without secret values       |
 | `PUT`  | `/v1/auth/providers/{provider}/api-key` | Store a provider API key in Pi auth storage |
 | `DELETE` | `/v1/auth/providers/{provider}` | Remove a stored provider credential              |
+| `POST` | `/v1/auth/providers/{provider}/subscription/start` | Start a Pi subscription OAuth flow |
+| `GET`  | `/v1/auth/subscription/{flowId}` | Read subscription flow state                    |
+| `POST` | `/v1/auth/subscription/{flowId}/continue` | Continue a prompt/code step               |
+| `DELETE` | `/v1/auth/subscription/{flowId}` | Cancel a pending subscription flow              |
+| `GET`  | `/v1/custom/providers`     | List custom `models.json` providers without secrets   |
+| `PUT`  | `/v1/custom/providers`     | Create or update a custom provider                    |
+| `DELETE` | `/v1/custom/providers/{provider}` | Remove a custom provider                       |
 | `GET`  | `/v1/sessions/{id}`        | Persisted message history                             |
 | `GET`  | `/v1/sessions/{id}/settings` | Active model/thinking settings                      |
 | `PATCH` | `/v1/sessions/{id}/settings` | Switch model and/or thinking while idle             |
@@ -145,6 +152,26 @@ When `LITELLM_BASE_URL` is set, the server registers a Pi provider named
 The runtime includes presets for `openai/gpt-5.5`,
 `deepseek/deepseek-v4-pro`, and `deepseek/deepseek-v4-flash` so Appx-style
 model/thinking controls work without project-local Pi `models.json` files.
+
+The same shape can be managed at runtime through `PUT /v1/custom/providers`.
+Those records are written to the configured agent `models.json` with `0600`
+permissions and are reloaded immediately; responses only report whether a key
+exists, never the key itself.
+
+### Provider Auth
+
+`GET /v1/auth/providers` merges Pi model availability, stored API keys,
+runtime/env credentials, `models.json` keys, and registered OAuth providers
+into one non-secret status list.
+
+For API-key auth, use `PUT /v1/auth/providers/{provider}/api-key`.
+
+For subscription auth, use `POST /v1/auth/providers/{provider}/subscription/start`
+and follow the returned flow state. Providers that use browser redirects, such
+as OpenAI Codex and Anthropic, may require the browser's final localhost
+redirect URL to be pasted back through
+`POST /v1/auth/subscription/{flowId}/continue` when the browser is not running
+on the same machine as the agent-server process.
 
 ## Extensions
 
