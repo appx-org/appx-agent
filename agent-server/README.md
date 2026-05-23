@@ -104,6 +104,14 @@ pi owns that contract, and consumers (the eventx frontend reducer)
 interpret it directly. A `heartbeat` named event is sent every 15s; clients
 using `EventSource` with a default `onmessage` handler ignore it.
 
+Provider transport details are hidden behind this contract. Whether a model is
+configured with `openai-completions`, `openai-responses`, `anthropic-messages`,
+or a compatible custom provider, browsers still receive Pi session events.
+Streaming clients should handle `message_update.assistantMessageEvent` by
+`contentIndex`: text blocks use `text_start` / `text_delta` / `text_end`,
+tool-call blocks use `toolcall_start` / `toolcall_delta` / `toolcall_end`, and
+thinking blocks may be emitted without being shown in the chat transcript.
+
 Extension UI requests are also delivered on the same session SSE stream as
 `{ "type": "extension_ui_request", ... }`. Blocking requests (`select`,
 `confirm`, `input`, `editor`) are kept in memory until the browser answers
