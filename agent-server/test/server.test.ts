@@ -646,6 +646,17 @@ describe("agent-server: REST surface", () => {
 		assert.equal(res.status, 400);
 	});
 
+	test("POST /v1/sessions/{unknown}/prompt → 404", async () => {
+		const res = await fetch(`${baseUrl}/v1/sessions/does-not-exist/prompt`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ text: "hello" }),
+		});
+		assert.equal(res.status, 404);
+		const body = (await res.json()) as { error: string };
+		assert.match(body.error, /not found/i);
+	});
+
 	test("POST /v1/sessions/{id}/abort on idle session → 200 ok", async () => {
 		const create = await fetch(`${baseUrl}/v1/sessions`, { method: "POST" });
 		const { id } = (await create.json()) as { id: string };

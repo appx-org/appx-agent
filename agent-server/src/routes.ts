@@ -685,6 +685,8 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
       const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
       const { text } = c.req.valid("json");
+      const session = await runtime.ensureSession(id);
+      if (!session) return c.json({ error: "session not found" }, 404);
       // Fire-and-forget: events flow over SSE, errors surface there too.
       runtime.sendPrompt(id, text).catch((err) => {
         console.error("[agent-server] prompt failed:", err);
