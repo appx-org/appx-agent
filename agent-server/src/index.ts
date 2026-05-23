@@ -10,6 +10,7 @@
  */
 export { AgentRuntime } from "./runtime.js";
 export type {
+	AgentAuthProviderRow,
 	AgentModelRow,
 	AgentRuntimeConfig,
 	ExtensionUiRequest,

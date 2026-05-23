@@ -5,6 +5,11 @@
  *   GET    /sessions                list sessions (disk + in-memory)
  *   POST   /sessions                create new session
  *   GET    /sessions/models         list selectable models
+ *   GET    /auth/providers          list provider auth status without secrets
+ *   PUT    /auth/providers/{provider}/api-key
+ *                                      store a provider API key in Pi auth storage
+ *   DELETE /auth/providers/{provider}
+ *                                      remove a stored provider credential
  *   GET    /sessions/{id}           persisted message history
  *   GET    /sessions/{id}/settings  return current model/thinking settings
  *   PATCH  /sessions/{id}/settings  switch model and/or thinking level while idle
@@ -31,12 +36,15 @@ import {
   ExtensionUiRequestIdParamSchema,
   ExtensionUiResponseRequestSchema,
   HealthResponseSchema,
+  ListAuthProvidersResponseSchema,
   ListSessionsResponseSchema,
   ListModelsResponseSchema,
   OkResponseSchema,
   PatchSessionSettingsRequestSchema,
   PendingExtensionUiRequestsResponseSchema,
   PromptRequestSchema,
+  ProviderParamSchema,
+  SetProviderApiKeyRequestSchema,
   SessionIdParamSchema,
   SessionMessagesResponseSchema,
   SessionModelSettingsResponseSchema,
@@ -101,6 +109,92 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     (c) => c.json({ models: runtime.listModels() }, 200),
+  );
+
+  // ── GET /auth/providers ─────────────────────────────────────────
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/auth/providers",
+      tags: ["auth"],
+      summary: "List non-secret provider auth status for the runtime.",
+      responses: {
+        200: {
+          description: "Known providers and whether each has configured auth.",
+          content: {
+            "application/json": { schema: ListAuthProvidersResponseSchema },
+          },
+        },
+      },
+    }),
+    (c) => c.json({ providers: runtime.listAuthProviders() }, 200),
+  );
+
+  // ── PUT /auth/providers/{provider}/api-key ──────────────────────
+  app.openapi(
+    createRoute({
+      method: "put",
+      path: "/auth/providers/{provider}/api-key",
+      tags: ["auth"],
+      summary: "Store an API key for a provider in Pi auth storage.",
+      request: {
+        params: ProviderParamSchema,
+        body: {
+          required: true,
+          content: { "application/json": { schema: SetProviderApiKeyRequestSchema } },
+        },
+      },
+      responses: {
+        200: {
+          description: "Credential stored.",
+          content: { "application/json": { schema: OkResponseSchema } },
+        },
+        400: {
+          description: "Invalid provider or key.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    (c) => {
+      const { provider } = c.req.valid("param");
+      const { key } = c.req.valid("json");
+      try {
+        runtime.setProviderApiKey(provider, key);
+        return c.json({ ok: true as const }, 200);
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+      }
+    },
+  );
+
+  // ── DELETE /auth/providers/{provider} ───────────────────────────
+  app.openapi(
+    createRoute({
+      method: "delete",
+      path: "/auth/providers/{provider}",
+      tags: ["auth"],
+      summary: "Remove a stored provider credential from Pi auth storage.",
+      request: { params: ProviderParamSchema },
+      responses: {
+        200: {
+          description: "Credential removed if it existed.",
+          content: { "application/json": { schema: OkResponseSchema } },
+        },
+        400: {
+          description: "Invalid provider.",
+          content: { "application/json": { schema: ErrorResponseSchema } },
+        },
+      },
+    }),
+    (c) => {
+      const { provider } = c.req.valid("param");
+      try {
+        runtime.removeProviderCredential(provider);
+        return c.json({ ok: true as const }, 200);
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+      }
+    },
   );
 
   // ── POST /sessions ───────────────────────────────────────────────

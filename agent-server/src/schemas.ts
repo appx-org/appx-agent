@@ -61,6 +61,31 @@ export const ListModelsResponseSchema = z
 	})
 	.openapi("ListModelsResponse");
 
+export const AuthProviderRowSchema = z
+	.object({
+		provider: z.string(),
+		configured: z.boolean(),
+		source: z
+			.enum(["stored", "runtime", "environment", "fallback", "models_json_key", "models_json_command"])
+			.optional(),
+		label: z.string().optional(),
+		modelCount: z.number().int().nonnegative(),
+		availableModelCount: z.number().int().nonnegative(),
+	})
+	.openapi("AuthProviderRow");
+
+export const ListAuthProvidersResponseSchema = z
+	.object({
+		providers: z.array(AuthProviderRowSchema),
+	})
+	.openapi("ListAuthProvidersResponse");
+
+export const SetProviderApiKeyRequestSchema = z
+	.object({
+		key: z.string().min(1),
+	})
+	.openapi("SetProviderApiKeyRequest");
+
 export const SessionModelSettingsResponseSchema = z
 	.object({
 		model: AgentModelRowSchema.nullable(),
@@ -152,4 +177,12 @@ export const HealthResponseSchema = z
 
 export const SessionIdParamSchema = z.object({
 	id: z.string().min(1).openapi({ param: { name: "id", in: "path" } }),
+});
+
+export const ProviderParamSchema = z.object({
+	provider: z
+		.string()
+		.min(1)
+		.regex(/^[a-zA-Z0-9_.:-]+$/)
+		.openapi({ param: { name: "provider", in: "path" } }),
 });

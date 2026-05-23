@@ -248,6 +248,57 @@ describe("agent-server: REST surface", () => {
 		assert.equal(typeof body.models[0]!.available, "boolean");
 	});
 
+	test("provider auth API stores status without exposing keys", async () => {
+		const before = await fetch(`${baseUrl}/v1/auth/providers`);
+		assert.equal(before.status, 200);
+		const initial = (await before.json()) as {
+			providers: Array<{ provider: string; configured: boolean; source?: string }>;
+		};
+		assert.ok(initial.providers.some((p) => p.provider === "anthropic"));
+
+		const put = await fetch(`${baseUrl}/v1/auth/providers/anthropic/api-key`, {
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ key: "sk-ant-test-secret" }),
+		});
+		assert.equal(put.status, 200);
+		assert.deepEqual((await put.json()) as { ok: boolean }, { ok: true });
+
+		const afterSet = await fetch(`${baseUrl}/v1/auth/providers`);
+		assert.equal(afterSet.status, 200);
+		const setText = await afterSet.text();
+		assert.equal(setText.includes("sk-ant-test-secret"), false);
+		const setBody = JSON.parse(setText) as {
+			providers: Array<{ provider: string; configured: boolean; source?: string }>;
+		};
+		const anthropic = setBody.providers.find((p) => p.provider === "anthropic");
+		assert.equal(anthropic?.configured, true);
+		assert.equal(anthropic?.source, "stored");
+
+		const del = await fetch(`${baseUrl}/v1/auth/providers/anthropic`, { method: "DELETE" });
+		assert.equal(del.status, 200);
+		assert.deepEqual((await del.json()) as { ok: boolean }, { ok: true });
+	});
+
+	test("provider auth status treats runtime credentials as configured", () => {
+		const project = makeProject();
+		try {
+			const runtime = new AgentRuntime({
+				projectDir: project.dir,
+				sessionsDir: resolve(project.dir, "data/sessions"),
+				agentDir: resolve(project.dir, ".pi-agent"),
+				agentsFile: ".pi/AGENTS.md",
+				anthropicApiKey: "sk-ant-runtime-test",
+				logger: { log: () => {}, error: () => {} },
+			});
+			const anthropic = runtime.listAuthProviders().find((p) => p.provider === "anthropic");
+			assert.equal(anthropic?.configured, true);
+			assert.equal(anthropic?.source, "runtime");
+		} finally {
+			project.cleanup();
+		}
+	});
+
 	test("GET/PATCH /v1/sessions/{id}/settings exposes model and thinking controls", async () => {
 		const create = await fetch(`${baseUrl}/v1/sessions`, { method: "POST" });
 		const { id } = (await create.json()) as { id: string };
@@ -338,6 +389,9 @@ describe("agent-server: REST surface", () => {
 		assert.equal(res.status, 200);
 		const doc = (await res.json()) as { paths: Record<string, unknown> };
 		for (const path of [
+			"/v1/auth/providers",
+			"/v1/auth/providers/{provider}/api-key",
+			"/v1/auth/providers/{provider}",
 			"/v1/sessions",
 			"/v1/sessions/models",
 			"/v1/sessions/{id}",

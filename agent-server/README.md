@@ -65,6 +65,9 @@ Mounted under `/v1`:
 | `GET`  | `/v1/sessions`             | List sessions (persisted + in-memory not yet flushed) |
 | `POST` | `/v1/sessions`             | Create a new session                                  |
 | `GET`  | `/v1/sessions/models`      | List selectable models and auth availability          |
+| `GET`  | `/v1/auth/providers`       | List provider auth status without secret values       |
+| `PUT`  | `/v1/auth/providers/{provider}/api-key` | Store a provider API key in Pi auth storage |
+| `DELETE` | `/v1/auth/providers/{provider}` | Remove a stored provider credential              |
 | `GET`  | `/v1/sessions/{id}`        | Persisted message history                             |
 | `GET`  | `/v1/sessions/{id}/settings` | Active model/thinking settings                      |
 | `PATCH` | `/v1/sessions/{id}/settings` | Switch model and/or thinking while idle             |

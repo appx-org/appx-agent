@@ -132,6 +132,15 @@ export type AgentModelRow = {
   defaultThinkingLevel?: ThinkingLevel;
 };
 
+export type AgentAuthProviderRow = {
+  provider: string;
+  configured: boolean;
+  source?: "stored" | "runtime" | "environment" | "fallback" | "models_json_key" | "models_json_command";
+  label?: string;
+  modelCount: number;
+  availableModelCount: number;
+};
+
 export type SessionModelSettings = {
   model: AgentModelRow | null;
   thinkingLevel: ThinkingLevel;
@@ -714,6 +723,52 @@ export class AgentRuntime {
           a.provider.localeCompare(b.provider) ||
           a.name.localeCompare(b.name),
       );
+  }
+
+  /** Return non-secret auth status grouped by provider. */
+  listAuthProviders(): AgentAuthProviderRow[] {
+    const byProvider = new Map<string, { modelCount: number; availableModelCount: number }>();
+    for (const model of this.listModels()) {
+      const current = byProvider.get(model.provider) ?? { modelCount: 0, availableModelCount: 0 };
+      current.modelCount += 1;
+      if (model.available) current.availableModelCount += 1;
+      byProvider.set(model.provider, current);
+    }
+    return [...byProvider.entries()]
+      .map(([provider, counts]) => {
+        const status = this.authStorage.getAuthStatus(provider);
+        return {
+          provider,
+          configured: status.configured || status.source !== undefined,
+          source: status.source,
+          label: status.label,
+          ...counts,
+        };
+      })
+      .sort(
+        (a, b) =>
+          Number(b.configured) - Number(a.configured) ||
+          b.availableModelCount - a.availableModelCount ||
+          a.provider.localeCompare(b.provider),
+      );
+  }
+
+  setProviderApiKey(provider: string, key: string): void {
+    this.assertProviderId(provider);
+    const trimmed = key.trim();
+    if (!trimmed) throw new Error("key is required");
+    this.authStorage.set(provider, { type: "api_key", key: trimmed });
+  }
+
+  removeProviderCredential(provider: string): void {
+    this.assertProviderId(provider);
+    this.authStorage.remove(provider);
+  }
+
+  private assertProviderId(provider: string): void {
+    if (!/^[a-zA-Z0-9_.:-]+$/.test(provider)) {
+      throw new Error("invalid provider id");
+    }
   }
 
   async getSessionModelSettings(id: string): Promise<SessionModelSettings | null> {
