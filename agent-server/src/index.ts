@@ -23,7 +23,13 @@ export type {
 	SessionRow,
 	ThinkingLevel,
 } from "./runtime.js";
+export { AgentRuntimeRegistry } from "./runtimeRegistry.js";
+export type {
+	AgentRuntimeRegistryConfig,
+	ProjectRuntimeContext,
+} from "./runtimeRegistry.js";
 export { createSessionsApp } from "./routes.js";
+export type { AgentRuntimeResolver } from "./routes.js";
 export { litellmRuntimeConfig, logLiteLlmStartupConfig, resolveLiteLlmConfig } from "./litellm.js";
 export { subscribe, publish, channelStats } from "./sseBroker.js";
 export type {

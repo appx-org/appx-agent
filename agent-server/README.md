@@ -1,11 +1,12 @@
 # @appx/agent-server
 
-Pi-SDK-based agent orchestration. Standalone HTTP/SSE service, one process per Appx app.
+Pi-SDK-based agent orchestration. Standalone HTTP/SSE service for Appx project agents.
 
 This is the **Agent Server Source** from the Appx App Anatomy: a self-contained
 TypeScript service that wraps the [pi coding agent SDK](https://github.com/earendil-works/pi)
-into a stable REST + SSE contract. Each Appx app launches its own
-agent-server (single-tenant per process) and talks to it over loopback.
+into a stable REST + SSE contract. Appx talks to it over loopback, keeps
+provider auth/model state shared under `AGENT_DIR`, and routes project sessions
+through `/v1/projects/:projectId/*` with trusted project context headers.
 
 ## Run it
 
@@ -30,8 +31,8 @@ All via env vars (see `.env.example`):
 
 | Var                  | Required | Default                      | Notes                                                                 |
 | -------------------- | -------- | ---------------------------- | --------------------------------------------------------------------- |
-| `PROJECT_DIR`        | yes      | —                            | cwd handed to pi; `.pi/skills/` discovery is rooted here              |
-| `SESSIONS_DIR`       | no       | `$PROJECT_DIR/data/sessions` | where pi writes session JSONL files                                   |
+| `PROJECT_DIR`        | yes      | —                            | default cwd for legacy unscoped `/v1/sessions` calls                  |
+| `SESSIONS_DIR`       | no       | `$PROJECT_DIR/data/sessions` | session dir for legacy unscoped `/v1/sessions` calls                  |
 | `AGENT_DIR`          | no       | Pi default                   | pi config/auth/models dir; falls back to `PI_CODING_AGENT_DIR` / `~/.pi/agent` |
 | `AGENTS_FILE`        | no       | `.pi/AGENTS.md`              | system prompt file (relative to `PROJECT_DIR` or absolute)            |
 | `ANTHROPIC_API_KEY`  | no       | —                            | injected into pi's AuthStorage; falls back to `~/.pi/agent/auth.json` |
@@ -47,6 +48,11 @@ All via env vars (see `.env.example`):
 | `AGENT_SERVER_HOST`  | no       | `127.0.0.1`                  | bind host                                                             |
 | `AGENT_SERVER_PORT`  | no       | `4001`                       | bind port                                                             |
 | `AGENT_SERVER_TOKEN` | no       | —                            | if set, `/v1/*` requires `Authorization: Bearer <token>`              |
+
+Project-scoped Appx calls use `/v1/projects/:projectId/sessions...`. The
+standalone server resolves those runtimes from `X-Appx-Project-Dir`, which Appx
+sets after validating the project id. Each project runtime writes sessions to
+`<projectDir>/data/sessions` and reads its prompt from `<projectDir>/.pi/AGENTS.md`.
 
 Auth is opt-in. Loopback-only + single-user dev → unset is fine. Set
 `AGENT_SERVER_TOKEN` for shared hosts or any deployment where another local
@@ -231,11 +237,17 @@ If you'd rather embed the runtime inside your own Hono app:
 
 ```ts
 import { Hono } from "hono";
-import { AgentRuntime, createSessionsApp } from "@appx/agent-server";
+import { AgentRuntimeRegistry, createSessionsApp } from "@appx/agent-server";
 
-const runtime = new AgentRuntime({ projectDir, sessionsDir, agentsFile });
+const registry = new AgentRuntimeRegistry({ projectDir, sessionsDir, agentsFile });
 const app = new Hono();
-app.route("/v1", createSessionsApp(runtime));
+app.route("/v1", createSessionsApp(registry.defaultRuntime));
+app.route("/v1/projects/:projectId", createSessionsApp((c) =>
+  registry.forProject({
+    id: c.req.param("projectId"),
+    projectDir: c.req.header("x-appx-project-dir")!,
+  }),
+));
 ```
 
 This exists for tests and for hosts that have a strong reason to share a

@@ -2,9 +2,9 @@
 /**
  * Standalone agent-server entrypoint.
  *
- * Single-tenant model: one process per Appx app. Configuration is read
- * from environment variables, the AgentRuntime is instantiated once, and
- * the Hono app is served via @hono/node-server. Bind to 127.0.0.1 by
+ * Multi-project model: one process per Appx host. Shared Pi auth/model
+ * state is kept under AGENT_DIR, while project session runtimes are
+ * created lazily from trusted Appx proxy headers. Bind to 127.0.0.1 by
  * default — the eventx-backend (and any other intra-app caller) reaches
  * us over loopback.
  *
@@ -39,9 +39,10 @@ import { isAbsolute, resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import type { Context } from "hono";
 import { litellmRuntimeConfig, logLiteLlmStartupConfig } from "./litellm.js";
-import { AgentRuntime } from "./runtime.js";
 import { createSessionsApp } from "./routes.js";
+import { AgentRuntimeRegistry } from "./runtimeRegistry.js";
 
 function required(name: string): string {
 	const v = process.env[name];
@@ -92,7 +93,7 @@ const token = process.env.AGENT_SERVER_TOKEN?.trim();
 
 logLiteLlmStartupConfig();
 
-const runtime = new AgentRuntime({
+const runtimeRegistry = new AgentRuntimeRegistry({
 	projectDir,
 	sessionsDir,
 	agentDir,
@@ -108,6 +109,19 @@ const runtime = new AgentRuntime({
 	noThemes: truthy("PI_NO_THEMES"),
 	...litellmRuntimeConfig(),
 });
+
+function projectRuntimeFromRequest(c: Context) {
+	const projectId = c.req.param("projectId");
+	const projectDir = c.req.header("x-appx-project-dir")?.trim();
+	if (!projectId || !projectDir) {
+		throw new Error("project context required");
+	}
+	return runtimeRegistry.forProject({
+		id: projectId,
+		name: c.req.header("x-appx-project-name")?.trim(),
+		projectDir,
+	});
+}
 
 const root = new OpenAPIHono();
 
@@ -130,8 +144,19 @@ if (token) {
 	console.log("[agent-server] AGENT_SERVER_TOKEN unset — /v1/* is open (loopback only)");
 }
 
-// Mount the versioned API under /v1.
-root.route("/v1", createSessionsApp(runtime));
+root.onError((err, c) => {
+	const message = err instanceof Error ? err.message : String(err);
+	if (message.includes("project context") || message.includes("project directory")) {
+		return c.json({ error: message }, 400);
+	}
+	console.error("[agent-server] request failed:", err);
+	return c.json({ error: "internal server error" }, 500);
+});
+
+// Mount the versioned API under /v1. The legacy unscoped surface remains for
+// global auth/custom-provider settings and backwards-compatible local usage.
+root.route("/v1", createSessionsApp(runtimeRegistry.defaultRuntime));
+root.route("/v1/projects/:projectId", createSessionsApp(projectRuntimeFromRequest));
 
 // OpenAPI document + Swagger UI. Doc lives at /openapi.json so consumers
 // (eventx-backend) can fetch it for codegen at build time.
@@ -141,7 +166,7 @@ root.doc("/openapi.json", {
 		title: "Appx Agent Server",
 		version: "0.1.0",
 		description:
-			"Pi-SDK-based agent orchestration. Single-tenant per process; one instance per Appx app.",
+			"Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes.",
 	},
 	servers: [{ url: `http://${host}:${port}`, description: "local" }],
 });
@@ -161,8 +186,8 @@ root.get("/", (c) =>
 
 serve({ fetch: root.fetch, hostname: host, port }, (info) => {
 	console.log(`[agent-server] listening on http://${info.address}:${info.port}`);
-	console.log(`[agent-server] projectDir=${projectDir}`);
-	console.log(`[agent-server] sessionsDir=${sessionsDir}`);
+	console.log(`[agent-server] defaultProjectDir=${projectDir}`);
+	console.log(`[agent-server] defaultSessionsDir=${sessionsDir}`);
 	if (agentDir) console.log(`[agent-server] agentDir=${agentDir}`);
 	console.log(`[agent-server] agentsFile=${agentsFile}`);
 	if (process.env.PI_EXTENSION_PATHS?.trim()) console.log(`[agent-server] PI_EXTENSION_PATHS=${process.env.PI_EXTENSION_PATHS}`);

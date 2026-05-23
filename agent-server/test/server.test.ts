@@ -32,6 +32,7 @@ import { serve } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { litellmRuntimeConfig, resetLiteLlmConfigForTests, resolveLiteLlmConfig } from "../src/litellm.js";
 import { AgentRuntime, type AgentRuntimeConfig } from "../src/runtime.js";
+import { AgentRuntimeRegistry } from "../src/runtimeRegistry.js";
 import { createSessionsApp } from "../src/routes.js";
 import { publish } from "../src/sseBroker.js";
 
@@ -697,6 +698,65 @@ describe("agent-server: REST surface", () => {
 			body: JSON.stringify({ cancelled: true }),
 		});
 		assert.equal(response.status, 404);
+	});
+});
+
+describe("agent-server: project-scoped runtimes", () => {
+	test("project routes isolate sessions by project directory", async () => {
+		const projectA = makeProject();
+		const projectB = makeProject();
+		const port = await pickPort();
+		const registry = new AgentRuntimeRegistry({
+			projectDir: projectA.dir,
+			sessionsDir: resolve(projectA.dir, "data/sessions"),
+			agentDir: resolve(projectA.dir, ".pi-agent"),
+			agentsFile: ".pi/AGENTS.md",
+			logger: { log: () => {}, error: () => {} },
+		});
+
+		const root = new OpenAPIHono();
+		root.route(
+			"/v1/projects/:projectId",
+			createSessionsApp((c) => {
+				const projectDir = c.req.header("x-appx-project-dir")?.trim();
+				if (!projectDir) throw new Error("project context required");
+				return registry.forProject({
+					id: c.req.param("projectId"),
+					projectDir,
+				});
+			}),
+		);
+		const server = serve({ fetch: root.fetch, hostname: "127.0.0.1", port });
+		const baseUrl = `http://127.0.0.1:${port}`;
+
+		try {
+			const create = await fetch(`${baseUrl}/v1/projects/project-a/sessions`, {
+				method: "POST",
+				headers: { "x-appx-project-dir": projectA.dir },
+			});
+			assert.equal(create.status, 200);
+			const created = (await create.json()) as { id: string };
+
+			const listA = await fetch(`${baseUrl}/v1/projects/project-a/sessions`, {
+				headers: { "x-appx-project-dir": projectA.dir },
+			});
+			assert.equal(listA.status, 200);
+			const bodyA = (await listA.json()) as { sessions: { id: string }[] };
+			assert.ok(bodyA.sessions.some((session) => session.id === created.id));
+
+			const listB = await fetch(`${baseUrl}/v1/projects/project-b/sessions`, {
+				headers: { "x-appx-project-dir": projectB.dir },
+			});
+			assert.equal(listB.status, 200);
+			const bodyB = (await listB.json()) as { sessions: { id: string }[] };
+			assert.deepEqual(bodyB.sessions, []);
+		} finally {
+			await new Promise<void>((res, rej) => {
+				server.close((err) => (err ? rej(err) : res()));
+			});
+			projectA.cleanup();
+			projectB.cleanup();
+		}
 	});
 });
 

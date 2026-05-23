@@ -1,5 +1,5 @@
 /**
- * AgentRuntime — pi SDK orchestrator scoped to one Appx app.
+ * AgentRuntime — pi SDK orchestrator scoped to one Appx project.
  *
  * Each app instantiates one runtime pointed at:
  *   - projectDir: the cwd handed to pi (skill discovery roots here, so
@@ -10,7 +10,7 @@
  *     a new file.
  *
  * Owns:
- *   - one AuthStorage + ModelRegistry per runtime
+ *   - one AuthStorage + ModelRegistry, optionally shared by sibling runtimes
  *   - Map<sessionId, LiveSession> of in-memory live sessions
  *   - subscription bridge: every AgentSessionEvent → publish(sessionId, event)
  *
@@ -57,6 +57,10 @@ export type AgentRuntimeConfig = {
   sessionsDir: string;
   /** Optional pi agent config dir. Defaults to Pi's standard ~/.pi/agent. */
   agentDir?: string;
+  /** Optional shared Pi auth storage. Used by multi-project hosts. */
+  authStorage?: AuthStorage;
+  /** Optional shared model registry. Used by multi-project hosts. */
+  modelRegistry?: ModelRegistryType;
   /**
    * Optional Anthropic API key to inject into AuthStorage at runtime. If
    * unset, the runtime falls back to whatever's in `~/.pi/agent/auth.json`
@@ -313,7 +317,7 @@ export class AgentRuntime {
     mkdirSync(this.agentDir, { recursive: true });
     this.modelsJsonPath = join(this.agentDir, "models.json");
 
-    this.authStorage = AuthStorage.create(join(this.agentDir, "auth.json"));
+    this.authStorage = config.authStorage ?? AuthStorage.create(join(this.agentDir, "auth.json"));
 
     if (config.agentsFile) {
       const path = isAbsolute(config.agentsFile)
@@ -342,8 +346,8 @@ export class AgentRuntime {
       );
     }
 
-    this.modelRegistry = ModelRegistry.create(this.authStorage, this.modelsJsonPath);
-    config.configureModelRegistry?.(this.modelRegistry);
+    this.modelRegistry = config.modelRegistry ?? ModelRegistry.create(this.authStorage, this.modelsJsonPath);
+    if (!config.modelRegistry) config.configureModelRegistry?.(this.modelRegistry);
 
     if (this.defaultModelProvider && this.defaultModelId) {
       const model = this.modelRegistry.find(this.defaultModelProvider, this.defaultModelId);

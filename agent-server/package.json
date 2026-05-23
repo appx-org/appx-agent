@@ -2,7 +2,7 @@
   "name": "@appx/agent-server",
   "private": true,
   "version": "0.1.0",
-  "description": "Pi-SDK-based agent orchestration server. Runs as a standalone HTTP/SSE service per Appx app.",
+  "description": "Pi-SDK-based agent orchestration server with project-scoped Appx sessions.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

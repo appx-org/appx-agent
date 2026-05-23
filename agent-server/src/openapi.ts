@@ -36,7 +36,7 @@ const doc = root.getOpenAPI31Document({
 		title: "Appx Agent Server",
 		version: "0.1.0",
 		description:
-			"Pi-SDK-based agent orchestration. Single-tenant per process; one instance per Appx app.",
+			"Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes.",
 	},
 });
 

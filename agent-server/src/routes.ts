@@ -40,6 +40,7 @@
  * spec manually below so consumers see the path.
  */
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { AgentRuntime } from "./runtime.js";
 import {
@@ -72,6 +73,14 @@ import { channelStats, subscribe } from "./sseBroker.js";
 /** Heartbeat cadence for SSE keepalive. Keeps proxies / LBs from closing idle streams. */
 const SSE_HEARTBEAT_MS = 15_000;
 
+export type AgentRuntimeResolver = (c: Context) => AgentRuntime | Promise<AgentRuntime>;
+
+function isRuntimeResolver(
+  runtime: AgentRuntime | AgentRuntimeResolver,
+): runtime is AgentRuntimeResolver {
+  return typeof runtime === "function";
+}
+
 function settingsErrorStatus(err: unknown): 400 | 404 | 409 | 500 {
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes("not found")) return 404;
@@ -85,8 +94,10 @@ function settingsErrorStatus(err: unknown): 400 | 404 | 409 | 500 {
  * job (server.ts mounts this under /v1) so we can move /v2 alongside
  * later without rewriting routes.
  */
-export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
+export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver): OpenAPIHono {
   const app = new OpenAPIHono();
+  const getRuntime = (c: Context) =>
+    isRuntimeResolver(runtime) ? runtime(c) : runtime;
 
   // ── GET /sessions ────────────────────────────────────────────────
   app.openapi(
@@ -105,6 +116,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     async (c) => {
+      const runtime = await getRuntime(c);
       const sessions = await runtime.listSessions();
       return c.json({ sessions }, 200);
     },
@@ -126,7 +138,10 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
         },
       },
     }),
-    (c) => c.json({ models: runtime.listModels() }, 200),
+    async (c) => {
+      const runtime = await getRuntime(c);
+      return c.json({ models: runtime.listModels() }, 200);
+    },
   );
 
   // ── GET /auth/providers ─────────────────────────────────────────
@@ -145,7 +160,10 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
         },
       },
     }),
-    (c) => c.json({ providers: runtime.listAuthProviders() }, 200),
+    async (c) => {
+      const runtime = await getRuntime(c);
+      return c.json({ providers: runtime.listAuthProviders() }, 200);
+    },
   );
 
   // ── PUT /auth/providers/{provider}/api-key ──────────────────────
@@ -173,7 +191,8 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
         },
       },
     }),
-    (c) => {
+    async (c) => {
+      const runtime = await getRuntime(c);
       const { provider } = c.req.valid("param");
       const { key } = c.req.valid("json");
       try {
@@ -204,7 +223,8 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
         },
       },
     }),
-    (c) => {
+    async (c) => {
+      const runtime = await getRuntime(c);
       const { provider } = c.req.valid("param");
       try {
         runtime.removeProviderCredential(provider);
@@ -235,6 +255,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     async (c) => {
+      const runtime = await getRuntime(c);
       const { provider } = c.req.valid("param");
       try {
         return c.json(await runtime.startProviderSubscriptionLogin(provider), 200);
@@ -263,7 +284,8 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
         },
       },
     }),
-    (c) => {
+    async (c) => {
+      const runtime = await getRuntime(c);
       const { flowId } = c.req.valid("param");
       const state = runtime.getProviderSubscriptionLogin(flowId);
       if (!state) return c.json({ error: "subscription auth flow not found" }, 404);
@@ -301,6 +323,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     async (c) => {
+      const runtime = await getRuntime(c);
       const { flowId } = c.req.valid("param");
       const { value } = c.req.valid("json");
       try {
@@ -331,7 +354,8 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
         },
       },
     }),
-    (c) => {
+    async (c) => {
+      const runtime = await getRuntime(c);
       const { flowId } = c.req.valid("param");
       const state = runtime.cancelProviderSubscriptionLogin(flowId);
       if (!state) return c.json({ error: "subscription auth flow not found" }, 404);
@@ -353,7 +377,10 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
         },
       },
     }),
-    (c) => c.json({ providers: runtime.listCustomProviders() }, 200),
+    async (c) => {
+      const runtime = await getRuntime(c);
+      return c.json({ providers: runtime.listCustomProviders() }, 200);
+    },
   );
 
   // ── PUT /custom/providers ────────────────────────────────────────
@@ -380,7 +407,8 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
         },
       },
     }),
-    (c) => {
+    async (c) => {
+      const runtime = await getRuntime(c);
       try {
         return c.json(runtime.upsertCustomProvider(c.req.valid("json")), 200);
       } catch (err) {
@@ -408,7 +436,8 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
         },
       },
     }),
-    (c) => {
+    async (c) => {
+      const runtime = await getRuntime(c);
       const { provider } = c.req.valid("param");
       try {
         runtime.removeCustomProvider(provider);
@@ -436,6 +465,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     async (c) => {
+      const runtime = await getRuntime(c);
       const created = await runtime.createNewSession();
       return c.json(created, 200);
     },
@@ -463,6 +493,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     async (c) => {
+      const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
       const settings = await runtime.getSessionModelSettings(id);
       if (!settings) return c.json({ error: "session not found" }, 404);
@@ -510,6 +541,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     async (c) => {
+      const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
       const hasProvider = Boolean(body.provider);
@@ -551,6 +583,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     async (c) => {
+      const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
       const messages = await runtime.getSessionMessages(id);
       if (messages === null) return c.json({ error: "session not found" }, 404);
@@ -580,6 +613,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     async (c) => {
+      const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
       const session = await runtime.ensureSession(id);
       if (!session) return c.json({ error: "session not found" }, 404);
@@ -613,6 +647,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     async (c) => {
+      const runtime = await getRuntime(c);
       const { id, requestId } = c.req.valid("param");
       const body = c.req.valid("json");
       const ok = runtime.resolveExtensionUiRequest(id, requestId, body);
@@ -647,6 +682,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     async (c) => {
+      const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
       const { text } = c.req.valid("json");
       // Fire-and-forget: events flow over SSE, errors surface there too.
@@ -677,6 +713,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
       },
     }),
     async (c) => {
+      const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
       try {
         await runtime.abortSession(id);
@@ -744,6 +781,7 @@ export function createSessionsApp(runtime: AgentRuntime): OpenAPIHono {
 
   // actual handler for the SSE endpoint
   app.get("/sessions/:id/events", async (c) => {
+    const runtime = await getRuntime(c);
     const id = c.req.param("id");
     const session = await runtime.ensureSession(id);
     if (!session) return c.json({ error: "session not found" }, 404);
