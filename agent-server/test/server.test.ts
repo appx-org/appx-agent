@@ -383,6 +383,134 @@ describe("agent-server: REST surface", () => {
 		}
 	});
 
+	test("subscription auth start reuses an active provider flow", async () => {
+		const project = makeProject();
+		const port = await pickPort();
+		let loginCalls = 0;
+		const server = await startServer({
+			projectDir: project.dir,
+			port,
+			runtimeConfig: {
+				configureModelRegistry: (modelRegistry) => {
+					modelRegistry.registerProvider("test-reuse-oauth", {
+						name: "Test Reuse OAuth",
+						baseUrl: "https://example.test/v1",
+						api: "openai-completions",
+						oauth: {
+							name: "Test Reuse Subscription",
+							login: async (callbacks: any) => {
+								loginCalls += 1;
+								callbacks.onAuth?.({
+									url: "https://login.example.test/reuse",
+									instructions: "Complete login.",
+								});
+								await callbacks.onManualCodeInput?.();
+								return {
+									access: "oauth-access-token",
+									refresh: "oauth-refresh-token",
+									expires: Date.now() + 60_000,
+								};
+							},
+							refreshToken: async (credentials: any) => credentials,
+							getApiKey: (credentials: any) => credentials.access,
+						},
+						models: [
+							{
+								id: "test-reuse-model",
+								name: "Test Reuse Model",
+								api: "openai-completions",
+								reasoning: false,
+								input: ["text"],
+								cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+								contextWindow: 4096,
+								maxTokens: 1024,
+							},
+						],
+					});
+				},
+			},
+		});
+		try {
+			const first = await fetch(`${server.baseUrl}/v1/auth/providers/test-reuse-oauth/subscription/start`, {
+				method: "POST",
+			});
+			assert.equal(first.status, 200);
+			const firstFlow = (await first.json()) as { id: string; status: string; authUrl?: string };
+			assert.equal(firstFlow.status, "auth");
+
+			const second = await fetch(`${server.baseUrl}/v1/auth/providers/test-reuse-oauth/subscription/start`, {
+				method: "POST",
+			});
+			assert.equal(second.status, 200);
+			const secondFlow = (await second.json()) as { id: string; status: string; authUrl?: string };
+			assert.equal(secondFlow.id, firstFlow.id);
+			assert.equal(secondFlow.status, "auth");
+			assert.equal(secondFlow.authUrl, "https://login.example.test/reuse");
+			assert.equal(loginCalls, 1);
+
+			const cancel = await fetch(`${server.baseUrl}/v1/auth/subscription/${firstFlow.id}`, {
+				method: "DELETE",
+			});
+			assert.equal(cancel.status, 200);
+		} finally {
+			await server.close();
+			project.cleanup();
+		}
+	});
+
+	test("subscription auth surfaces callback port conflicts as actionable errors", async () => {
+		const project = makeProject();
+		const port = await pickPort();
+		const server = await startServer({
+			projectDir: project.dir,
+			port,
+			runtimeConfig: {
+				configureModelRegistry: (modelRegistry) => {
+					modelRegistry.registerProvider("test-port-oauth", {
+						name: "Test Port OAuth",
+						baseUrl: "https://example.test/v1",
+						api: "openai-completions",
+						oauth: {
+							name: "Test Port Subscription",
+							login: async () => {
+								throw new Error("listen EADDRINUSE: address already in use 127.0.0.1:53692");
+							},
+							refreshToken: async (credentials: any) => credentials,
+							getApiKey: (credentials: any) => credentials.access,
+						},
+						models: [
+							{
+								id: "test-port-model",
+								name: "Test Port Model",
+								api: "openai-completions",
+								reasoning: false,
+								input: ["text"],
+								cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+								contextWindow: 4096,
+								maxTokens: 1024,
+							},
+						],
+					});
+				},
+			},
+		});
+		try {
+			const start = await fetch(`${server.baseUrl}/v1/auth/providers/test-port-oauth/subscription/start`, {
+				method: "POST",
+			});
+			assert.equal(start.status, 200);
+			const flow = (await start.json()) as { status: string; error?: string };
+			assert.equal(flow.status, "error");
+			assert.equal(
+				flow.error,
+				"Test Port Subscription login callback is already running on its local port. Finish or cancel the existing login, then try again.",
+			);
+		} finally {
+			await server.close();
+			project.cleanup();
+		}
+	});
+
 	test("custom provider API manages LiteLLM-style models without returning secrets", async () => {
 		const providerId = "litellm-ui-test";
 		const save = await fetch(`${baseUrl}/v1/custom/providers`, {

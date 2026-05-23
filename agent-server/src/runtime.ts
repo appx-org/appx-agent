@@ -893,6 +893,25 @@ export class AgentRuntime {
     flow.cleanupTimer.unref?.();
   }
 
+  private activeOAuthFlowForProvider(provider: string): PendingOAuthFlow | undefined {
+    const now = Date.now();
+    for (const flow of this.pendingOAuthFlows.values()) {
+      if (flow.provider !== provider) continue;
+      if (["complete", "error", "cancelled"].includes(flow.status)) continue;
+      if (Date.parse(flow.expiresAt) <= now) continue;
+      return flow;
+    }
+    return undefined;
+  }
+
+  private oauthLoginErrorMessage(providerName: string, error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("EADDRINUSE")) {
+      return `${providerName} login callback is already running on its local port. Finish or cancel the existing login, then try again.`;
+    }
+    return message;
+  }
+
   private waitForOAuthFlowUpdate(
     flow: PendingOAuthFlow,
     version: number,
@@ -918,6 +937,9 @@ export class AgentRuntime {
     this.assertProviderId(provider);
     const oauthProvider = this.authStorage.getOAuthProviders().find((entry) => entry.id === provider);
     if (!oauthProvider) throw new Error(`provider ${provider} does not support subscription auth`);
+
+    const activeFlow = this.activeOAuthFlowForProvider(provider);
+    if (activeFlow) return this.oauthFlowState(activeFlow);
 
     const flow: PendingOAuthFlow = {
       id: randomUUID(),
@@ -981,7 +1003,7 @@ export class AgentRuntime {
       .catch((error: unknown) => {
         this.updateOAuthFlow(flow, {
           status: flow.status === "cancelled" ? "cancelled" : "error",
-          error: error instanceof Error ? error.message : String(error),
+          error: this.oauthLoginErrorMessage(flow.providerName, error),
         });
         this.scheduleOAuthFlowCleanup(flow, 60_000);
       });
