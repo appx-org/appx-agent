@@ -213,7 +213,7 @@ project's `.pi/` directory and let Pi discover them. `PI_EXTENSION_PATHS`,
 temporary overlays or package sources that should not be committed to the
 project workspace.
 
-Practical candidates to close the OpenCode gap:
+Practical candidates for richer Pi-backed app agents:
 
 - `pi-webaio` — web search/fetch/crawl tooling, including Brave-style search,
   useful for app-building agents that need current docs.
