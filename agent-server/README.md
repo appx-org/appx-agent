@@ -1,12 +1,18 @@
 # @appx/agent-server
 
-Pi-SDK-based agent orchestration. Standalone HTTP/SSE service for Appx project agents.
+Pi-SDK-based agent orchestration. Standalone HTTP/SSE service for app agents.
 
 This is the **Agent Server Source** from the Appx App Anatomy: a self-contained
 TypeScript service that wraps the [pi coding agent SDK](https://github.com/earendil-works/pi)
-into a stable REST + SSE contract. Appx talks to it over loopback, keeps
-provider auth/model state shared under `AGENT_DIR`, and routes project sessions
-through `/v1/projects/:projectId/*` with trusted project context headers.
+into a stable REST + SSE contract.
+
+Two route modes are supported:
+
+- `AGENT_SERVER_MODE=single` (default) — standalone apps such as Eventx use
+  `/v1/sessions` directly with one project per process.
+- `AGENT_SERVER_MODE=multi` — Appx runs one shared service, keeps
+  provider auth/model state under `AGENT_DIR`, and routes sessions through
+  `/v1/projects/:projectId/*` with trusted project context headers.
 
 ## Run it
 
@@ -31,8 +37,9 @@ All via env vars (see `.env.example`):
 
 | Var                  | Required | Default                      | Notes                                                                 |
 | -------------------- | -------- | ---------------------------- | --------------------------------------------------------------------- |
-| `PROJECT_DIR`        | yes      | —                            | default cwd for legacy unscoped `/v1/sessions` calls                  |
-| `SESSIONS_DIR`       | no       | `$PROJECT_DIR/data/sessions` | session dir for legacy unscoped `/v1/sessions` calls                  |
+| `PROJECT_DIR`        | yes      | —                            | cwd for `single`; host root/default cwd for `multi`                   |
+| `AGENT_SERVER_MODE`  | no       | `single`                     | `single` exposes `/v1/sessions`; `multi` exposes project sessions under `/v1/projects/:projectId` |
+| `SESSIONS_DIR`       | no       | `$PROJECT_DIR/data/sessions` | session dir for `single`; default runtime dir for `multi`             |
 | `AGENT_DIR`          | no       | Pi default                   | pi config/auth/models dir; falls back to `PI_CODING_AGENT_DIR` / `~/.pi/agent` |
 | `AGENTS_FILE`        | no       | `.pi/AGENTS.md`              | system prompt file (relative to `PROJECT_DIR` or absolute)            |
 | `ANTHROPIC_API_KEY`  | no       | —                            | injected into pi's AuthStorage; falls back to `~/.pi/agent/auth.json` |
@@ -49,10 +56,12 @@ All via env vars (see `.env.example`):
 | `AGENT_SERVER_PORT`  | no       | `4001`                       | bind port                                                             |
 | `AGENT_SERVER_TOKEN` | no       | —                            | if set, `/v1/*` requires `Authorization: Bearer <token>`              |
 
-Project-scoped Appx calls use `/v1/projects/:projectId/sessions...`. The
-standalone server resolves those runtimes from `X-Appx-Project-Dir`, which Appx
-sets after validating the project id. Each project runtime writes sessions to
-`<projectDir>/data/sessions` and reads its prompt from `<projectDir>/.pi/AGENTS.md`.
+In `multi` mode, project-scoped Appx calls use
+`/v1/projects/:projectId/sessions...`. The standalone server resolves those
+runtimes from `X-Appx-Project-Dir`, which Appx sets after validating the
+project id. Each project runtime writes sessions to `<projectDir>/data/sessions`
+and reads its prompt from `<projectDir>/.pi/AGENTS.md`. Shared auth and custom
+provider routes stay global at `/v1/auth/*` and `/v1/custom/*`.
 
 Auth is opt-in. Loopback-only + single-user dev → unset is fine. Set
 `AGENT_SERVER_TOKEN` for shared hosts or any deployment where another local
@@ -64,7 +73,7 @@ REST routes are defined with [Zod](https://zod.dev) via `@hono/zod-openapi`.
 The OpenAPI 3.1 doc is the contract surface for consumers; types are
 generated from it (see "Consuming from another app" below).
 
-Mounted under `/v1`:
+In `single` mode, all routes are mounted under `/v1`:
 
 | Method | Path                       | Description                                           |
 | ------ | -------------------------- | ----------------------------------------------------- |
@@ -95,6 +104,10 @@ Plus:
 
 - `GET /openapi.json` — OpenAPI 3.1 document
 - `GET /docs` — Swagger UI
+
+In `multi` mode, auth/custom/health routes remain under `/v1`, and session
+routes move under `/v1/projects/{projectId}`. For example,
+`GET /v1/projects/{projectId}/sessions` lists only that project's sessions.
 
 ### SSE wire format
 
@@ -220,6 +233,7 @@ Generate the static `openapi.json` once after a build, then feed it to
 # in this repo
 npm run build
 npm run openapi          # writes ./openapi.json
+# or: AGENT_SERVER_MODE=multi npm run openapi
 
 # in the consuming app
 npx openapi-typescript ../../agent-server/openapi.json -o src/generated/agent-server.d.ts
@@ -260,6 +274,17 @@ app.route("/v1/projects/:projectId", createSessionsApp((c) =>
 
 This exists for tests and for hosts that have a strong reason to share a
 process. The standalone server is the primary deployment.
+
+For an embedded Appx-style multi-project host, mount shared settings and
+project sessions separately:
+
+```ts
+app.route("/v1", createSessionsApp(registry.defaultRuntime, { sessionRoutes: false }));
+app.route(
+  "/v1/projects/:projectId",
+  createSessionsApp(projectRuntime, { credentialRoutes: false, healthRoute: false }),
+);
+```
 
 ## Pi specifics
 

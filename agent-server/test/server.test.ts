@@ -713,6 +713,59 @@ describe("agent-server: REST surface", () => {
 });
 
 describe("agent-server: project-scoped runtimes", () => {
+	test("multi-project route split keeps credentials global and sessions project-scoped", async () => {
+		const project = makeProject();
+		const port = await pickPort();
+		const registry = new AgentRuntimeRegistry({
+			projectDir: project.dir,
+			sessionsDir: resolve(project.dir, "data/default-sessions"),
+			agentDir: resolve(project.dir, ".pi-agent"),
+			agentsFile: ".pi/AGENTS.md",
+			defaultAgentsFile: false,
+			logger: { log: () => {}, error: () => {} },
+		});
+
+		const root = new OpenAPIHono();
+		root.route("/v1", createSessionsApp(registry.defaultRuntime, { sessionRoutes: false }));
+		root.route(
+			"/v1/projects/:projectId",
+			createSessionsApp(
+				(c) =>
+					registry.forProject({
+						id: c.req.param("projectId"),
+						projectDir: c.req.header("x-appx-project-dir")!,
+					}),
+				{ credentialRoutes: false, healthRoute: false },
+			),
+		);
+		const server = serve({ fetch: root.fetch, hostname: "127.0.0.1", port });
+		const baseUrl = `http://127.0.0.1:${port}`;
+
+		try {
+			const globalAuth = await fetch(`${baseUrl}/v1/auth/providers`);
+			assert.equal(globalAuth.status, 200);
+
+			const unscopedSessions = await fetch(`${baseUrl}/v1/sessions`);
+			assert.equal(unscopedSessions.status, 404);
+
+			const projectAuth = await fetch(`${baseUrl}/v1/projects/project-a/auth/providers`, {
+				headers: { "x-appx-project-dir": project.dir },
+			});
+			assert.equal(projectAuth.status, 404);
+
+			const create = await fetch(`${baseUrl}/v1/projects/project-a/sessions`, {
+				method: "POST",
+				headers: { "x-appx-project-dir": project.dir },
+			});
+			assert.equal(create.status, 200);
+		} finally {
+			await new Promise<void>((res, rej) => {
+				server.close((err) => (err ? rej(err) : res()));
+			});
+			project.cleanup();
+		}
+	});
+
 	test("project routes isolate sessions by project directory", async () => {
 		const projectA = makeProject();
 		const projectB = makeProject();

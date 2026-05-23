@@ -18,6 +18,12 @@ export type AgentRuntimeRegistryConfig = Omit<
   "authStorage" | "modelRegistry"
 > & {
   /**
+   * Agents file for the default runtime. Set to false for multi-project hosts
+   * where the default runtime only owns shared auth/model settings and should
+   * not try to load a prompt from the host project root.
+   */
+  defaultAgentsFile?: string | false;
+  /**
    * Project-local extension files loaded for each project when present.
    * Relative paths are resolved against that project's root.
    */
@@ -42,6 +48,7 @@ export class AgentRuntimeRegistry {
       projectDir: resolve(config.projectDir),
       sessionsDir: resolve(config.sessionsDir),
       agentDir: config.agentDir ? resolve(config.agentDir) : undefined,
+      defaultAgentsFile: config.defaultAgentsFile,
       projectExtensionPaths: config.projectExtensionPaths ?? [".pi/extensions/appx-guardrails.ts"],
     };
 
@@ -76,6 +83,12 @@ export class AgentRuntimeRegistry {
 
   private createRuntime(context: ProjectRuntimeContext): AgentRuntime {
     const projectDir = resolve(context.projectDir);
+    const agentsFile =
+      context.id === "default"
+        ? this.config.defaultAgentsFile === false
+          ? undefined
+          : this.config.defaultAgentsFile ?? this.config.agentsFile
+        : this.config.agentsFile;
     const extensionPaths = [
       ...(this.config.extensionPaths ?? []),
       ...this.projectExtensionPaths(projectDir),
@@ -96,6 +109,7 @@ export class AgentRuntimeRegistry {
       modelRegistry: this.modelRegistry,
       configureModelRegistry: undefined,
       extensionPaths,
+      agentsFile,
     });
   }
 

@@ -2,16 +2,22 @@
 /**
  * Standalone agent-server entrypoint.
  *
- * Multi-project model: one process per Appx host. Shared Pi auth/model
- * state is kept under AGENT_DIR, while project session runtimes are
- * created lazily from trusted Appx proxy headers. Bind to 127.0.0.1 by
- * default — the eventx-backend (and any other intra-app caller) reaches
- * us over loopback.
+ * The server supports two explicit routing modes:
+ *   - single: standalone apps (eventx-style) use /v1/sessions directly.
+ *   - multi: Appx uses shared /v1 auth/custom routes plus project sessions
+ *     under /v1/projects/:projectId.
+ *
+ * In both modes shared Pi auth/model state is kept under AGENT_DIR. Multi
+ * mode creates project session runtimes lazily from trusted Appx proxy
+ * headers. Bind to 127.0.0.1 by default so app backends reach us over
+ * loopback.
  *
  * Required env:
- *   PROJECT_DIR            cwd handed to pi (skill discovery rooted here)
+ *   PROJECT_DIR            cwd handed to pi in single mode; default host
+ *                          root in multi mode
  *
  * Optional env:
+ *   AGENT_SERVER_MODE      single or multi (default: single)
  *   SESSIONS_DIR           where pi writes session JSONL files
  *                          (default: <PROJECT_DIR>/data/sessions)
  *   AGENT_DIR              pi agent config dir (default: ~/.pi/agent, or
@@ -58,6 +64,18 @@ function optional(name: string, fallback: string): string {
 	return v && v.trim() ? v : fallback;
 }
 
+type AgentServerMode = "single" | "multi";
+
+function parseMode(): AgentServerMode {
+	const raw = optional("AGENT_SERVER_MODE", "single").trim().toLowerCase();
+	if (raw === "single" || raw === "standalone") return "single";
+	if (raw === "multi" || raw === "multi-project" || raw === "appx") return "multi";
+	console.error(
+		`[agent-server] unsupported AGENT_SERVER_MODE=${raw}; expected single or multi`,
+	);
+	process.exit(2);
+}
+
 function optionalList(name: string): string[] {
 	const v = process.env[name];
 	if (!v?.trim()) return [];
@@ -89,7 +107,8 @@ const agentsFile = optional("AGENTS_FILE", ".pi/AGENTS.md");
 
 const host = optional("AGENT_SERVER_HOST", "127.0.0.1");
 const port = Number(optional("AGENT_SERVER_PORT", "4001"));
-const token = process.env.AGENT_SERVER_TOKEN?.trim();
+const token = (process.env.AGENT_SERVER_TOKEN ?? process.env.APPX_AGENT_SERVER_TOKEN)?.trim();
+const mode = parseMode();
 
 logLiteLlmStartupConfig();
 
@@ -98,6 +117,7 @@ const runtimeRegistry = new AgentRuntimeRegistry({
 	sessionsDir,
 	agentDir,
 	agentsFile,
+	defaultAgentsFile: mode === "multi" ? false : undefined,
 	anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 	extensionPaths: optionalList("PI_EXTENSION_PATHS"),
 	skillPaths: optionalList("PI_SKILL_PATHS"),
@@ -153,10 +173,21 @@ root.onError((err, c) => {
 	return c.json({ error: "internal server error" }, 500);
 });
 
-// Mount the versioned API under /v1. The legacy unscoped surface remains for
-// global auth/custom-provider settings and backwards-compatible local usage.
-root.route("/v1", createSessionsApp(runtimeRegistry.defaultRuntime));
-root.route("/v1/projects/:projectId", createSessionsApp(projectRuntimeFromRequest));
+// Mount the versioned API under /v1. Single mode keeps the standalone surface
+// for eventx/spotifyx-style callers; multi mode makes Appx project scoping
+// explicit and keeps credentials at one shared URL surface.
+if (mode === "single") {
+	root.route("/v1", createSessionsApp(runtimeRegistry.defaultRuntime));
+} else {
+	root.route("/v1", createSessionsApp(runtimeRegistry.defaultRuntime, { sessionRoutes: false }));
+	root.route(
+		"/v1/projects/:projectId",
+		createSessionsApp(projectRuntimeFromRequest, {
+			credentialRoutes: false,
+			healthRoute: false,
+		}),
+	);
+}
 
 // OpenAPI document + Swagger UI. Doc lives at /openapi.json so consumers
 // (eventx-backend) can fetch it for codegen at build time.
@@ -166,7 +197,9 @@ root.doc("/openapi.json", {
 		title: "Appx Agent Server",
 		version: "0.1.0",
 		description:
-			"Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes.",
+			mode === "multi"
+				? "Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes."
+				: "Pi-SDK-based agent orchestration for standalone app sessions.",
 	},
 	servers: [{ url: `http://${host}:${port}`, description: "local" }],
 });
@@ -178,18 +211,25 @@ root.get("/", (c) =>
 	c.json({
 		ok: true,
 		service: "agent-server",
+		mode,
 		docs: "/docs",
 		openapi: "/openapi.json",
 		v1: "/v1",
+		sessions:
+			mode === "multi"
+				? "/v1/projects/:projectId/sessions"
+				: "/v1/sessions",
 	}),
 );
 
 serve({ fetch: root.fetch, hostname: host, port }, (info) => {
 	console.log(`[agent-server] listening on http://${info.address}:${info.port}`);
+	console.log(`[agent-server] mode=${mode}`);
 	console.log(`[agent-server] defaultProjectDir=${projectDir}`);
 	console.log(`[agent-server] defaultSessionsDir=${sessionsDir}`);
 	if (agentDir) console.log(`[agent-server] agentDir=${agentDir}`);
-	console.log(`[agent-server] agentsFile=${agentsFile}`);
+	if (mode === "single") console.log(`[agent-server] agentsFile=${agentsFile}`);
+	else console.log(`[agent-server] projectAgentsFile=${agentsFile}`);
 	if (process.env.PI_EXTENSION_PATHS?.trim()) console.log(`[agent-server] PI_EXTENSION_PATHS=${process.env.PI_EXTENSION_PATHS}`);
 	if (process.env.PI_SKILL_PATHS?.trim()) console.log(`[agent-server] PI_SKILL_PATHS=${process.env.PI_SKILL_PATHS}`);
 	if (process.env.PI_PROMPT_PATHS?.trim()) console.log(`[agent-server] PI_PROMPT_PATHS=${process.env.PI_PROMPT_PATHS}`);

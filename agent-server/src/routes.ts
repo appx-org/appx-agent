@@ -74,6 +74,17 @@ import { channelStats, subscribe } from "./sseBroker.js";
 const SSE_HEARTBEAT_MS = 15_000;
 
 export type AgentRuntimeResolver = (c: Context) => AgentRuntime | Promise<AgentRuntime>;
+export type CreateSessionsAppOptions = {
+  /**
+   * Provider auth and custom model routes. Disable these on project-scoped
+   * mounts so shared credentials only have one global URL surface.
+   */
+  credentialRoutes?: boolean;
+  /** Session routes, including model selection for the active runtime. */
+  sessionRoutes?: boolean;
+  /** Liveness endpoint for this mounted API. */
+  healthRoute?: boolean;
+};
 
 function isRuntimeResolver(
   runtime: AgentRuntime | AgentRuntimeResolver,
@@ -94,13 +105,19 @@ function settingsErrorStatus(err: unknown): 400 | 404 | 409 | 500 {
  * job (server.ts mounts this under /v1) so we can move /v2 alongside
  * later without rewriting routes.
  */
-export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver): OpenAPIHono {
+export function createSessionsApp(
+  runtime: AgentRuntime | AgentRuntimeResolver,
+  options: CreateSessionsAppOptions = {},
+): OpenAPIHono {
   const app = new OpenAPIHono();
+  const credentialRoutes = options.credentialRoutes ?? true;
+  const sessionRoutes = options.sessionRoutes ?? true;
+  const healthRoute = options.healthRoute ?? true;
   const getRuntime = (c: Context) =>
     isRuntimeResolver(runtime) ? runtime(c) : runtime;
 
   // ── GET /sessions ────────────────────────────────────────────────
-  app.openapi(
+  if (sessionRoutes) app.openapi(
     createRoute({
       method: "get",
       path: "/sessions",
@@ -123,7 +140,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── GET /sessions/models ────────────────────────────────────────
-  app.openapi(
+  if (sessionRoutes) app.openapi(
     createRoute({
       method: "get",
       path: "/sessions/models",
@@ -145,7 +162,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── GET /auth/providers ─────────────────────────────────────────
-  app.openapi(
+  if (credentialRoutes) app.openapi(
     createRoute({
       method: "get",
       path: "/auth/providers",
@@ -167,7 +184,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── PUT /auth/providers/{provider}/api-key ──────────────────────
-  app.openapi(
+  if (credentialRoutes) app.openapi(
     createRoute({
       method: "put",
       path: "/auth/providers/{provider}/api-key",
@@ -205,7 +222,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── DELETE /auth/providers/{provider} ───────────────────────────
-  app.openapi(
+  if (credentialRoutes) app.openapi(
     createRoute({
       method: "delete",
       path: "/auth/providers/{provider}",
@@ -236,7 +253,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── POST /auth/providers/{provider}/subscription/start ──────────
-  app.openapi(
+  if (credentialRoutes) app.openapi(
     createRoute({
       method: "post",
       path: "/auth/providers/{provider}/subscription/start",
@@ -266,7 +283,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── GET /auth/subscription/{flowId} ──────────────────────────────
-  app.openapi(
+  if (credentialRoutes) app.openapi(
     createRoute({
       method: "get",
       path: "/auth/subscription/{flowId}",
@@ -294,7 +311,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── POST /auth/subscription/{flowId}/continue ────────────────────
-  app.openapi(
+  if (credentialRoutes) app.openapi(
     createRoute({
       method: "post",
       path: "/auth/subscription/{flowId}/continue",
@@ -336,7 +353,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── DELETE /auth/subscription/{flowId} ───────────────────────────
-  app.openapi(
+  if (credentialRoutes) app.openapi(
     createRoute({
       method: "delete",
       path: "/auth/subscription/{flowId}",
@@ -364,7 +381,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── GET /custom/providers ────────────────────────────────────────
-  app.openapi(
+  if (credentialRoutes) app.openapi(
     createRoute({
       method: "get",
       path: "/custom/providers",
@@ -384,7 +401,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── PUT /custom/providers ────────────────────────────────────────
-  app.openapi(
+  if (credentialRoutes) app.openapi(
     createRoute({
       method: "put",
       path: "/custom/providers",
@@ -418,7 +435,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── DELETE /custom/providers/{provider} ──────────────────────────
-  app.openapi(
+  if (credentialRoutes) app.openapi(
     createRoute({
       method: "delete",
       path: "/custom/providers/{provider}",
@@ -449,7 +466,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── POST /sessions ───────────────────────────────────────────────
-  app.openapi(
+  if (sessionRoutes) app.openapi(
     createRoute({
       method: "post",
       path: "/sessions",
@@ -472,7 +489,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── GET /sessions/{id}/settings ─────────────────────────────────
-  app.openapi(
+  if (sessionRoutes) app.openapi(
     createRoute({
       method: "get",
       path: "/sessions/{id}/settings",
@@ -502,7 +519,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── PATCH /sessions/{id}/settings ────────────────────────────────
-  app.openapi(
+  if (sessionRoutes) app.openapi(
     createRoute({
       method: "patch",
       path: "/sessions/{id}/settings",
@@ -562,7 +579,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── GET /sessions/{id} ───────────────────────────────────────────
-  app.openapi(
+  if (sessionRoutes) app.openapi(
     createRoute({
       method: "get",
       path: "/sessions/{id}",
@@ -592,7 +609,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── GET /sessions/{id}/extension-ui ─────────────────────────────
-  app.openapi(
+  if (sessionRoutes) app.openapi(
     createRoute({
       method: "get",
       path: "/sessions/{id}/extension-ui",
@@ -622,7 +639,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── POST /sessions/{id}/extension-ui/{requestId}/response ───────
-  app.openapi(
+  if (sessionRoutes) app.openapi(
     createRoute({
       method: "post",
       path: "/sessions/{id}/extension-ui/{requestId}/response",
@@ -657,7 +674,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── POST /sessions/{id}/prompt ───────────────────────────────────
-  app.openapi(
+  if (sessionRoutes) app.openapi(
     createRoute({
       method: "post",
       path: "/sessions/{id}/prompt",
@@ -696,7 +713,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── POST /sessions/{id}/abort ────────────────────────────────────
-  app.openapi(
+  if (sessionRoutes) app.openapi(
     createRoute({
       method: "post",
       path: "/sessions/{id}/abort",
@@ -727,7 +744,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   );
 
   // ── GET /healthz ─────────────────────────────────────────────────
-  app.openapi(
+  if (healthRoute) app.openapi(
     createRoute({
       method: "get",
       path: "/healthz",
@@ -758,7 +775,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   // see the path, but no JSON schema is generated for it. The frontend
   // consumes this via `EventSource`; eventx-backend pipes the upstream
   // stream byte-for-byte.
-  app.openAPIRegistry.registerPath({
+  if (sessionRoutes) app.openAPIRegistry.registerPath({
     // pure documentation for reference
     method: "get",
     path: "/sessions/{id}/events",
@@ -782,7 +799,7 @@ export function createSessionsApp(runtime: AgentRuntime | AgentRuntimeResolver):
   });
 
   // actual handler for the SSE endpoint
-  app.get("/sessions/:id/events", async (c) => {
+  if (sessionRoutes) app.get("/sessions/:id/events", async (c) => {
     const runtime = await getRuntime(c);
     const id = c.req.param("id");
     const session = await runtime.ensureSession(id);

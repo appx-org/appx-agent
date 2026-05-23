@@ -15,6 +15,8 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { AgentRuntime } from "./runtime.js";
 import { createSessionsApp } from "./routes.js";
 
+const mode = process.env.AGENT_SERVER_MODE === "multi" ? "multi" : "single";
+
 // We need an AgentRuntime to construct the routes app, but we never
 // actually call any runtime methods during doc generation — the routes
 // just reference handler functions whose signatures don't depend on
@@ -28,7 +30,18 @@ const runtime = new AgentRuntime({
 });
 
 const root = new OpenAPIHono();
-root.route("/v1", createSessionsApp(runtime));
+if (mode === "single") {
+	root.route("/v1", createSessionsApp(runtime));
+} else {
+	root.route("/v1", createSessionsApp(runtime, { sessionRoutes: false }));
+	root.route(
+		"/v1/projects/:projectId",
+		createSessionsApp(runtime, {
+			credentialRoutes: false,
+			healthRoute: false,
+		}),
+	);
+}
 
 const doc = root.getOpenAPI31Document({
 	openapi: "3.1.0",
@@ -36,10 +49,12 @@ const doc = root.getOpenAPI31Document({
 		title: "Appx Agent Server",
 		version: "0.1.0",
 		description:
-			"Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes.",
+			mode === "multi"
+				? "Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes."
+				: "Pi-SDK-based agent orchestration for standalone app sessions.",
 	},
 });
 
 const outPath = resolve(process.cwd(), "openapi.json");
 writeFileSync(outPath, `${JSON.stringify(doc, null, 2)}\n`);
-console.log(`[openapi] wrote ${outPath}`);
+console.log(`[openapi] wrote ${outPath} (${mode} mode)`);

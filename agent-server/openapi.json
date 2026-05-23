@@ -3,7 +3,7 @@
   "info": {
     "title": "Appx Agent Server",
     "version": "0.1.0",
-    "description": "Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes."
+    "description": "Pi-SDK-based agent orchestration for standalone app sessions."
   },
   "components": {
     "schemas": {
@@ -129,6 +129,355 @@
           "models"
         ]
       },
+      "AuthProviderRow": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "credentialType": {
+            "type": "string",
+            "enum": [
+              "api_key",
+              "oauth"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "stored",
+              "runtime",
+              "environment",
+              "fallback",
+              "models_json_key",
+              "models_json_command"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "supportsApiKey": {
+            "type": "boolean"
+          },
+          "supportsSubscription": {
+            "type": "boolean"
+          },
+          "modelCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "availableModelCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "provider",
+          "name",
+          "configured",
+          "supportsApiKey",
+          "supportsSubscription",
+          "modelCount",
+          "availableModelCount"
+        ]
+      },
+      "ListAuthProvidersResponse": {
+        "type": "object",
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthProviderRow"
+            }
+          }
+        },
+        "required": [
+          "providers"
+        ]
+      },
+      "OkResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "SetProviderApiKeyRequest": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "OAuthFlowState": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "providerName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "starting",
+              "prompt",
+              "auth",
+              "waiting",
+              "complete",
+              "error",
+              "cancelled"
+            ]
+          },
+          "authUrl": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "placeholder": {
+                "type": "string"
+              },
+              "allowEmpty": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "message"
+            ]
+          },
+          "progress": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "providerName",
+          "status",
+          "progress",
+          "expiresAt"
+        ]
+      },
+      "ContinueOAuthFlowRequest": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "CustomProviderModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "api": {
+            "type": "string",
+            "enum": [
+              "openai-completions",
+              "openai-responses",
+              "anthropic-messages"
+            ]
+          },
+          "reasoning": {
+            "type": "boolean"
+          },
+          "thinkingLevelMap": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "input": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "text",
+                "image"
+              ]
+            }
+          },
+          "contextWindow": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "maxTokens": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "compat": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "CustomProviderRow": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "api": {
+            "type": "string",
+            "enum": [
+              "openai-completions",
+              "openai-responses",
+              "anthropic-messages"
+            ]
+          },
+          "apiKeyConfigured": {
+            "type": "boolean"
+          },
+          "modelCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomProviderModel"
+            }
+          }
+        },
+        "required": [
+          "provider",
+          "apiKeyConfigured",
+          "modelCount",
+          "models"
+        ]
+      },
+      "ListCustomProvidersResponse": {
+        "type": "object",
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomProviderRow"
+            }
+          }
+        },
+        "required": [
+          "providers"
+        ]
+      },
+      "UpsertCustomProviderRequest": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_.:-]+$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "api": {
+            "type": "string",
+            "enum": [
+              "openai-completions",
+              "openai-responses",
+              "anthropic-messages"
+            ]
+          },
+          "apiKey": {
+            "type": "string"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomProviderModel"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "provider",
+          "baseUrl",
+          "api",
+          "models"
+        ]
+      },
       "CreateSessionResponse": {
         "type": "object",
         "properties": {
@@ -184,17 +533,6 @@
           "isStreaming"
         ]
       },
-      "ErrorResponse": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "error"
-        ]
-      },
       "PatchSessionSettingsRequest": {
         "type": "object",
         "properties": {
@@ -239,20 +577,6 @@
         },
         "required": [
           "requests"
-        ]
-      },
-      "OkResponse": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          }
-        },
-        "required": [
-          "ok"
         ]
       },
       "ExtensionUiResponseRequest": {
@@ -396,6 +720,403 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListModelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/providers": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List non-secret provider auth status for the runtime.",
+        "responses": {
+          "200": {
+            "description": "Known providers and whether each has configured auth.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListAuthProvidersResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/providers/{provider}/api-key": {
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Store an API key for a provider in Pi auth storage.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$"
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetProviderApiKeyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credential stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid provider or key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/providers/{provider}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Remove a stored provider credential from Pi auth storage.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$"
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Credential removed if it existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid provider.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/providers/{provider}/subscription/start": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start a Pi subscription OAuth login flow.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$"
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current flow state. Continue if a prompt or pasted redirect is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthFlowState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Provider does not support subscription auth.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/subscription/{flowId}": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Return subscription login flow state.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "flowId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current flow state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthFlowState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flow not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Cancel a pending subscription login flow.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "flowId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled flow state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthFlowState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flow not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/subscription/{flowId}/continue": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Continue a subscription login flow with prompt input or pasted redirect URL.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "flowId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinueOAuthFlowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated flow state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthFlowState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flow not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/custom/providers": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "List custom models.json providers without secret values.",
+        "responses": {
+          "200": {
+            "description": "Custom providers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListCustomProvidersResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Create or update a custom Pi provider in models.json.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCustomProviderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Custom provider saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomProviderRow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid custom provider config.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/custom/providers/{provider}": {
+      "delete": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Remove a custom Pi provider from models.json.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$"
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Custom provider removed if it existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid provider.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
