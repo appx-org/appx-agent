@@ -4,3 +4,9 @@ dist/
 .env.local
 *.log
 .DS_Store
+
+# IDE
+.vscode/
+
+# Docs
+docs/misc/
