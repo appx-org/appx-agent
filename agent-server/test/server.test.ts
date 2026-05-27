@@ -30,8 +30,10 @@ import { type AddressInfo, createServer, type Server } from "node:net";
 import { after, before, describe, test } from "node:test";
 import { serve } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { litellmRuntimeConfig, resetLiteLlmConfigForTests, resolveLiteLlmConfig } from "../src/litellm.js";
 import { AgentRuntime, type AgentRuntimeConfig } from "../src/runtime.js";
+import { AgentCredentialsService } from "../src/credentialsService.js";
 import { AgentRuntimeRegistry } from "../src/runtimeRegistry.js";
 import { createSessionsApp } from "../src/routes.js";
 import { publish } from "../src/sseBroker.js";
@@ -65,6 +67,25 @@ function makeProject(): { dir: string; cleanup: () => void } {
 }
 
 /**
+ * Build auth/model/credentials for test runtimes.
+ */
+function makeCredentials(agentDir: string): {
+	authStorage: AuthStorage;
+	modelRegistry: ModelRegistry;
+	credentials: AgentCredentialsService;
+} {
+	const authStorage = AuthStorage.create(resolve(agentDir, "auth.json"));
+	const modelRegistry = ModelRegistry.create(authStorage, resolve(agentDir, "models.json"));
+	const credentials = new AgentCredentialsService({
+		authStorage,
+		modelRegistry,
+		modelsJsonPath: resolve(agentDir, "models.json"),
+		logger: { log: () => {}, error: () => {} },
+	});
+	return { authStorage, modelRegistry, credentials };
+}
+
+/**
  * Start a fully-wired agent-server (mirroring server.ts) on the given
  * port, optionally with bearer auth. Returns the server handle and
  * base URL.
@@ -75,14 +96,21 @@ async function startServer(opts: {
 	token?: string;
 	runtimeConfig?: Partial<AgentRuntimeConfig>;
 }): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+	const agentDir = resolve(opts.projectDir, ".pi-agent");
+	const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
+	opts.runtimeConfig?.configureModelRegistry?.(modelRegistry);
 	const runtime = new AgentRuntime({
 		projectDir: opts.projectDir,
 		sessionsDir: resolve(opts.projectDir, "data/sessions"),
-		agentDir: resolve(opts.projectDir, ".pi-agent"),
+		agentDir,
 		agentsFile: ".pi/AGENTS.md",
+		credentials,
+		authStorage,
+		modelRegistry,
 		// Silence the runtime's startup logs in test output.
 		logger: { log: () => {}, error: () => {} },
 		...opts.runtimeConfig,
+		configureModelRegistry: undefined,
 	});
 
 	const root = new OpenAPIHono();
@@ -143,13 +171,21 @@ describe("agent-server: LiteLLM config", () => {
 			process.env.LITELLM_MODELS_JSON = JSON.stringify([{ id: "openai/gpt-5.5" }]);
 			resetLiteLlmConfigForTests();
 
+			const agentDir = resolve(project.dir, ".pi-agent");
+			const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
+			const litellmConfig = litellmRuntimeConfig();
+			litellmConfig.configureModelRegistry?.(modelRegistry);
 			const runtime = new AgentRuntime({
+				...litellmConfig,
+				configureModelRegistry: undefined,
 				projectDir: project.dir,
 				sessionsDir: resolve(project.dir, "data/sessions"),
-				agentDir: resolve(project.dir, ".pi-agent"),
+				agentDir,
 				agentsFile: ".pi/AGENTS.md",
+				credentials,
+				authStorage,
+				modelRegistry,
 				logger: { log: () => {}, error: () => {} },
-				...litellmRuntimeConfig(),
 			});
 
 			const models = runtime.listModels().filter((model) => model.provider === "litellm");
@@ -286,11 +322,16 @@ describe("agent-server: REST surface", () => {
 	test("provider auth status treats runtime credentials as configured", () => {
 		const project = makeProject();
 		try {
+			const agentDir = resolve(project.dir, ".pi-agent");
+			const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
 			const runtime = new AgentRuntime({
 				projectDir: project.dir,
 				sessionsDir: resolve(project.dir, "data/sessions"),
-				agentDir: resolve(project.dir, ".pi-agent"),
+				agentDir,
 				agentsFile: ".pi/AGENTS.md",
+				credentials,
+				authStorage,
+				modelRegistry,
 				anthropicApiKey: "sk-ant-runtime-test",
 				logger: { log: () => {}, error: () => {} },
 			});

@@ -45,6 +45,7 @@ import {
   clampThinkingLevelForModel,
   supportedThinkingLevelsForModel,
 } from "./thinking.js";
+import { AgentCredentialsService } from "./credentialsService.js";
 
 type SessionModel = NonNullable<CreateAgentSessionOptions["model"]>;
 export type { ThinkingLevel } from "./thinking.js";
@@ -60,6 +61,8 @@ export type AgentRuntimeConfig = {
   sessionsDir: string;
   /** Optional pi agent config dir. Defaults to Pi's standard ~/.pi/agent. */
   agentDir?: string;
+  /** Process-global credentials service shared with sibling runtimes. */
+  credentials: AgentCredentialsService;
   /** Optional shared Pi auth storage. Used by multi-project hosts. */
   authStorage?: AuthStorage;
   /** Optional shared model registry. Used by multi-project hosts. */
@@ -274,6 +277,7 @@ export class AgentRuntime {
   private readonly sessionsDir: string;
   private readonly agentDir: string;
   private readonly modelsJsonPath: string;
+  private readonly credentials: AgentCredentialsService;
   private readonly authStorage: AuthStorage;
   private readonly modelRegistry: ModelRegistry;
   private readonly logger: Pick<Console, "log" | "error">;
@@ -320,6 +324,7 @@ export class AgentRuntime {
     mkdirSync(this.agentDir, { recursive: true });
     this.modelsJsonPath = join(this.agentDir, "models.json");
 
+    this.credentials = config.credentials;
     this.authStorage = config.authStorage ?? AuthStorage.create(join(this.agentDir, "auth.json"));
 
     if (config.agentsFile) {

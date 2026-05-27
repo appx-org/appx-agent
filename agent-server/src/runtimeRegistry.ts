@@ -2,10 +2,12 @@ import { existsSync, mkdirSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import {
   AuthStorage,
+  getAgentDir,
   ModelRegistry,
   type ModelRegistry as ModelRegistryType,
 } from "@earendil-works/pi-coding-agent";
 import { AgentRuntime, type AgentRuntimeConfig } from "./runtime.js";
+import { AgentCredentialsService } from "./credentialsService.js";
 
 export type ProjectRuntimeContext = {
   id: string;
@@ -15,7 +17,7 @@ export type ProjectRuntimeContext = {
 
 export type AgentRuntimeRegistryConfig = Omit<
   AgentRuntimeConfig,
-  "authStorage" | "modelRegistry"
+  "authStorage" | "modelRegistry" | "credentials"
 > & {
   /**
    * Agents file for the default runtime. Set to false for multi-project hosts
@@ -40,27 +42,40 @@ export class AgentRuntimeRegistry {
   private readonly authStorage: AuthStorage;
   private readonly modelRegistry: ModelRegistryType;
   private readonly runtimes = new Map<string, RuntimeEntry>();
+  readonly credentials: AgentCredentialsService;
   readonly defaultRuntime: AgentRuntime;
 
   constructor(config: AgentRuntimeRegistryConfig) {
+    // Resolve agentDir once so AuthStorage, ModelRegistry, AgentCredentialsService,
+    // and every per-project AgentRuntime all read/write the same auth.json and
+    // models.json files. Without this, an undefined agentDir falls back to Pi's
+    // getAgentDir() inside each AuthStorage/ModelRegistry/AgentRuntime, while the
+    // credentials service would silently target a different path.
+    const agentDir = config.agentDir ? resolve(config.agentDir) : getAgentDir();
     this.config = {
       ...config,
       projectDir: resolve(config.projectDir),
       sessionsDir: resolve(config.sessionsDir),
-      agentDir: config.agentDir ? resolve(config.agentDir) : undefined,
+      agentDir,
       defaultAgentsFile: config.defaultAgentsFile,
       projectExtensionPaths: config.projectExtensionPaths ?? [".pi/extensions/appx-guardrails.ts"],
     };
 
-    const agentDir = this.config.agentDir;
-    if (agentDir) mkdirSync(agentDir, { recursive: true });
-    this.authStorage = agentDir
-      ? AuthStorage.create(join(agentDir, "auth.json"))
-      : AuthStorage.create();
-    this.modelRegistry = agentDir
-      ? ModelRegistry.create(this.authStorage, join(agentDir, "models.json"))
-      : ModelRegistry.create(this.authStorage);
+    mkdirSync(agentDir, { recursive: true });
+    this.authStorage = AuthStorage.create(join(agentDir, "auth.json"));
+    this.modelRegistry = ModelRegistry.create(this.authStorage, join(agentDir, "models.json"));
     this.config.configureModelRegistry?.(this.modelRegistry);
+
+    this.credentials = new AgentCredentialsService({
+      authStorage: this.authStorage,
+      modelRegistry: this.modelRegistry,
+      modelsJsonPath: join(agentDir, "models.json"),
+      defaultModelProvider: this.config.defaultModelProvider,
+      defaultModelId: this.config.defaultModelId,
+      defaultThinkingLevel: this.config.defaultThinkingLevel,
+      modelThinkingDefaults: this.config.modelThinkingDefaults,
+      logger: this.config.logger,
+    });
 
     this.defaultRuntime = this.createRuntime({
       id: "default",
@@ -105,6 +120,7 @@ export class AgentRuntimeRegistry {
         context.id === "default"
           ? this.config.sessionsDir
           : resolve(projectDir, "data/sessions"),
+      credentials: this.credentials,
       authStorage: this.authStorage,
       modelRegistry: this.modelRegistry,
       configureModelRegistry: undefined,

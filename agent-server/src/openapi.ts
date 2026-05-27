@@ -12,7 +12,9 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { AgentRuntime } from "./runtime.js";
+import { AgentCredentialsService } from "./credentialsService.js";
 import { createSessionsApp } from "./routes.js";
 
 const mode = process.env.AGENT_SERVER_MODE === "multi" ? "multi" : "single";
@@ -23,9 +25,18 @@ const mode = process.env.AGENT_SERVER_MODE === "multi" ? "multi" : "single";
 // runtime state. Use a stub projectDir so AgentRuntime's constructor
 // passes its sanity checks.
 const stubProjectDir = resolve(process.cwd());
+const stubAuthStorage = AuthStorage.create();
+const stubModelRegistry = ModelRegistry.create(stubAuthStorage);
+const stubCredentials = new AgentCredentialsService({
+	authStorage: stubAuthStorage,
+	modelRegistry: stubModelRegistry,
+	modelsJsonPath: resolve(stubProjectDir, "models.json"),
+	logger: { log: () => {}, error: () => {} },
+});
 const runtime = new AgentRuntime({
 	projectDir: stubProjectDir,
 	sessionsDir: resolve(stubProjectDir, ".tmp-openapi-sessions"),
+	credentials: stubCredentials,
 	// no agentsFile so we don't require a real .pi/AGENTS.md for codegen
 });
 
