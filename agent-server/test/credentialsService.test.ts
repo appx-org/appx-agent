@@ -128,4 +128,35 @@ describe("AgentCredentialsService", () => {
     const cancelled = service.cancelProviderSubscriptionLogin(first.id);
     assert.equal(cancelled?.status, "cancelled");
   });
+
+  test("upsertCustomProvider writes models.json with 0600 perms and registers in ModelRegistry", () => {
+    const authStorage = AuthStorage.create(resolve(agent.dir, "auth.json"));
+    const modelRegistry = ModelRegistry.create(authStorage, resolve(agent.dir, "models.json"));
+    const service = new AgentCredentialsService({
+      authStorage,
+      modelRegistry,
+      modelsJsonPath: resolve(agent.dir, "models.json"),
+      logger: { log: () => {}, error: () => {} },
+    });
+
+    const row = service.upsertCustomProvider({
+      provider: "litellm-test",
+      name: "LiteLLM Test",
+      baseUrl: "http://litellm.test/v1",
+      api: "openai-completions",
+      apiKey: "test-secret",
+      models: [
+        { id: "test-model", name: "Test", api: "openai-completions", reasoning: false, input: ["text"], contextWindow: 4096, maxTokens: 1024 },
+      ],
+    });
+    assert.equal(row.provider, "litellm-test");
+    assert.equal(row.apiKeyConfigured, true);
+    assert.equal(row.modelCount, 1);
+
+    const listed = service.listCustomProviders();
+    assert.ok(listed.some((p) => p.provider === "litellm-test"));
+
+    service.removeCustomProvider("litellm-test");
+    assert.equal(service.listCustomProviders().some((p) => p.provider === "litellm-test"), false);
+  });
 });

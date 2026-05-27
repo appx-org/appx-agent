@@ -8,6 +8,7 @@
  * directly via createCredentialsApp.
  */
 import { randomUUID } from "node:crypto";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 import {
@@ -16,6 +17,9 @@ import {
 } from "./thinking.js";
 
 type SessionModel = NonNullable<CreateAgentSessionOptions["model"]>;
+const CUSTOM_PROVIDER_APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const;
+
+export type AgentCustomProviderApi = (typeof CUSTOM_PROVIDER_APIS)[number];
 
 export type AgentModelRow = {
   provider: string;
@@ -47,6 +51,37 @@ export type AgentAuthPrompt = {
   message: string;
   placeholder?: string;
   allowEmpty?: boolean;
+};
+
+export type AgentCustomProviderModel = {
+  id: string;
+  name?: string;
+  api?: AgentCustomProviderApi;
+  reasoning?: boolean;
+  thinkingLevelMap?: Partial<Record<ThinkingLevel, string | null>>;
+  input?: Array<"text" | "image">;
+  contextWindow?: number;
+  maxTokens?: number;
+  compat?: Record<string, unknown>;
+};
+
+export type AgentCustomProviderRow = {
+  provider: string;
+  name?: string;
+  baseUrl?: string;
+  api?: AgentCustomProviderApi;
+  apiKeyConfigured: boolean;
+  modelCount: number;
+  models: AgentCustomProviderModel[];
+};
+
+export type UpsertCustomProviderRequest = {
+  provider: string;
+  name?: string;
+  baseUrl: string;
+  api: AgentCustomProviderApi;
+  apiKey?: string;
+  models: AgentCustomProviderModel[];
 };
 
 export type AgentOAuthFlowState = {
@@ -114,6 +149,31 @@ export class AgentCredentialsService {
     if (!/^[a-zA-Z0-9_.:-]+$/.test(provider)) {
       throw new Error("invalid provider id");
     }
+  }
+
+  private customProviderApi(value: unknown): AgentCustomProviderApi | undefined {
+    return CUSTOM_PROVIDER_APIS.includes(value as AgentCustomProviderApi)
+      ? (value as AgentCustomProviderApi)
+      : undefined;
+  }
+
+  private readModelsJson(): { providers: Record<string, Record<string, unknown>> } {
+    if (!existsSync(this.modelsJsonPath)) return { providers: {} };
+    const parsed = JSON.parse(readFileSync(this.modelsJsonPath, "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("models.json must be a JSON object");
+    }
+    const record = parsed as Record<string, unknown>;
+    const providers = record.providers;
+    if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
+      return { ...record, providers: {} } as { providers: Record<string, Record<string, unknown>> };
+    }
+    return { ...record, providers } as { providers: Record<string, Record<string, unknown>> };
+  }
+
+  private writeModelsJson(config: { providers: Record<string, Record<string, unknown>> }): void {
+    writeFileSync(this.modelsJsonPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    chmodSync(this.modelsJsonPath, 0o600);
   }
 
   defaultThinkingForModel(model: SessionModel): ThinkingLevel | undefined {
@@ -394,5 +454,94 @@ export class AgentCredentialsService {
     this.updateOAuthFlow(flow, { status: "cancelled", error: "Login cancelled" });
     this.scheduleOAuthFlowCleanup(flow, 60_000);
     return this.oauthFlowState(flow);
+  }
+
+  listCustomProviders(): AgentCustomProviderRow[] {
+    const config = this.readModelsJson();
+    return Object.entries(config.providers)
+      .filter(([, providerConfig]) => Array.isArray(providerConfig.models))
+      .map(([provider, providerConfig]) => {
+        const models = (providerConfig.models as unknown[])
+          .filter(
+            (model): model is Record<string, unknown> =>
+              Boolean(model) && typeof model === "object" && typeof (model as { id?: unknown }).id === "string",
+          )
+          .map((model) => ({
+            ...model,
+            id: String(model.id),
+            name: typeof model.name === "string" ? model.name : undefined,
+            api: this.customProviderApi(model.api),
+            reasoning: typeof model.reasoning === "boolean" ? model.reasoning : undefined,
+            input: Array.isArray(model.input)
+              ? model.input.filter((entry): entry is "text" | "image" => entry === "text" || entry === "image")
+              : undefined,
+            contextWindow: typeof model.contextWindow === "number" ? model.contextWindow : undefined,
+            maxTokens: typeof model.maxTokens === "number" ? model.maxTokens : undefined,
+            thinkingLevelMap:
+              model.thinkingLevelMap && typeof model.thinkingLevelMap === "object" && !Array.isArray(model.thinkingLevelMap)
+                ? (model.thinkingLevelMap as Partial<Record<ThinkingLevel, string | null>>)
+                : undefined,
+            compat:
+              model.compat && typeof model.compat === "object" && !Array.isArray(model.compat)
+                ? (model.compat as Record<string, unknown>)
+                : undefined,
+          }));
+        return {
+          provider,
+          name: typeof providerConfig.name === "string" ? providerConfig.name : undefined,
+          baseUrl: typeof providerConfig.baseUrl === "string" ? providerConfig.baseUrl : undefined,
+          api: this.customProviderApi(providerConfig.api),
+          apiKeyConfigured: typeof providerConfig.apiKey === "string" && providerConfig.apiKey.trim().length > 0,
+          modelCount: models.length,
+          models,
+        };
+      })
+      .sort((a, b) => a.provider.localeCompare(b.provider));
+  }
+
+  upsertCustomProvider(input: UpsertCustomProviderRequest): AgentCustomProviderRow {
+    this.assertProviderId(input.provider);
+    const baseUrl = input.baseUrl.trim();
+    if (!baseUrl) throw new Error("baseUrl is required");
+    const parsedUrl = new URL(baseUrl);
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      throw new Error("baseUrl must use http or https");
+    }
+    const models = input.models.map((model) => ({ ...model, id: model.id.trim() }));
+    if (models.some((model) => !model.id)) throw new Error("model id is required");
+    if (!models.length) throw new Error("at least one model is required");
+
+    const config = this.readModelsJson();
+    const existing = config.providers[input.provider] ?? {};
+    const apiKey = input.apiKey?.trim() || (typeof existing.apiKey === "string" ? existing.apiKey : "");
+    if (!apiKey) throw new Error("apiKey is required for custom providers");
+
+    config.providers[input.provider] = {
+      name: input.name?.trim() || input.provider,
+      baseUrl,
+      api: input.api,
+      apiKey,
+      models: models.map((model) => ({
+        ...model,
+        name: model.name?.trim() || model.id,
+        api: model.api,
+        input: model.input ?? ["text"],
+        contextWindow: model.contextWindow ?? 128000,
+        maxTokens: model.maxTokens ?? 16384,
+        reasoning: model.reasoning ?? false,
+      })),
+    };
+
+    this.writeModelsJson(config);
+    this.modelRegistry.refresh();
+    return this.listCustomProviders().find((provider) => provider.provider === input.provider)!;
+  }
+
+  removeCustomProvider(provider: string): void {
+    this.assertProviderId(provider);
+    const config = this.readModelsJson();
+    delete config.providers[provider];
+    this.writeModelsJson(config);
+    this.modelRegistry.refresh();
   }
 }
