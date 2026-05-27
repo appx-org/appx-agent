@@ -88,4 +88,44 @@ describe("AgentCredentialsService", () => {
     });
     assert.throws(() => service.setProviderApiKey("bad provider!", "k"), /invalid provider id/);
   });
+
+  test("startProviderSubscriptionLogin reuses an active flow", async () => {
+    let loginCalls = 0;
+    const authStorage = AuthStorage.create(resolve(agent.dir, "auth.json"));
+    const modelRegistry = ModelRegistry.create(authStorage, resolve(agent.dir, "models.json"));
+    modelRegistry.registerProvider("test-reuse", {
+      name: "Test Reuse",
+      baseUrl: "https://example.test/v1",
+      api: "openai-completions",
+      oauth: {
+        name: "Test Reuse",
+        login: async (callbacks: any) => {
+          loginCalls += 1;
+          callbacks.onAuth?.({ url: "https://login.example.test/", instructions: "x" });
+          await callbacks.onManualCodeInput?.();
+          return { access: "tok", refresh: "rfr", expires: Date.now() + 60_000 };
+        },
+        refreshToken: async (c: any) => c,
+        getApiKey: (c: any) => c.access,
+      },
+      models: [
+        { id: "m", name: "M", api: "openai-completions", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 4096, maxTokens: 1024 },
+      ],
+    });
+
+    const service = new AgentCredentialsService({
+      authStorage,
+      modelRegistry,
+      modelsJsonPath: resolve(agent.dir, "models.json"),
+      logger: { log: () => {}, error: () => {} },
+    });
+
+    const first = await service.startProviderSubscriptionLogin("test-reuse");
+    const second = await service.startProviderSubscriptionLogin("test-reuse");
+    assert.equal(second.id, first.id);
+    assert.equal(loginCalls, 1);
+
+    const cancelled = service.cancelProviderSubscriptionLogin(first.id);
+    assert.equal(cancelled?.status, "cancelled");
+  });
 });

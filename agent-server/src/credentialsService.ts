@@ -7,6 +7,7 @@
  * session settings). Routes for /v1/auth/* and /v1/custom/* call this
  * directly via createCredentialsApp.
  */
+import { randomUUID } from "node:crypto";
 import type { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 import {
@@ -42,6 +43,36 @@ export type AgentAuthProviderRow = {
   availableModelCount: number;
 };
 
+export type AgentAuthPrompt = {
+  message: string;
+  placeholder?: string;
+  allowEmpty?: boolean;
+};
+
+export type AgentOAuthFlowState = {
+  id: string;
+  provider: string;
+  providerName: string;
+  status: "starting" | "prompt" | "auth" | "waiting" | "complete" | "error" | "cancelled";
+  authUrl?: string;
+  instructions?: string;
+  prompt?: AgentAuthPrompt;
+  progress: string[];
+  error?: string;
+  expiresAt: string;
+};
+
+type PendingOAuthFlow = AgentOAuthFlowState & {
+  version: number;
+  abortController: AbortController;
+  promptResolve?: (value: string) => void;
+  promptReject?: (error: Error) => void;
+  manualResolve?: (value: string) => void;
+  manualReject?: (error: Error) => void;
+  waiters: Array<(state: AgentOAuthFlowState) => void>;
+  cleanupTimer?: ReturnType<typeof setTimeout>;
+};
+
 export type AgentCredentialsServiceConfig = {
   authStorage: AuthStorage;
   modelRegistry: ModelRegistry;
@@ -62,6 +93,7 @@ export class AgentCredentialsService {
   private readonly defaultModelId: string | undefined;
   private readonly defaultThinkingLevel: ThinkingLevel | undefined;
   private readonly modelThinkingDefaults: Record<string, ThinkingLevel>;
+  private readonly pendingOAuthFlows = new Map<string, PendingOAuthFlow>();
 
   constructor(config: AgentCredentialsServiceConfig) {
     this.authStorage = config.authStorage;
@@ -167,5 +199,200 @@ export class AgentCredentialsService {
     this.assertProviderId(provider);
     this.authStorage.remove(provider);
     this.modelRegistry.refresh();
+  }
+
+  private oauthFlowState(flow: PendingOAuthFlow): AgentOAuthFlowState {
+    return {
+      id: flow.id,
+      provider: flow.provider,
+      providerName: flow.providerName,
+      status: flow.status,
+      authUrl: flow.authUrl,
+      instructions: flow.instructions,
+      prompt: flow.prompt,
+      progress: [...flow.progress],
+      error: flow.error,
+      expiresAt: flow.expiresAt,
+    };
+  }
+
+  private updateOAuthFlow(flow: PendingOAuthFlow, patch: Partial<AgentOAuthFlowState>): void {
+    Object.assign(flow, patch);
+    flow.version += 1;
+    const state = this.oauthFlowState(flow);
+    const waiters = flow.waiters.splice(0);
+    for (const waiter of waiters) waiter(state);
+  }
+
+  private scheduleOAuthFlowCleanup(flow: PendingOAuthFlow, delayMs = 10 * 60 * 1000): void {
+    if (flow.cleanupTimer) clearTimeout(flow.cleanupTimer);
+    flow.cleanupTimer = setTimeout(() => {
+      this.pendingOAuthFlows.delete(flow.id);
+    }, delayMs);
+    flow.cleanupTimer.unref?.();
+  }
+
+  private activeOAuthFlowForProvider(provider: string): PendingOAuthFlow | undefined {
+    const now = Date.now();
+    for (const flow of this.pendingOAuthFlows.values()) {
+      if (flow.provider !== provider) continue;
+      if (["complete", "error", "cancelled"].includes(flow.status)) continue;
+      if (Date.parse(flow.expiresAt) <= now) continue;
+      return flow;
+    }
+    return undefined;
+  }
+
+  private oauthLoginErrorMessage(providerName: string, error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("EADDRINUSE")) {
+      return `${providerName} login callback is already running on its local port. Finish or cancel the existing login, then try again.`;
+    }
+    return message;
+  }
+
+  private waitForOAuthFlowUpdate(
+    flow: PendingOAuthFlow,
+    version: number,
+    timeoutMs = 15_000,
+  ): Promise<AgentOAuthFlowState> {
+    if (flow.version !== version) return Promise.resolve(this.oauthFlowState(flow));
+    if (["complete", "error", "cancelled"].includes(flow.status)) {
+      return Promise.resolve(this.oauthFlowState(flow));
+    }
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        resolve(this.oauthFlowState(flow));
+      }, timeoutMs);
+      flow.waiters.push((state) => {
+        clearTimeout(timer);
+        resolve(state);
+      });
+    });
+  }
+
+  async startProviderSubscriptionLogin(provider: string): Promise<AgentOAuthFlowState> {
+    this.assertProviderId(provider);
+    const oauthProvider = this.authStorage.getOAuthProviders().find((entry) => entry.id === provider);
+    if (!oauthProvider) throw new Error(`provider ${provider} does not support subscription auth`);
+
+    const activeFlow = this.activeOAuthFlowForProvider(provider);
+    if (activeFlow) return this.oauthFlowState(activeFlow);
+
+    const flow: PendingOAuthFlow = {
+      id: randomUUID(),
+      provider,
+      providerName: oauthProvider.name,
+      status: "starting",
+      progress: [],
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      version: 0,
+      abortController: new AbortController(),
+      waiters: [],
+    };
+    this.pendingOAuthFlows.set(flow.id, flow);
+    this.scheduleOAuthFlowCleanup(flow);
+
+    const loginPromise = this.authStorage.login(provider, {
+      onAuth: (info) => {
+        this.updateOAuthFlow(flow, {
+          status: "auth",
+          authUrl: info.url,
+          instructions: info.instructions,
+          prompt: undefined,
+        });
+      },
+      onPrompt: (prompt) =>
+        new Promise<string>((resolve, reject) => {
+          flow.promptResolve = resolve;
+          flow.promptReject = reject;
+          this.updateOAuthFlow(flow, {
+            status: "prompt",
+            prompt: {
+              message: prompt.message,
+              placeholder: prompt.placeholder,
+              allowEmpty: prompt.allowEmpty,
+            },
+          });
+        }),
+      onProgress: (message) => {
+        this.updateOAuthFlow(flow, { progress: [...flow.progress, message] });
+      },
+      onManualCodeInput: () =>
+        new Promise<string>((resolve, reject) => {
+          flow.manualResolve = resolve;
+          flow.manualReject = reject;
+        }),
+      signal: flow.abortController.signal,
+    });
+
+    void loginPromise
+      .then(() => {
+        this.modelRegistry.refresh();
+        this.updateOAuthFlow(flow, {
+          status: "complete",
+          prompt: undefined,
+          authUrl: undefined,
+          instructions: undefined,
+          progress: [...flow.progress, "Credentials saved."],
+        });
+        this.scheduleOAuthFlowCleanup(flow, 60_000);
+      })
+      .catch((error: unknown) => {
+        this.updateOAuthFlow(flow, {
+          status: flow.status === "cancelled" ? "cancelled" : "error",
+          error: this.oauthLoginErrorMessage(flow.providerName, error),
+        });
+        this.scheduleOAuthFlowCleanup(flow, 60_000);
+      });
+
+    return this.waitForOAuthFlowUpdate(flow, 0);
+  }
+
+  async continueProviderSubscriptionLogin(id: string, value: string): Promise<AgentOAuthFlowState> {
+    const flow = this.pendingOAuthFlows.get(id);
+    if (!flow) throw new Error("subscription auth flow not found");
+    const trimmed = value.trim();
+
+    if (flow.promptResolve) {
+      if (!trimmed && !flow.prompt?.allowEmpty) throw new Error("value is required");
+      const resolve = flow.promptResolve;
+      flow.promptResolve = undefined;
+      flow.promptReject = undefined;
+      this.updateOAuthFlow(flow, { status: "waiting", prompt: undefined });
+      const waitVersion = flow.version;
+      resolve(value);
+      return this.waitForOAuthFlowUpdate(flow, waitVersion);
+    }
+
+    if (flow.manualResolve) {
+      if (!trimmed) throw new Error("redirect URL or authorization code is required");
+      const resolve = flow.manualResolve;
+      flow.manualResolve = undefined;
+      flow.manualReject = undefined;
+      this.updateOAuthFlow(flow, { status: "waiting", prompt: undefined });
+      const waitVersion = flow.version;
+      resolve(trimmed);
+      return this.waitForOAuthFlowUpdate(flow, waitVersion);
+    }
+
+    return this.oauthFlowState(flow);
+  }
+
+  getProviderSubscriptionLogin(id: string): AgentOAuthFlowState | undefined {
+    const flow = this.pendingOAuthFlows.get(id);
+    return flow ? this.oauthFlowState(flow) : undefined;
+  }
+
+  cancelProviderSubscriptionLogin(id: string): AgentOAuthFlowState | undefined {
+    const flow = this.pendingOAuthFlows.get(id);
+    if (!flow) return undefined;
+    flow.abortController.abort();
+    flow.promptReject?.(new Error("Login cancelled"));
+    flow.manualReject?.(new Error("Login cancelled"));
+    this.updateOAuthFlow(flow, { status: "cancelled", error: "Login cancelled" });
+    this.scheduleOAuthFlowCleanup(flow, 60_000);
+    return this.oauthFlowState(flow);
   }
 }
