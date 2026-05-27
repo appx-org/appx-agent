@@ -165,10 +165,21 @@ describe("agent-server: LiteLLM config", () => {
 			resetLiteLlmConfigForTests();
 
 			const agentDir = resolve(project.dir, ".pi-agent");
-			const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
+			const authStorage = AuthStorage.create(resolve(agentDir, "auth.json"));
+			const modelRegistry = ModelRegistry.create(authStorage, resolve(agentDir, "models.json"));
 			const litellmConfig = litellmRuntimeConfig();
 			litellmConfig.configureModelRegistry?.(modelRegistry);
-			const runtime = new AgentRuntime({
+			const credentials = new AgentCredentialsService({
+				authStorage,
+				modelRegistry,
+				modelsJsonPath: resolve(agentDir, "models.json"),
+				defaultModelProvider: litellmConfig.defaultModelProvider,
+				defaultModelId: litellmConfig.defaultModelId,
+				defaultThinkingLevel: litellmConfig.defaultThinkingLevel,
+				modelThinkingDefaults: litellmConfig.modelThinkingDefaults,
+				logger: { log: () => {}, error: () => {} },
+			});
+			new AgentRuntime({
 				...litellmConfig,
 				configureModelRegistry: undefined,
 				projectDir: project.dir,
@@ -181,7 +192,7 @@ describe("agent-server: LiteLLM config", () => {
 				logger: { log: () => {}, error: () => {} },
 			});
 
-			const models = runtime.listModels().filter((model) => model.provider === "litellm");
+			const models = credentials.listModels().filter((model) => model.provider === "litellm");
 			assert.equal(models.length, 1);
 			assert.equal(models[0]!.id, "openai/gpt-5.5");
 			assert.equal(models[0]!.reasoning, true);
@@ -317,7 +328,7 @@ describe("agent-server: REST surface", () => {
 		try {
 			const agentDir = resolve(project.dir, ".pi-agent");
 			const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
-			const runtime = new AgentRuntime({
+			new AgentRuntime({
 				projectDir: project.dir,
 				sessionsDir: resolve(project.dir, "data/sessions"),
 				agentDir,
@@ -328,7 +339,7 @@ describe("agent-server: REST surface", () => {
 				anthropicApiKey: "sk-ant-runtime-test",
 				logger: { log: () => {}, error: () => {} },
 			});
-			const anthropic = runtime.listAuthProviders().find((p) => p.provider === "anthropic");
+			const anthropic = credentials.listAuthProviders().find((p) => p.provider === "anthropic");
 			assert.equal(anthropic?.configured, true);
 			assert.equal(anthropic?.source, "runtime");
 		} finally {
