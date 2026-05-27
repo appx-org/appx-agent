@@ -40,11 +40,14 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { publish } from "./sseBroker.js";
+import {
+  type ThinkingLevel,
+  clampThinkingLevelForModel,
+  supportedThinkingLevelsForModel,
+} from "./thinking.js";
 
 type SessionModel = NonNullable<CreateAgentSessionOptions["model"]>;
-export type ThinkingLevel = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
-
-const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+export type { ThinkingLevel } from "./thinking.js";
 const CUSTOM_PROVIDER_APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const;
 
 export type AgentCustomProviderApi = (typeof CUSTOM_PROVIDER_APIS)[number];
@@ -365,34 +368,9 @@ export class AgentRuntime {
     return `${model.provider}/${model.id}`;
   }
 
-  private supportedThinkingLevelsForModel(model: SessionModel): ThinkingLevel[] {
-    if (!model.reasoning) return ["off"];
-    return THINKING_LEVELS.filter((level) => {
-      const mapped = model.thinkingLevelMap?.[level];
-      if (mapped === null) return false;
-      if (level === "xhigh") return mapped !== undefined;
-      return true;
-    });
-  }
-
-  private clampThinkingLevelForModel(model: SessionModel, level: ThinkingLevel): ThinkingLevel {
-    const available = this.supportedThinkingLevelsForModel(model);
-    if (available.includes(level)) return level;
-    const requestedIndex = THINKING_LEVELS.indexOf(level);
-    for (let i = requestedIndex; i < THINKING_LEVELS.length; i += 1) {
-      const candidate = THINKING_LEVELS[i]!;
-      if (available.includes(candidate)) return candidate;
-    }
-    for (let i = requestedIndex - 1; i >= 0; i -= 1) {
-      const candidate = THINKING_LEVELS[i]!;
-      if (available.includes(candidate)) return candidate;
-    }
-    return available[0] ?? "off";
-  }
-
   private defaultThinkingForModel(model: SessionModel): ThinkingLevel | undefined {
     const configured = this.modelThinkingDefaults[this.modelKey(model)] ?? this.defaultThinkingLevel;
-    return configured ? this.clampThinkingLevelForModel(model, configured) : undefined;
+    return configured ? clampThinkingLevelForModel(model, configured) : undefined;
   }
 
   /** Public-safe, non-secret model metadata for API/UI consumers. */
@@ -1177,7 +1155,7 @@ export class AgentRuntime {
 
   private async setSessionModelInternal(session: AgentSession, model: SessionModel): Promise<void> {
     const currentThinkingLevel = session.thinkingLevel as ThinkingLevel;
-    const nextAvailableLevels = this.supportedThinkingLevelsForModel(model);
+    const nextAvailableLevels = supportedThinkingLevelsForModel(model);
     const defaultThinkingLevel = this.defaultThinkingForModel(model);
     const shouldUseModelDefault = Boolean(defaultThinkingLevel && !nextAvailableLevels.includes(currentThinkingLevel));
     await session.setModel(model);

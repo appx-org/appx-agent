@@ -6,7 +6,13 @@
  * ModelRegistry before createAgentSession().
  */
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
-import type { AgentRuntimeConfig, ThinkingLevel } from "./runtime.js";
+import type { AgentRuntimeConfig } from "./runtime.js";
+import {
+  THINKING_LEVELS as SHARED_THINKING_LEVELS,
+  clampThinkingLevelForModel,
+  supportedThinkingLevelsForModel,
+  type ThinkingLevel,
+} from "./thinking.js";
 
 type ProviderApi = "openai-completions" | "openai-responses" | "anthropic-messages";
 
@@ -68,8 +74,6 @@ const conservativeOpenAiCompat = {
 	supportsUsageInStreaming: false,
 	maxTokensField: "max_tokens",
 };
-
-const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 
 const gpt55ThinkingLevelMap: Partial<Record<ThinkingLevel, string | null>> = {
 	off: "none",
@@ -168,7 +172,7 @@ function parseThinkingLevelValue(raw: unknown, name: string, warnOnly = false): 
 			console.warn(`${message}; Pi default will be used`);
 			return undefined;
 		}
-		throw new Error(`${name} must be one of ${THINKING_LEVELS.join(", ")}`);
+		throw new Error(`${name} must be one of ${SHARED_THINKING_LEVELS.join(", ")}`);
 	}
 	const value = raw.trim();
 	if (!value) return undefined;
@@ -178,7 +182,7 @@ function parseThinkingLevelValue(raw: unknown, name: string, warnOnly = false): 
 		console.warn(`${message}; Pi default will be used`);
 		return undefined;
 	}
-	throw new Error(`${name} must be one of ${THINKING_LEVELS.join(", ")}`);
+	throw new Error(`${name} must be one of ${SHARED_THINKING_LEVELS.join(", ")}`);
 }
 
 function modelKey(modelId: string): string {
@@ -237,31 +241,6 @@ function mergeThinkingLevelMaps(
 	return { ...(normalisedPreset ?? {}), ...(normalisedModel ?? {}) };
 }
 
-function supportedThinkingLevels(model: Pick<ProviderModel, "reasoning" | "thinkingLevelMap">): ThinkingLevel[] {
-	if (!model.reasoning) return ["off"];
-	return THINKING_LEVELS.filter((level) => {
-		const mapped = model.thinkingLevelMap?.[level];
-		if (mapped === null) return false;
-		if (level === "xhigh") return mapped !== undefined;
-		return true;
-	});
-}
-
-function clampThinkingLevel(model: Pick<ProviderModel, "reasoning" | "thinkingLevelMap">, level: ThinkingLevel): ThinkingLevel {
-	const available = supportedThinkingLevels(model);
-	if (available.includes(level)) return level;
-	const requestedIndex = THINKING_LEVELS.indexOf(level);
-	for (let i = requestedIndex; i < THINKING_LEVELS.length; i += 1) {
-		const candidate = THINKING_LEVELS[i]!;
-		if (available.includes(candidate)) return candidate;
-	}
-	for (let i = requestedIndex - 1; i >= 0; i -= 1) {
-		const candidate = THINKING_LEVELS[i]!;
-		if (available.includes(candidate)) return candidate;
-	}
-	return available[0] ?? "off";
-}
-
 function normaliseModel(model: LiteLlmModel, providerCompat: Record<string, unknown>): NormalisedLiteLlmModel {
 	if (!isRecord(model)) throw new Error("LITELLM_MODELS_JSON entries must be JSON objects");
 	if (!model.id?.trim()) throw new Error("LiteLLM model entry is missing id");
@@ -299,7 +278,7 @@ function normaliseModel(model: LiteLlmModel, providerCompat: Record<string, unkn
 	return {
 		model: providerModel,
 		defaultThinkingLevel: defaultThinkingLevel
-			? clampThinkingLevel(providerModel, parseThinkingLevelValue(defaultThinkingLevel, `LITELLM_MODELS_JSON model ${id} defaultThinkingLevel`)!)
+			? clampThinkingLevelForModel(providerModel, parseThinkingLevelValue(defaultThinkingLevel, `LITELLM_MODELS_JSON model ${id} defaultThinkingLevel`)!)
 			: undefined,
 	};
 }
@@ -387,10 +366,10 @@ function logResolvedConfig(config: ResolvedLiteLlmConfig, phase: "startup" | "ru
 			`request=${litellmRequestHint(model, config.thinkingLevel)}`,
 	);
 	for (const entry of config.models) {
-		const levels = supportedThinkingLevels(entry);
+		const levels = supportedThinkingLevelsForModel(entry);
 		const defaultThinking =
 			config.modelThinkingDefaults[modelKey(entry.id)] ??
-			(config.globalThinkingLevel ? clampThinkingLevel(entry, config.globalThinkingLevel) : undefined);
+			(config.globalThinkingLevel ? clampThinkingLevelForModel(entry, config.globalThinkingLevel) : undefined);
 		const hints =
 			levels
 				.filter((level) => level !== "off")
@@ -451,7 +430,7 @@ export function resolveLiteLlmConfig(): ResolvedLiteLlmConfig | null {
 		globalThinkingLevel,
 		thinkingLevel:
 			defaultEntry.defaultThinkingLevel ??
-			(globalThinkingLevel ? clampThinkingLevel(defaultModel, globalThinkingLevel) : undefined),
+			(globalThinkingLevel ? clampThinkingLevelForModel(defaultModel, globalThinkingLevel) : undefined),
 		modelThinkingDefaults,
 	};
 	return cachedConfig;
