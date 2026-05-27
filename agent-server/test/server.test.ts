@@ -32,10 +32,10 @@ import { serve } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { litellmRuntimeConfig, resetLiteLlmConfigForTests, resolveLiteLlmConfig } from "../src/litellm.js";
-import { AgentRuntime, type AgentRuntimeConfig } from "../src/runtime.js";
+import { AgentRuntime } from "../src/runtime.js";
 import { AgentCredentialsService } from "../src/credentialsService.js";
-import { AgentRuntimeRegistry } from "../src/runtimeRegistry.js";
-import { createSessionsApp } from "../src/routes.js";
+import { AgentRuntimeRegistry, type AgentRuntimeRegistryConfig } from "../src/runtimeRegistry.js";
+import { createCredentialsApp, createSessionsApp } from "../src/routes.js";
 import { publish } from "../src/sseBroker.js";
 
 /**
@@ -94,25 +94,8 @@ async function startServer(opts: {
 	projectDir: string;
 	port: number;
 	token?: string;
-	runtimeConfig?: Partial<AgentRuntimeConfig>;
+	runtimeConfig?: Partial<AgentRuntimeRegistryConfig>;
 }): Promise<{ baseUrl: string; close: () => Promise<void> }> {
-	const agentDir = resolve(opts.projectDir, ".pi-agent");
-	const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
-	opts.runtimeConfig?.configureModelRegistry?.(modelRegistry);
-	const runtime = new AgentRuntime({
-		projectDir: opts.projectDir,
-		sessionsDir: resolve(opts.projectDir, "data/sessions"),
-		agentDir,
-		agentsFile: ".pi/AGENTS.md",
-		credentials,
-		authStorage,
-		modelRegistry,
-		// Silence the runtime's startup logs in test output.
-		logger: { log: () => {}, error: () => {} },
-		...opts.runtimeConfig,
-		configureModelRegistry: undefined,
-	});
-
 	const root = new OpenAPIHono();
 
 	if (opts.token) {
@@ -124,7 +107,17 @@ async function startServer(opts: {
 		});
 	}
 
-	root.route("/v1", createSessionsApp(runtime));
+	const registry = new AgentRuntimeRegistry({
+		projectDir: opts.projectDir,
+		sessionsDir: resolve(opts.projectDir, "data/sessions"),
+		agentDir: resolve(opts.projectDir, ".pi-agent"),
+		agentsFile: ".pi/AGENTS.md",
+		logger: { log: () => {}, error: () => {} },
+		...(opts.runtimeConfig ?? {}),
+	});
+
+	root.route("/v1", createCredentialsApp(registry.credentials));
+	root.route("/v1", createSessionsApp(registry.defaultRuntime));
 	root.doc("/openapi.json", {
 		openapi: "3.1.0",
 		info: { title: "Test Agent Server", version: "0.0.0" },
@@ -767,16 +760,14 @@ describe("agent-server: project-scoped runtimes", () => {
 		});
 
 		const root = new OpenAPIHono();
-		root.route("/v1", createSessionsApp(registry.defaultRuntime, { sessionRoutes: false }));
+		root.route("/v1", createCredentialsApp(registry.credentials));
 		root.route(
 			"/v1/projects/:projectId",
-			createSessionsApp(
-				(c) =>
-					registry.forProject({
-						id: c.req.param("projectId"),
-						projectDir: c.req.header("x-appx-project-dir")!,
-					}),
-				{ credentialRoutes: false, healthRoute: false },
+			createSessionsApp((c) =>
+				registry.forProject({
+					id: c.req.param("projectId"),
+					projectDir: c.req.header("x-appx-project-dir")!,
+				}),
 			),
 		);
 		const server = serve({ fetch: root.fetch, hostname: "127.0.0.1", port });
@@ -820,6 +811,7 @@ describe("agent-server: project-scoped runtimes", () => {
 		});
 
 		const root = new OpenAPIHono();
+		root.route("/v1", createCredentialsApp(registry.credentials));
 		root.route(
 			"/v1/projects/:projectId",
 			createSessionsApp((c) => {

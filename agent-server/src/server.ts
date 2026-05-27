@@ -47,7 +47,7 @@ import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { litellmRuntimeConfig, logLiteLlmStartupConfig } from "./litellm.js";
-import { createSessionsApp } from "./routes.js";
+import { createCredentialsApp, createSessionsApp } from "./routes.js";
 import { AgentRuntimeRegistry } from "./runtimeRegistry.js";
 
 function required(name: string): string {
@@ -176,17 +176,11 @@ root.onError((err, c) => {
 // Mount the versioned API under /v1. Single mode keeps the standalone surface
 // for eventx/spotifyx-style callers; multi mode makes Appx project scoping
 // explicit and keeps credentials at one shared URL surface.
+root.route("/v1", createCredentialsApp(runtimeRegistry.credentials));
 if (mode === "single") {
 	root.route("/v1", createSessionsApp(runtimeRegistry.defaultRuntime));
 } else {
-	root.route("/v1", createSessionsApp(runtimeRegistry.defaultRuntime, { sessionRoutes: false }));
-	root.route(
-		"/v1/projects/:projectId",
-		createSessionsApp(projectRuntimeFromRequest, {
-			credentialRoutes: false,
-			healthRoute: false,
-		}),
-	);
+	root.route("/v1/projects/:projectId", createSessionsApp(projectRuntimeFromRequest));
 }
 
 // OpenAPI document + Swagger UI. Doc lives at /openapi.json so consumers

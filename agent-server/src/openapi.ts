@@ -12,46 +12,29 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { AgentRuntime } from "./runtime.js";
-import { AgentCredentialsService } from "./credentialsService.js";
-import { createSessionsApp } from "./routes.js";
+import { AgentRuntimeRegistry } from "./runtimeRegistry.js";
+import { createCredentialsApp, createSessionsApp } from "./routes.js";
 
 const mode = process.env.AGENT_SERVER_MODE === "multi" ? "multi" : "single";
 
-// We need an AgentRuntime to construct the routes app, but we never
-// actually call any runtime methods during doc generation — the routes
-// just reference handler functions whose signatures don't depend on
-// runtime state. Use a stub projectDir so AgentRuntime's constructor
-// passes its sanity checks.
+// We need a registry to construct the routes apps, but we never actually
+// call any methods during doc generation — the routes just reference
+// handler functions whose signatures don't depend on state. Use a stub
+// projectDir so the registry's constructor passes its sanity checks.
 const stubProjectDir = resolve(process.cwd());
-const stubAuthStorage = AuthStorage.create();
-const stubModelRegistry = ModelRegistry.create(stubAuthStorage);
-const stubCredentials = new AgentCredentialsService({
-	authStorage: stubAuthStorage,
-	modelRegistry: stubModelRegistry,
-	modelsJsonPath: resolve(stubProjectDir, "models.json"),
-	logger: { log: () => {}, error: () => {} },
-});
-const runtime = new AgentRuntime({
+const registry = new AgentRuntimeRegistry({
 	projectDir: stubProjectDir,
 	sessionsDir: resolve(stubProjectDir, ".tmp-openapi-sessions"),
-	credentials: stubCredentials,
-	// no agentsFile so we don't require a real .pi/AGENTS.md for codegen
+	defaultAgentsFile: false,
+	logger: { log: () => {}, error: () => {} },
 });
 
 const root = new OpenAPIHono();
+root.route("/v1", createCredentialsApp(registry.credentials));
 if (mode === "single") {
-	root.route("/v1", createSessionsApp(runtime));
+	root.route("/v1", createSessionsApp(registry.defaultRuntime));
 } else {
-	root.route("/v1", createSessionsApp(runtime, { sessionRoutes: false }));
-	root.route(
-		"/v1/projects/:projectId",
-		createSessionsApp(runtime, {
-			credentialRoutes: false,
-			healthRoute: false,
-		}),
-	);
+	root.route("/v1/projects/:projectId", createSessionsApp(registry.defaultRuntime));
 }
 
 const doc = root.getOpenAPI31Document({
