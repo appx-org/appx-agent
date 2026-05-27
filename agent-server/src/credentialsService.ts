@@ -29,6 +29,19 @@ export type AgentModelRow = {
   defaultThinkingLevel?: ThinkingLevel;
 };
 
+export type AgentAuthProviderRow = {
+  provider: string;
+  name: string;
+  configured: boolean;
+  credentialType?: "api_key" | "oauth";
+  source?: "stored" | "runtime" | "environment" | "fallback" | "models_json_key" | "models_json_command";
+  label?: string;
+  supportsApiKey: boolean;
+  supportsSubscription: boolean;
+  modelCount: number;
+  availableModelCount: number;
+};
+
 export type AgentCredentialsServiceConfig = {
   authStorage: AuthStorage;
   modelRegistry: ModelRegistry;
@@ -65,6 +78,12 @@ export class AgentCredentialsService {
     return `${model.provider}/${model.id}`;
   }
 
+  private assertProviderId(provider: string): void {
+    if (!/^[a-zA-Z0-9_.:-]+$/.test(provider)) {
+      throw new Error("invalid provider id");
+    }
+  }
+
   defaultThinkingForModel(model: SessionModel): ThinkingLevel | undefined {
     const configured = this.modelThinkingDefaults[this.modelKey(model)] ?? this.defaultThinkingLevel;
     return configured ? clampThinkingLevelForModel(model, configured) : undefined;
@@ -97,7 +116,56 @@ export class AgentCredentialsService {
       );
   }
 
-  listAuthProviders(): never {
-    throw new Error("not yet implemented");
+  listAuthProviders(): AgentAuthProviderRow[] {
+    const byProvider = new Map<string, { modelCount: number; availableModelCount: number }>();
+    for (const model of this.listModels()) {
+      const current = byProvider.get(model.provider) ?? { modelCount: 0, availableModelCount: 0 };
+      current.modelCount += 1;
+      if (model.available) current.availableModelCount += 1;
+      byProvider.set(model.provider, current);
+    }
+    const oauthProviderIds = new Set(this.authStorage.getOAuthProviders().map((provider) => provider.id));
+    for (const provider of oauthProviderIds) {
+      if (!byProvider.has(provider)) {
+        byProvider.set(provider, { modelCount: 0, availableModelCount: 0 });
+      }
+    }
+
+    return [...byProvider.entries()]
+      .map(([provider, counts]) => {
+        const status = this.modelRegistry.getProviderAuthStatus(provider);
+        const credential = this.authStorage.get(provider);
+        return {
+          provider,
+          name: this.modelRegistry.getProviderDisplayName(provider),
+          configured: status.configured || status.source !== undefined,
+          credentialType: credential?.type,
+          source: status.source,
+          label: status.label,
+          supportsApiKey: counts.modelCount > 0,
+          supportsSubscription: oauthProviderIds.has(provider),
+          ...counts,
+        };
+      })
+      .sort(
+        (a, b) =>
+          Number(b.configured) - Number(a.configured) ||
+          b.availableModelCount - a.availableModelCount ||
+          a.provider.localeCompare(b.provider),
+      );
+  }
+
+  setProviderApiKey(provider: string, key: string): void {
+    this.assertProviderId(provider);
+    const trimmed = key.trim();
+    if (!trimmed) throw new Error("key is required");
+    this.authStorage.set(provider, { type: "api_key", key: trimmed });
+    this.modelRegistry.refresh();
+  }
+
+  removeProviderCredential(provider: string): void {
+    this.assertProviderId(provider);
+    this.authStorage.remove(provider);
+    this.modelRegistry.refresh();
   }
 }

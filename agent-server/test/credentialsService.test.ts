@@ -53,4 +53,39 @@ describe("AgentCredentialsService", () => {
     assert.equal(anthropic!.available, true);
     assert.equal(typeof anthropic!.contextWindow, "number");
   });
+
+  test("setProviderApiKey persists, listAuthProviders shows configured, removeProviderCredential clears", () => {
+    const authStorage = AuthStorage.create(resolve(agent.dir, "auth.json"));
+    const modelRegistry = ModelRegistry.create(authStorage, resolve(agent.dir, "models.json"));
+    const service = new AgentCredentialsService({
+      authStorage,
+      modelRegistry,
+      modelsJsonPath: resolve(agent.dir, "models.json"),
+      logger: { log: () => {}, error: () => {} },
+    });
+
+    service.setProviderApiKey("anthropic", "sk-ant-test");
+    let providers = service.listAuthProviders();
+    let anthropic = providers.find((p) => p.provider === "anthropic");
+    assert.equal(anthropic?.configured, true);
+    assert.equal(anthropic?.source, "stored");
+
+    service.removeProviderCredential("anthropic");
+    providers = service.listAuthProviders();
+    anthropic = providers.find((p) => p.provider === "anthropic");
+    // remaining anthropic row reflects no stored credential
+    assert.notEqual(anthropic?.source, "stored");
+  });
+
+  test("setProviderApiKey rejects malformed provider id", () => {
+    const authStorage = AuthStorage.create(resolve(agent.dir, "auth.json"));
+    const modelRegistry = ModelRegistry.create(authStorage, resolve(agent.dir, "models.json"));
+    const service = new AgentCredentialsService({
+      authStorage,
+      modelRegistry,
+      modelsJsonPath: resolve(agent.dir, "models.json"),
+      logger: { log: () => {}, error: () => {} },
+    });
+    assert.throws(() => service.setProviderApiKey("bad provider!", "k"), /invalid provider id/);
+  });
 });
