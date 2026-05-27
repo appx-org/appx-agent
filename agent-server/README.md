@@ -259,31 +259,32 @@ If you'd rather embed the runtime inside your own Hono app:
 
 ```ts
 import { Hono } from "hono";
-import { AgentRuntimeRegistry, createSessionsApp } from "@appx/agent-server";
+import {
+  AgentRuntimeRegistry,
+  createCredentialsApp,
+  createSessionsApp,
+} from "@appx/agent-server";
 
 const registry = new AgentRuntimeRegistry({ projectDir, sessionsDir, agentsFile });
 const app = new Hono();
+app.route("/v1", createCredentialsApp(registry.credentials));
 app.route("/v1", createSessionsApp(registry.defaultRuntime));
+```
+
+This exists for tests and for hosts that have a strong reason to share a
+process. The standalone server is the primary deployment.
+
+For an embedded Appx-style multi-project host, mount shared credentials at
+`/v1` and per-project sessions under `/v1/projects/:projectId`:
+
+```ts
+app.route("/v1", createCredentialsApp(registry.credentials));
 app.route("/v1/projects/:projectId", createSessionsApp((c) =>
   registry.forProject({
     id: c.req.param("projectId"),
     projectDir: c.req.header("x-appx-project-dir")!,
   }),
 ));
-```
-
-This exists for tests and for hosts that have a strong reason to share a
-process. The standalone server is the primary deployment.
-
-For an embedded Appx-style multi-project host, mount shared settings and
-project sessions separately:
-
-```ts
-app.route("/v1", createSessionsApp(registry.defaultRuntime, { sessionRoutes: false }));
-app.route(
-  "/v1/projects/:projectId",
-  createSessionsApp(projectRuntime, { credentialRoutes: false, healthRoute: false }),
-);
 ```
 
 ## Pi specifics
