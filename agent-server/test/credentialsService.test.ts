@@ -34,4 +34,23 @@ describe("AgentCredentialsService", () => {
     });
     assert.equal(typeof service.listAuthProviders, "function");
   });
+
+  test("listModels returns Pi-shaped rows with availability flag", () => {
+    const authStorage = AuthStorage.create(resolve(agent.dir, "auth.json"));
+    const modelRegistry = ModelRegistry.create(authStorage, resolve(agent.dir, "models.json"));
+    authStorage.set("anthropic", { type: "api_key", key: "sk-ant-test" });
+    modelRegistry.refresh();
+    const service = new AgentCredentialsService({
+      authStorage,
+      modelRegistry,
+      modelsJsonPath: resolve(agent.dir, "models.json"),
+      logger: { log: () => {}, error: () => {} },
+    });
+
+    const models = service.listModels();
+    const anthropic = models.find((m) => m.provider === "anthropic");
+    assert.ok(anthropic, "expected at least one anthropic model");
+    assert.equal(anthropic!.available, true);
+    assert.equal(typeof anthropic!.contextWindow, "number");
+  });
 });
