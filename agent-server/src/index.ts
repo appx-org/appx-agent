@@ -28,9 +28,14 @@ export type {
 	AgentRuntimeRegistryConfig,
 	ProjectRuntimeContext,
 } from "./runtimeRegistry.js";
-export { createSessionsApp } from "./routes.js";
-export type { AgentRuntimeResolver, CreateSessionsAppOptions } from "./routes.js";
+export { AgentCredentialsService } from "./credentialsService.js";
+export type {
+	AgentCredentialsServiceConfig,
+} from "./credentialsService.js";
+export { createSessionsApp, createCredentialsApp } from "./routes.js";
+export type { AgentRuntimeResolver, CreateSessionsAppOptions, AgentCredentialsResolver, CreateCredentialsAppOptions } from "./routes.js";
 export { litellmRuntimeConfig, logLiteLlmStartupConfig, resolveLiteLlmConfig } from "./litellm.js";
+export { THINKING_LEVELS, clampThinkingLevelForModel, supportedThinkingLevelsForModel } from "./thinking.js";
 export { subscribe, publish, channelStats } from "./sseBroker.js";
 export type {
 	AgentSession,
