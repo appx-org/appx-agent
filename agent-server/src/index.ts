@@ -8,7 +8,7 @@
  * larger Node process (for tests, or for hosts that prefer to mount
  * our routes inside their own Hono app).
  */
-export { AgentRuntime } from "./runtime.js";
+export { ProjectRuntime } from "./projectRuntime.js";
 export type {
 	AgentAuthProviderRow,
 	AgentCustomProviderApi,
@@ -16,13 +16,13 @@ export type {
 	AgentCustomProviderRow,
 	AgentModelRow,
 	AgentOAuthFlowState,
-	AgentRuntimeConfig,
-	ExtensionUiRequest,
-	ExtensionUiResponse,
-	SessionModelSettings,
+	ProjectRuntimeConfig,
 	SessionRow,
 	ThinkingLevel,
-} from "./runtime.js";
+} from "./projectRuntime.js";
+export { ProjectSession } from "./projectSession.js";
+export type { SessionModelSettings } from "./projectSession.js";
+export type { ExtensionUiRequest, ExtensionUiResponse } from "./extensionUi.js";
 export { AgentRuntimeRegistry } from "./runtimeRegistry.js";
 export type {
 	AgentRuntimeRegistryConfig,
@@ -33,7 +33,12 @@ export type {
 	AgentCredentialsServiceConfig,
 } from "./credentialsService.js";
 export { createSessionsApp, createCredentialsApp } from "./routes.js";
-export type { AgentRuntimeResolver, CreateSessionsAppOptions, AgentCredentialsResolver, CreateCredentialsAppOptions } from "./routes.js";
+export type {
+	ProjectRuntimeResolver,
+	CreateSessionsAppOptions,
+	AgentCredentialsResolver,
+	CreateCredentialsAppOptions,
+} from "./routes.js";
 export { litellmRuntimeConfig, logLiteLlmStartupConfig, resolveLiteLlmConfig } from "./litellm.js";
 export { THINKING_LEVELS, clampThinkingLevelForModel, supportedThinkingLevelsForModel } from "./thinking.js";
 export { subscribe, publish, channelStats } from "./sseBroker.js";

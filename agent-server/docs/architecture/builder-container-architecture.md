@@ -30,15 +30,15 @@ Build a system where:
 │  │  │  • AuthStorage (LLM keys, runtime-only)             │  │  │
 │  │  │  • ModelRegistry                                    │  │  │
 │  │  │  • AgentRuntimeRegistry                             │  │  │
-│  │  │     ├─ AgentRuntime: project "eventx"               │  │  │
-│  │  │     │    └─ AgentSession (the builder agent for     │  │  │
+│  │  │     ├─ ProjectRuntime: project "eventx"             │  │  │
+│  │  │     │    └─ ProjectSession (the builder agent for   │  │  │
 │  │  │     │       eventx — modifies code, runs podman)    │  │  │
 │  │  │     │                                               │  │  │
-│  │  │     ├─ AgentRuntime: project "todoapp"              │  │  │
-│  │  │     │    └─ AgentSession (todoapp's builder agent)  │  │  │
+│  │  │     ├─ ProjectRuntime: project "todoapp"            │  │  │
+│  │  │     │    └─ ProjectSession (todoapp's builder agent)│  │  │
 │  │  │     │                                               │  │  │
-│  │  │     └─ AgentRuntime: project "crm"                  │  │  │
-│  │  │          └─ AgentSession                            │  │  │
+│  │  │     └─ ProjectRuntime: project "crm"                │  │  │
+│  │  │          └─ ProjectSession                          │  │  │
 │  │  └────────────────────┬────────────────────────────────┘  │  │
 │  │                       │ bash tool runs podman             │  │
 │  │  ┌────────────────────▼────────────────────────────────┐  │  │
@@ -81,17 +81,17 @@ Build a system where:
 |---|---|
 | Unprivileged builder-container | Outer container, no `--privileged`, runs as non-root user |
 | running agent-server | One Node.js process inside outer container |
-| spins up builder agents for each project | `AgentRuntimeRegistry.forProject()` creates an `AgentRuntime` per project; each runtime hosts one or more `AgentSession`s |
+| spins up builder agents for each project | `AgentRuntimeRegistry.forProject()` creates a `ProjectRuntime` per project; each runtime owns a `Map<sessionId, ProjectSession>` |
 | modify app source | `read`/`write`/`edit` tools on `/workspace/<project>/` |
 | create app containers using rootless podman | `bash` tool runs `podman build` / `podman run` inside the outer container |
 | isolate builder agents and apps from host | Outer container is the host-side security boundary |
-| share auth between builder agents | All `AgentRuntime`s in the registry share the same `AuthStorage` and `ModelRegistry` (already designed this way in `runtimeRegistry.ts`) |
+| share auth between builder agents | All `ProjectRuntime`s in the registry share the same `AuthStorage` and `ModelRegistry` (already designed this way in `runtimeRegistry.ts`) |
 
 ## Two Subtle Points
 
 ### Point 1: "Spins up builder agents" = sessions, not processes
 
-In agent-server's design, all "builder agents" are **`AgentSession` instances within the same `agent-server` Node.js process** — not separate processes. They share the same `AuthStorage`, `ModelRegistry`, and process memory. They differ only in:
+In agent-server's design, all "builder agents" are **`ProjectSession` instances within the same `agent-server` Node.js process** — not separate processes. Each `ProjectSession` wraps an `AgentSession` plus per-session ExtensionUIContext / SSE plumbing; sessions belonging to the same project share a `ProjectRuntime`, and all projects share the process-global `AuthStorage` / `ModelRegistry`. They differ only in:
 
 - Which project directory they operate over (`projectDir`)
 - Which session file persists their conversation
@@ -100,17 +100,17 @@ In agent-server's design, all "builder agents" are **`AgentSession` instances wi
 ```typescript
 // What "spins up a builder agent for a project" actually is:
 const runtime = registry.forProject({ id: "eventx", projectDir: "/workspace/eventx" });
-const { id } = await runtime.createNewSession();
-await runtime.sendPrompt(id, "scaffold a Next.js app");
+const session = await runtime.createNewSession();
+await session.sendPrompt("scaffold a Next.js app");
 ```
 
-There's no fork, no new process, no separate auth context. It's a `Map<projectId, AgentRuntime>` lookup, and the runtime owns a `Map<sessionId, AgentSession>`.
+There's no fork, no new process, no separate auth context. It's a `Map<projectId, ProjectRuntime>` lookup, and the runtime owns a `Map<sessionId, ProjectSession>`.
 
 **Why this is fine:** in the single-admin-user scenario, all projects belong to the same human. There's no inter-tenant trust boundary to enforce. Sharing one process is the natural fit.
 
 **When it stops being fine:** if multiple end-users (Alice, Bob, etc.) are added later, "builder agents share a process" means a bug in Alice's session could potentially interfere with Bob's. At that point, graduate to per-user outer containers or per-user systemd units (the patterns from `systemd-isolation.md`).
 
-For now, "spins up builder agents" is a logical operation — creating an `AgentRuntime` + initial `AgentSession` for a project — not a process operation.
+For now, "spins up builder agents" is a logical operation — calling `forProject(...)` to get (or create) the `ProjectRuntime`, then `createNewSession()` to get a `ProjectSession` — not a process operation.
 
 ### Point 2: Auth sharing happens automatically
 
@@ -122,7 +122,7 @@ authStorage.setRuntimeApiKey("anthropic", process.env.ANTHROPIC_API_KEY);
 authStorage.setRuntimeApiKey("openai", process.env.OPENAI_API_KEY);
 // That's it.
 
-// Every project's AgentRuntime, every session, every LLM call:
+// Every project's ProjectRuntime, every session, every LLM call:
 // uses these in-memory keys. No further plumbing needed.
 ```
 
@@ -142,14 +142,14 @@ Concrete walkthrough of "user creates eventx and prompts the agent":
 
 2. User → POST /v1/projects/eventx/sessions
    agent-server: registry.forProject("eventx").createNewSession()
-   → Creates AgentRuntime for eventx (or returns existing)
+   → Creates ProjectRuntime for eventx (or returns existing)
    → Creates AgentSession bound to that runtime
    → Returns sessionId
 
 3. User → POST /v1/projects/eventx/sessions/:id/prompt
         body: "scaffold a Next.js app and run it on port 3000"
 
-4. agent-server's AgentRuntime.sendPrompt() → AgentSession.prompt()
+4. agent-server's ProjectSession.sendPrompt() → AgentSession.prompt()
    → LLM call (using shared AuthStorage's anthropic key)
    → LLM emits tool calls:
      - write Dockerfile          → writes to /workspace/eventx/Dockerfile
@@ -178,7 +178,7 @@ No host-level work happens for any of this beyond running the outer container. *
 2. **A run script / docker-compose** that launches the outer container with the right flags (`--device /dev/fuse`, port forwards, volume mount, env vars)
 3. **Project provisioning logic** — when admin creates a new project, ensure `/workspace/<id>/` exists and call `registry.forProject(...)` to register it
 4. **System prompt for the builder agent** — telling it that `podman` is available, where projects live, how to expose ports
-5. **(Optional) An idle-eviction sweep** — if many projects exist and stopping unused `AgentRuntime`s would free memory; not needed for one admin user
+5. **(Optional) An idle-eviction sweep** — if many projects exist and stopping unused `ProjectRuntime`s would free memory; not needed for one admin user
 
 That's it. Maybe 1-2 days of work for the outer container + provisioning, plus prompt engineering iteration on point 4.
 
@@ -227,7 +227,7 @@ None of these invalidate this design — they layer on top. The "one outer conta
 │  ONE outer container, unprivileged, user-namespaced         │
 │  ├── ONE agent-server process                               │
 │  │   ├── shared AuthStorage (LLM keys live here)            │
-│  │   ├── per-project AgentRuntime                           │
+│  │   ├── per-project ProjectRuntime                         │
 │  │   └── per-project AgentSession (the "builder agent")     │
 │  ├── rootless podman                                        │
 │  └── inner containers (the actual apps the agents build)    │

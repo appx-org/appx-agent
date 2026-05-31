@@ -3,7 +3,7 @@
  *
  * Spins up a real `OpenAPIHono` app on a random local port (per describe
  * block, so we can independently test the auth-on / auth-off
- * configurations) and drives it with `fetch`. The `AgentRuntime` is real
+ * configurations) and drives it with `fetch`. The `ProjectRuntime` is real
  * — it reads `.pi/AGENTS.md` from a temp project dir we set up in
  * beforeAll — but no LLM call is ever made, so tests don't need an
  * `ANTHROPIC_API_KEY` and don't burn tokens.
@@ -32,7 +32,7 @@ import { serve } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { litellmRuntimeConfig, resetLiteLlmConfigForTests, resolveLiteLlmConfig } from "../src/litellm.js";
-import { AgentRuntime } from "../src/runtime.js";
+import { ProjectRuntime } from "../src/projectRuntime.js";
 import { AgentCredentialsService } from "../src/credentialsService.js";
 import { AgentRuntimeRegistry, type AgentRuntimeRegistryConfig } from "../src/runtimeRegistry.js";
 import { createCredentialsApp, createSessionsApp } from "../src/routes.js";
@@ -179,7 +179,7 @@ describe("agent-server: LiteLLM config", () => {
 				modelThinkingDefaults: litellmConfig.modelThinkingDefaults,
 				logger: { log: () => {}, error: () => {} },
 			});
-			new AgentRuntime({
+			new ProjectRuntime({
 				...litellmConfig,
 				configureModelRegistry: undefined,
 				projectDir: project.dir,
@@ -328,7 +328,7 @@ describe("agent-server: REST surface", () => {
 		try {
 			const agentDir = resolve(project.dir, ".pi-agent");
 			const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
-			new AgentRuntime({
+			new ProjectRuntime({
 				projectDir: project.dir,
 				sessionsDir: resolve(project.dir, "data/sessions"),
 				agentDir,

@@ -2,7 +2,14 @@
 
 ## Status
 
-Proposed. Not started.
+**Landed** as of 2026-05-31.
+
+Implementation matches the plan as written. Minor additions not in the plan:
+
+- `AgentRuntimeResolver` was renamed to `ProjectRuntimeResolver` (in `routes.ts`) for consistency with the surrounding rename. Small cleanup that fell out of the rename.
+- `ProjectSession.dispose()` is implemented but not yet called from production code; it exists as a future hook for idle eviction and is exercised by unit tests.
+
+All 60 tests pass (was 41/41 before; +19 new ProjectSession unit tests including the cross-session ExtensionUI isolation regression).
 
 ## Goal
 

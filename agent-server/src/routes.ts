@@ -1,5 +1,5 @@
 /**
- * HTTP routes — Hono OpenAPIHono app exposing AgentRuntime over REST + SSE.
+ * HTTP routes — Hono OpenAPIHono app exposing ProjectRuntime over REST + SSE.
  *
  * Surface (mounted on the server under no prefix; the server adds /v1):
  *   GET    /sessions                list sessions (disk + in-memory)
@@ -42,7 +42,7 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import type { AgentRuntime } from "./runtime.js";
+import type { ProjectRuntime } from "./projectRuntime.js";
 import type { AgentCredentialsService } from "./credentialsService.js";
 import {
   CreateSessionResponseSchema,
@@ -74,7 +74,7 @@ import { channelStats, subscribe } from "./sseBroker.js";
 /** Heartbeat cadence for SSE keepalive. Keeps proxies / LBs from closing idle streams. */
 const SSE_HEARTBEAT_MS = 15_000;
 
-export type AgentRuntimeResolver = (c: Context) => AgentRuntime | Promise<AgentRuntime>;
+export type ProjectRuntimeResolver = (c: Context) => ProjectRuntime | Promise<ProjectRuntime>;
 export type CreateSessionsAppOptions = Record<string, never>;
 
 export type AgentCredentialsResolver = (c: Context) => AgentCredentialsService | Promise<AgentCredentialsService>;
@@ -84,8 +84,8 @@ export type CreateCredentialsAppOptions = {
 };
 
 function isRuntimeResolver(
-  runtime: AgentRuntime | AgentRuntimeResolver,
-): runtime is AgentRuntimeResolver {
+  runtime: ProjectRuntime | ProjectRuntimeResolver,
+): runtime is ProjectRuntimeResolver {
   return typeof runtime === "function";
 }
 
@@ -109,7 +109,7 @@ function settingsErrorStatus(err: unknown): 400 | 404 | 409 | 500 {
  * later without rewriting routes.
  */
 export function createSessionsApp(
-  runtime: AgentRuntime | AgentRuntimeResolver,
+  runtime: ProjectRuntime | ProjectRuntimeResolver,
 ): OpenAPIHono {
   const app = new OpenAPIHono();
   const getRuntime = (c: Context) =>
@@ -156,8 +156,8 @@ export function createSessionsApp(
     }),
     async (c) => {
       const runtime = await getRuntime(c);
-      const created = await runtime.createNewSession();
-      return c.json(created, 200);
+      const session = await runtime.createNewSession();
+      return c.json({ id: session.sessionId, createdAt: session.boundAt }, 200);
     },
   );
 
@@ -185,9 +185,9 @@ export function createSessionsApp(
     async (c) => {
       const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
-      const settings = await runtime.getSessionModelSettings(id);
-      if (!settings) return c.json({ error: "session not found" }, 404);
-      return c.json(settings, 200);
+      const session = await runtime.getSession(id);
+      if (!session) return c.json({ error: "session not found" }, 404);
+      return c.json(session.getModelSettings(), 200);
     },
   );
 
@@ -242,8 +242,10 @@ export function createSessionsApp(
       if (!body.provider && !body.thinkingLevel) {
         return c.json({ error: "provider/modelId or thinkingLevel is required" }, 400);
       }
+      const session = await runtime.getSession(id);
+      if (!session) return c.json({ error: "session not found" }, 404);
       try {
-        const settings = await runtime.updateSessionModelSettings(id, body);
+        const settings = await session.updateModelSettings(body);
         return c.json(settings, 200);
       } catch (err) {
         return c.json({ error: err instanceof Error ? err.message : String(err) }, settingsErrorStatus(err));
@@ -275,9 +277,9 @@ export function createSessionsApp(
     async (c) => {
       const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
-      const messages = await runtime.getSessionMessages(id);
-      if (messages === null) return c.json({ error: "session not found" }, 404);
-      return c.json({ id, messages }, 200);
+      const session = await runtime.getSession(id);
+      if (!session) return c.json({ error: "session not found" }, 404);
+      return c.json({ id, messages: session.getMessages() }, 200);
     },
   );
 
@@ -305,9 +307,9 @@ export function createSessionsApp(
     async (c) => {
       const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
-      const session = await runtime.ensureSession(id);
+      const session = await runtime.getSession(id);
       if (!session) return c.json({ error: "session not found" }, 404);
-      return c.json({ requests: runtime.pendingExtensionUiRequests(id) }, 200);
+      return c.json({ requests: session.pendingExtensionUiRequests() }, 200);
     },
   );
 
@@ -340,7 +342,9 @@ export function createSessionsApp(
       const runtime = await getRuntime(c);
       const { id, requestId } = c.req.valid("param");
       const body = c.req.valid("json");
-      const ok = runtime.resolveExtensionUiRequest(id, requestId, body);
+      const session = await runtime.getSession(id);
+      if (!session) return c.json({ error: "session not found" }, 404);
+      const ok = session.resolveExtensionUiRequest(requestId, body);
       if (!ok) return c.json({ error: "extension UI request not found" }, 404);
       return c.json({ ok: true } as const, 200);
     },
@@ -375,10 +379,10 @@ export function createSessionsApp(
       const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
       const { text } = c.req.valid("json");
-      const session = await runtime.ensureSession(id);
+      const session = await runtime.getSession(id);
       if (!session) return c.json({ error: "session not found" }, 404);
       // Fire-and-forget: events flow over SSE, errors surface there too.
-      runtime.sendPrompt(id, text).catch((err) => {
+      session.sendPrompt(text).catch((err) => {
         console.error("[agent-server] prompt failed:", err);
       });
       return c.json({ ok: true } as const, 200);
@@ -407,8 +411,10 @@ export function createSessionsApp(
     async (c) => {
       const runtime = await getRuntime(c);
       const { id } = c.req.valid("param");
+      const session = await runtime.getSession(id);
+      if (!session) return c.json({ error: "session not found" }, 404);
       try {
-        await runtime.abortSession(id);
+        await session.abort();
         return c.json({ ok: true } as const, 200);
       } catch (err) {
         return c.json({ error: String(err) }, 404);
@@ -449,7 +455,7 @@ export function createSessionsApp(
   app.get("/sessions/:id/events", async (c) => {
     const runtime = await getRuntime(c);
     const id = c.req.param("id");
-    const session = await runtime.ensureSession(id);
+    const session = await runtime.getSession(id);
     if (!session) return c.json({ error: "session not found" }, 404);
 
     return streamSSE(c, async (stream) => {
@@ -478,7 +484,7 @@ export function createSessionsApp(
       });
 
       await stream.writeSSE({ data: `connected to ${id}` });
-      for (const request of runtime.pendingExtensionUiRequests(id)) {
+      for (const request of session.pendingExtensionUiRequests()) {
         await stream.writeSSE({ data: JSON.stringify(request) });
       }
 

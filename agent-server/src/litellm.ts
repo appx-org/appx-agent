@@ -2,11 +2,11 @@
  * LiteLLM runtime wiring for the embedded Pi SDK.
  *
  * SDK session model selection happens before extension session_start handlers,
- * so dynamic provider registration has to happen directly on AgentRuntime's
+ * so dynamic provider registration has to happen directly on ProjectRuntime's
  * ModelRegistry before createAgentSession().
  */
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
-import type { AgentRuntimeConfig } from "./runtime.js";
+import type { ProjectRuntimeConfig } from "./projectRuntime.js";
 import {
   THINKING_LEVELS as SHARED_THINKING_LEVELS,
   clampThinkingLevelForModel,
@@ -52,7 +52,7 @@ type ResolvedLiteLlmConfig = {
 	globalThinkingLevel: ThinkingLevel | undefined;
 	/** Effective thinking level for the selected default model. */
 	thinkingLevel: ThinkingLevel | undefined;
-	/** Per-model defaults keyed as `${provider}/${modelId}` for AgentRuntime. */
+	/** Per-model defaults keyed as `${provider}/${modelId}` for ProjectRuntime. */
 	modelThinkingDefaults: Record<string, ThinkingLevel>;
 };
 
@@ -448,7 +448,7 @@ export function logLiteLlmStartupConfig(): void {
 	if (config) logResolvedConfig(config, "startup");
 }
 
-export function litellmRuntimeConfig(): Partial<AgentRuntimeConfig> {
+export function litellmRuntimeConfig(): Partial<ProjectRuntimeConfig> {
 	const config = resolveLiteLlmConfig();
 	if (!config) return {};
 

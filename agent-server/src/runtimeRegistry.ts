@@ -6,7 +6,7 @@ import {
   ModelRegistry,
   type ModelRegistry as ModelRegistryType,
 } from "@earendil-works/pi-coding-agent";
-import { AgentRuntime, type AgentRuntimeConfig } from "./runtime.js";
+import { ProjectRuntime, type ProjectRuntimeConfig } from "./projectRuntime.js";
 import { AgentCredentialsService } from "./credentialsService.js";
 
 export type ProjectRuntimeContext = {
@@ -16,7 +16,7 @@ export type ProjectRuntimeContext = {
 };
 
 export type AgentRuntimeRegistryConfig = Omit<
-  AgentRuntimeConfig,
+  ProjectRuntimeConfig,
   "authStorage" | "modelRegistry" | "credentials"
 > & {
   /**
@@ -34,7 +34,7 @@ export type AgentRuntimeRegistryConfig = Omit<
 
 type RuntimeEntry = {
   projectDir: string;
-  runtime: AgentRuntime;
+  runtime: ProjectRuntime;
 };
 
 export class AgentRuntimeRegistry {
@@ -43,13 +43,13 @@ export class AgentRuntimeRegistry {
   private readonly modelRegistry: ModelRegistryType;
   private readonly runtimes = new Map<string, RuntimeEntry>();
   readonly credentials: AgentCredentialsService;
-  readonly defaultRuntime: AgentRuntime;
+  readonly defaultRuntime: ProjectRuntime;
 
   constructor(config: AgentRuntimeRegistryConfig) {
     // Resolve agentDir once so AuthStorage, ModelRegistry, AgentCredentialsService,
-    // and every per-project AgentRuntime all read/write the same auth.json and
+    // and every per-project ProjectRuntime all read/write the same auth.json and
     // models.json files. Without this, an undefined agentDir falls back to Pi's
-    // getAgentDir() inside each AuthStorage/ModelRegistry/AgentRuntime, while the
+    // getAgentDir() inside each AuthStorage/ModelRegistry/ProjectRuntime, while the
     // credentials service would silently target a different path.
     const agentDir = config.agentDir ? resolve(config.agentDir) : getAgentDir();
     this.config = {
@@ -83,7 +83,7 @@ export class AgentRuntimeRegistry {
     });
   }
 
-  forProject(context: ProjectRuntimeContext): AgentRuntime {
+  forProject(context: ProjectRuntimeContext): ProjectRuntime {
     const projectDir = resolve(context.projectDir);
     if (!context.id.trim()) throw new Error("project id is required");
     if (!existsSync(projectDir)) throw new Error(`project directory does not exist: ${projectDir}`);
@@ -96,7 +96,7 @@ export class AgentRuntimeRegistry {
     return runtime;
   }
 
-  private createRuntime(context: ProjectRuntimeContext): AgentRuntime {
+  private createRuntime(context: ProjectRuntimeContext): ProjectRuntime {
     const projectDir = resolve(context.projectDir);
     const agentsFile =
       context.id === "default"
@@ -113,7 +113,7 @@ export class AgentRuntimeRegistry {
       `[agent-server] creating Pi runtime project=${context.id} dir=${projectDir}`,
     );
 
-    return new AgentRuntime({
+    return new ProjectRuntime({
       ...this.config,
       projectDir,
       sessionsDir:

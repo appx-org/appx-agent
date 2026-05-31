@@ -2,7 +2,7 @@
  * AgentCredentialsService — process-global credential state.
  *
  * Owns AuthStorage, ModelRegistry, models.json CRUD, and the in-memory
- * OAuth subscription flow state machine. AgentRuntime instances hold a
+ * OAuth subscription flow state machine. ProjectRuntime instances hold a
  * reference for read-only projections (listModels, modelRow used in
  * session settings). Routes for /v1/auth/* and /v1/custom/* call this
  * directly via createCredentialsApp.
