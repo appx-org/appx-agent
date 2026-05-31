@@ -6,8 +6,8 @@ import {
   ModelRegistry,
   type ModelRegistry as ModelRegistryType,
 } from "@earendil-works/pi-coding-agent";
-import { ProjectRuntime, type ProjectRuntimeConfig } from "./projectRuntime.js";
 import { AgentCredentialsService } from "./credentialsService.js";
+import { ProjectRuntime, type ProjectRuntimeConfig } from "./projectRuntime.js";
 
 export type ProjectRuntimeContext = {
   id: string;
@@ -37,6 +37,21 @@ type RuntimeEntry = {
   runtime: ProjectRuntime;
 };
 
+/**
+ * Registry of per-project ProjectRuntimes sharing one process-global
+ * AuthStorage / ModelRegistry / AgentCredentialsService.
+ *
+ * Construction is async because each ProjectRuntime now builds an
+ * AgentSessionServices bundle (which walks the filesystem to resolve
+ * extensions/skills/themes once per project). Use the static factory:
+ *
+ *     const registry = await AgentRuntimeRegistry.create(config);
+ *
+ * forProject() is also async — it lazily constructs project runtimes
+ * on first request and caches them by id.
+ *
+ * See docs/architecture/use-agent-session-services.md.
+ */
 export class AgentRuntimeRegistry {
   private readonly config: AgentRuntimeRegistryConfig;
   private readonly authStorage: AuthStorage;
@@ -45,45 +60,82 @@ export class AgentRuntimeRegistry {
   readonly credentials: AgentCredentialsService;
   readonly defaultRuntime: ProjectRuntime;
 
-  constructor(config: AgentRuntimeRegistryConfig) {
+  /**
+   * Async factory. Sets up shared auth/model state, then builds the
+   * default runtime by awaiting its services bundle.
+   */
+  static async create(config: AgentRuntimeRegistryConfig): Promise<AgentRuntimeRegistry> {
     // Resolve agentDir once so AuthStorage, ModelRegistry, AgentCredentialsService,
     // and every per-project ProjectRuntime all read/write the same auth.json and
     // models.json files. Without this, an undefined agentDir falls back to Pi's
     // getAgentDir() inside each AuthStorage/ModelRegistry/ProjectRuntime, while the
     // credentials service would silently target a different path.
     const agentDir = config.agentDir ? resolve(config.agentDir) : getAgentDir();
-    this.config = {
+    const resolvedConfig: AgentRuntimeRegistryConfig = {
       ...config,
       projectDir: resolve(config.projectDir),
       sessionsDir: resolve(config.sessionsDir),
       agentDir,
       defaultAgentsFile: config.defaultAgentsFile,
-      projectExtensionPaths: config.projectExtensionPaths ?? [".pi/extensions/appx-guardrails.ts"],
+      projectExtensionPaths:
+        config.projectExtensionPaths ?? [".pi/extensions/appx-guardrails.ts"],
     };
 
     mkdirSync(agentDir, { recursive: true });
-    this.authStorage = AuthStorage.create(join(agentDir, "auth.json"));
-    this.modelRegistry = ModelRegistry.create(this.authStorage, join(agentDir, "models.json"));
-    this.config.configureModelRegistry?.(this.modelRegistry);
+    const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
+    const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
+    resolvedConfig.configureModelRegistry?.(modelRegistry);
 
-    this.credentials = new AgentCredentialsService({
-      authStorage: this.authStorage,
-      modelRegistry: this.modelRegistry,
+    const credentials = new AgentCredentialsService({
+      authStorage,
+      modelRegistry,
       modelsJsonPath: join(agentDir, "models.json"),
-      defaultModelProvider: this.config.defaultModelProvider,
-      defaultModelId: this.config.defaultModelId,
-      defaultThinkingLevel: this.config.defaultThinkingLevel,
-      modelThinkingDefaults: this.config.modelThinkingDefaults,
-      logger: this.config.logger,
+      defaultModelProvider: resolvedConfig.defaultModelProvider,
+      defaultModelId: resolvedConfig.defaultModelId,
+      defaultThinkingLevel: resolvedConfig.defaultThinkingLevel,
+      modelThinkingDefaults: resolvedConfig.modelThinkingDefaults,
+      logger: resolvedConfig.logger,
     });
 
-    this.defaultRuntime = this.createRuntime({
-      id: "default",
-      projectDir: this.config.projectDir,
-    });
+    // Build the default runtime up-front so the registry exposes it
+    // synchronously (matching server.ts's mounting expectations).
+    const defaultRuntime = await buildRuntime(
+      { id: "default", projectDir: resolvedConfig.projectDir },
+      resolvedConfig,
+      authStorage,
+      modelRegistry,
+      credentials,
+    );
+
+    return new AgentRuntimeRegistry(
+      resolvedConfig,
+      authStorage,
+      modelRegistry,
+      credentials,
+      defaultRuntime,
+    );
   }
 
-  forProject(context: ProjectRuntimeContext): ProjectRuntime {
+  private constructor(
+    config: AgentRuntimeRegistryConfig,
+    authStorage: AuthStorage,
+    modelRegistry: ModelRegistryType,
+    credentials: AgentCredentialsService,
+    defaultRuntime: ProjectRuntime,
+  ) {
+    this.config = config;
+    this.authStorage = authStorage;
+    this.modelRegistry = modelRegistry;
+    this.credentials = credentials;
+    this.defaultRuntime = defaultRuntime;
+  }
+
+  /**
+   * Get (or lazily build) the ProjectRuntime for a project context.
+   * Async because ProjectRuntime.create walks the filesystem once to
+   * load resources.
+   */
+  async forProject(context: ProjectRuntimeContext): Promise<ProjectRuntime> {
     const projectDir = resolve(context.projectDir);
     if (!context.id.trim()) throw new Error("project id is required");
     if (!existsSync(projectDir)) throw new Error(`project directory does not exist: ${projectDir}`);
@@ -91,47 +143,70 @@ export class AgentRuntimeRegistry {
     const existing = this.runtimes.get(context.id);
     if (existing?.projectDir === projectDir) return existing.runtime;
 
-    const runtime = this.createRuntime({ ...context, projectDir });
+    const runtime = await buildRuntime(
+      { ...context, projectDir },
+      this.config,
+      this.authStorage,
+      this.modelRegistry,
+      this.credentials,
+    );
     this.runtimes.set(context.id, { projectDir, runtime });
     return runtime;
   }
+}
 
-  private createRuntime(context: ProjectRuntimeContext): ProjectRuntime {
-    const projectDir = resolve(context.projectDir);
-    const agentsFile =
+/**
+ * Module-private helper so both `create()` (static) and `forProject()`
+ * (instance) can share the runtime-construction recipe without
+ * needing access to half-initialised instance state.
+ */
+async function buildRuntime(
+  context: ProjectRuntimeContext,
+  config: AgentRuntimeRegistryConfig,
+  authStorage: AuthStorage,
+  modelRegistry: ModelRegistryType,
+  credentials: AgentCredentialsService,
+): Promise<ProjectRuntime> {
+  const projectDir = resolve(context.projectDir);
+  const agentsFile =
+    context.id === "default"
+      ? config.defaultAgentsFile === false
+        ? undefined
+        : config.defaultAgentsFile ?? config.agentsFile
+      : config.agentsFile;
+  const extensionPaths = [
+    ...(config.extensionPaths ?? []),
+    ...resolveProjectExtensionPaths(config.projectExtensionPaths ?? [], projectDir),
+  ];
+
+  config.logger?.log(
+    `[agent-server] creating Pi runtime project=${context.id} dir=${projectDir}`,
+  );
+
+  return ProjectRuntime.create({
+    ...config,
+    projectDir,
+    sessionsDir:
       context.id === "default"
-        ? this.config.defaultAgentsFile === false
-          ? undefined
-          : this.config.defaultAgentsFile ?? this.config.agentsFile
-        : this.config.agentsFile;
-    const extensionPaths = [
-      ...(this.config.extensionPaths ?? []),
-      ...this.projectExtensionPaths(projectDir),
-    ];
+        ? config.sessionsDir
+        : resolve(projectDir, "data/sessions"),
+    credentials,
+    authStorage,
+    modelRegistry,
+    // Shared modelRegistry was already configured by the caller of
+    // AgentRuntimeRegistry.create; clear the hook so per-project
+    // ProjectRuntime.create doesn't double-apply it.
+    configureModelRegistry: undefined,
+    extensionPaths,
+    agentsFile,
+  });
+}
 
-    this.config.logger?.log(
-      `[agent-server] creating Pi runtime project=${context.id} dir=${projectDir}`,
-    );
-
-    return new ProjectRuntime({
-      ...this.config,
-      projectDir,
-      sessionsDir:
-        context.id === "default"
-          ? this.config.sessionsDir
-          : resolve(projectDir, "data/sessions"),
-      credentials: this.credentials,
-      authStorage: this.authStorage,
-      modelRegistry: this.modelRegistry,
-      configureModelRegistry: undefined,
-      extensionPaths,
-      agentsFile,
-    });
-  }
-
-  private projectExtensionPaths(projectDir: string): string[] {
-    return (this.config.projectExtensionPaths ?? [])
-      .map((entry) => (isAbsolute(entry) ? entry : resolve(projectDir, entry)))
-      .filter((entry) => existsSync(entry));
-  }
+function resolveProjectExtensionPaths(
+  paths: string[],
+  projectDir: string,
+): string[] {
+  return paths
+    .map((entry) => (isAbsolute(entry) ? entry : resolve(projectDir, entry)))
+    .filter((entry) => existsSync(entry));
 }

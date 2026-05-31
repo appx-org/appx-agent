@@ -10,8 +10,12 @@
  *     a new file.
  *
  * Owns:
- *   - one AuthStorage + ModelRegistry, optionally shared by sibling runtimes
- *   - Map<sessionId, ProjectSession> of in-memory live sessions
+ *   - one AgentSessionServices bundle (cwd-bound: ResourceLoader,
+ *     SettingsManager, AuthStorage, ModelRegistry, diagnostics) shared
+ *     across every session in this project — the bundle's
+ *     ResourceLoader.reload() runs exactly once at project startup
+ *     instead of once per session.
+ *   - Map<sessionId, ProjectSession> of in-memory live sessions.
  *
  * Per-session operations (prompt, abort, model changes, extension-UI
  * routing) live on ProjectSession. Routes use the two-step lookup:
@@ -20,8 +24,10 @@
  *     if (!session) return 404;
  *     await session.sendPrompt(text);
  *
- * See docs/architecture/project-runtime-and-session-split.md for the
- * full split rationale.
+ * Construction is async via `ProjectRuntime.create(config)` because
+ * `createAgentSessionServices()` walks the filesystem to load
+ * extensions/skills/themes once per project. See
+ * docs/architecture/use-agent-session-services.md for the rationale.
  *
  * No module-level singletons — multiple apps in the same process (e.g. tests)
  * each get their own runtime with isolated state.
@@ -30,21 +36,21 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import {
 	type AgentSession,
+	type AgentSessionRuntimeDiagnostic,
+	type AgentSessionServices,
 	AuthStorage,
+	createAgentSessionFromServices,
+	createAgentSessionServices,
 	type CreateAgentSessionOptions,
-	createAgentSession,
-	DefaultResourceLoader,
 	type ExtensionFactory,
 	getAgentDir,
-	ModelRegistry,
 	type ModelRegistry as ModelRegistryType,
 	SessionManager,
 	type SessionInfo,
-	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { AgentCredentialsService } from "./credentialsService.js";
 import { ProjectSession } from "./projectSession.js";
 import { type ThinkingLevel } from "./thinking.js";
-import { AgentCredentialsService } from "./credentialsService.js";
 
 type SessionModel = NonNullable<CreateAgentSessionOptions["model"]>;
 
@@ -141,150 +147,195 @@ export type SessionRow = {
 	messageCount: number;
 };
 
+type ProjectRuntimeFields = {
+	projectDir: string;
+	sessionsDir: string;
+	credentials: AgentCredentialsService;
+	defaultModelProvider: string | undefined;
+	defaultModelId: string | undefined;
+	defaultThinkingLevel: ThinkingLevel | undefined;
+	logger: Pick<Console, "log" | "error">;
+};
+
 export class ProjectRuntime {
+	/** Process-global credentials service shared across all sibling runtimes. */
+	readonly credentials: AgentCredentialsService;
+	/**
+	 * Pi's cwd-bound services bundle. Source of truth for AuthStorage,
+	 * ModelRegistry, SettingsManager, ResourceLoader, agentDir, cwd, and
+	 * non-fatal startup diagnostics. Shared across every session created
+	 * by this runtime.
+	 */
+	readonly services: AgentSessionServices;
+
 	private readonly projectDir: string;
 	private readonly sessionsDir: string;
-	private readonly agentDir: string;
-	private readonly credentials: AgentCredentialsService;
-	private readonly authStorage: AuthStorage;
-	private readonly modelRegistry: ModelRegistry;
-	private readonly logger: Pick<Console, "log" | "error">;
 	private readonly defaultModelProvider: string | undefined;
 	private readonly defaultModelId: string | undefined;
 	private readonly defaultThinkingLevel: ThinkingLevel | undefined;
-	private readonly extensionPaths: string[];
-	private readonly skillPaths: string[];
-	private readonly promptTemplatePaths: string[];
-	private readonly themePaths: string[];
-	private readonly extensionFactories: ExtensionFactory[];
-	private readonly noExtensions: boolean;
-	private readonly noSkills: boolean;
-	private readonly noPromptTemplates: boolean;
-	private readonly noThemes: boolean;
+	private readonly logger: Pick<Console, "log" | "error">;
 	private readonly sessions = new Map<string, ProjectSession>();
-	/** Resolved absolute path to the agent's system-prompt file, if pinned. */
-	private readonly agentsFile: string | undefined;
-	/** Cached system-prompt content, read once at construction. */
-	private readonly systemPrompt: string | undefined;
 
-	constructor(config: ProjectRuntimeConfig) {
-		this.projectDir = config.projectDir;
-		this.sessionsDir = config.sessionsDir;
-		this.agentDir = config.agentDir ?? getAgentDir();
-		this.logger = config.logger ?? console;
-		this.defaultModelProvider = config.defaultModelProvider;
-		this.defaultModelId = config.defaultModelId;
-		this.defaultThinkingLevel = config.defaultThinkingLevel;
-		this.extensionPaths = config.extensionPaths ?? [];
-		this.skillPaths = config.skillPaths ?? [];
-		this.promptTemplatePaths = config.promptTemplatePaths ?? [];
-		this.themePaths = config.themePaths ?? [];
-		this.extensionFactories = config.extensionFactories ?? [];
-		this.noExtensions = config.noExtensions ?? false;
-		this.noSkills = config.noSkills ?? false;
-		this.noPromptTemplates = config.noPromptTemplates ?? false;
-		this.noThemes = config.noThemes ?? false;
-		mkdirSync(this.sessionsDir, { recursive: true });
-		mkdirSync(this.agentDir, { recursive: true });
+	/**
+	 * Async factory. Builds the AgentSessionServices bundle (which runs
+	 * `resourceLoader.reload()` once and registers extension-provided
+	 * custom model providers into the shared modelRegistry) and
+	 * constructs the runtime around it.
+	 *
+	 * Industry best practice: async work in a static factory rather than
+	 * a constructor, since constructors can't be awaited and partially
+	 * constructed objects are a footgun.
+	 */
+	static async create(config: ProjectRuntimeConfig): Promise<ProjectRuntime> {
+		const projectDir = resolve(config.projectDir);
+		const sessionsDir = resolve(config.sessionsDir);
+		const agentDir = config.agentDir ? resolve(config.agentDir) : getAgentDir();
+		const logger = config.logger ?? console;
 
-		this.credentials = config.credentials;
-		this.authStorage = config.authStorage ?? AuthStorage.create(join(this.agentDir, "auth.json"));
+		mkdirSync(sessionsDir, { recursive: true });
+		mkdirSync(agentDir, { recursive: true });
 
-		if (config.agentsFile) {
-			const path = isAbsolute(config.agentsFile)
-				? config.agentsFile
-				: resolve(this.projectDir, config.agentsFile);
-			try {
-				this.systemPrompt = readFileSync(path, "utf8");
-				this.agentsFile = path;
-				this.logger.log(
-					`[agent] system prompt loaded from ${path} (${this.systemPrompt.length} chars)`,
-				);
-			} catch (err) {
-				this.logger.error(`[agent] failed to read agentsFile ${path}: ${String(err)}`);
-				throw err;
-			}
-		}
+		// Read pinned system prompt up-front so we can both feed it into
+		// the resource loader and suppress Pi's ancestor AGENTS.md walk.
+		const { systemPrompt, agentsFilePath } = readPinnedSystemPrompt(
+			config,
+			projectDir,
+			logger,
+		);
+
+		// Caller may share an AuthStorage across projects; otherwise build a
+		// project-local one against the resolved agentDir so our auth.json
+		// path matches every other runtime touching this agentDir.
+		const authStorage =
+			config.authStorage ?? AuthStorage.create(join(agentDir, "auth.json"));
 
 		if (config.anthropicApiKey) {
-			this.authStorage.setRuntimeApiKey("anthropic", config.anthropicApiKey);
-			this.logger.log("[agent] runtime ANTHROPIC_API_KEY injected");
-		} else {
-			this.logger.log(
-				`[agent] no ANTHROPIC_API_KEY provided; relying on AuthStorage defaults (${join(this.agentDir, "auth.json")})`,
+			authStorage.setRuntimeApiKey("anthropic", config.anthropicApiKey);
+			logger.log("[agent] runtime ANTHROPIC_API_KEY injected");
+		} else if (!config.authStorage) {
+			// Only log the fallback when we actually own the AuthStorage
+			// — when callers share one, they're responsible for its source.
+			logger.log(
+				`[agent] no ANTHROPIC_API_KEY provided; relying on AuthStorage defaults (${join(agentDir, "auth.json")})`,
 			);
 		}
 
-		this.modelRegistry = config.modelRegistry ?? ModelRegistry.create(this.authStorage);
-		if (!config.modelRegistry) config.configureModelRegistry?.(this.modelRegistry);
+		// Build the services bundle. Pi creates ResourceLoader +
+		// SettingsManager here, runs reload() exactly once, and registers
+		// extension-provided custom providers into the (shared)
+		// modelRegistry.
+		const services = await createAgentSessionServices({
+			cwd: projectDir,
+			agentDir,
+			authStorage,
+			modelRegistry: config.modelRegistry,
+			resourceLoaderOptions: {
+				additionalExtensionPaths: config.extensionPaths,
+				additionalSkillPaths: config.skillPaths,
+				additionalPromptTemplatePaths: config.promptTemplatePaths,
+				additionalThemePaths: config.themePaths,
+				extensionFactories: config.extensionFactories,
+				noExtensions: config.noExtensions,
+				noSkills: config.noSkills,
+				noPromptTemplates: config.noPromptTemplates,
+				noThemes: config.noThemes,
+				// When systemPrompt is pinned, suppress Pi's ancestor
+				// AGENTS.md/CLAUDE.md walk so the agent's prompt is exactly
+				// what the app intends and nothing else.
+				noContextFiles: systemPrompt !== undefined,
+				systemPrompt,
+			},
+		});
 
-		if (this.defaultModelProvider && this.defaultModelId) {
-			const model = this.modelRegistry.find(this.defaultModelProvider, this.defaultModelId);
+		if (agentsFilePath && systemPrompt !== undefined) {
+			logger.log(
+				`[agent] system prompt loaded from ${agentsFilePath} (${systemPrompt.length} chars)`,
+			);
+		}
+
+		// Apply caller's modelRegistry hook only if registry isn't shared.
+		// Shared registries are configured once at the registry level so
+		// we don't re-run the hook per project.
+		if (!config.modelRegistry) {
+			config.configureModelRegistry?.(services.modelRegistry);
+		}
+
+		// Surface non-fatal diagnostics from services creation. Errors are
+		// logged but not thrown — matches the existing default-model auth
+		// check below, which logs without aborting startup.
+		for (const diagnostic of services.diagnostics) {
+			const log = diagnostic.type === "error" ? logger.error : logger.log;
+			log.call(logger, `[agent] ${diagnostic.type}: ${diagnostic.message}`);
+		}
+
+		// Validate the configured default model resolves & has auth.
+		if (config.defaultModelProvider && config.defaultModelId) {
+			const model = services.modelRegistry.find(
+				config.defaultModelProvider,
+				config.defaultModelId,
+			);
 			if (!model) {
-				this.logger.error(
-					`[agent] default model not found: ${this.defaultModelProvider}/${this.defaultModelId}`,
+				logger.error(
+					`[agent] default model not found: ${config.defaultModelProvider}/${config.defaultModelId}`,
 				);
-			} else if (!this.modelRegistry.hasConfiguredAuth(model)) {
-				this.logger.error(`[agent] auth is not configured for default model ${model.provider}/${model.id}`);
+			} else if (!services.modelRegistry.hasConfiguredAuth(model)) {
+				logger.error(
+					`[agent] auth is not configured for default model ${model.provider}/${model.id}`,
+				);
 			} else {
-				this.logger.log(`[agent] default model: ${model.provider}/${model.id}`);
+				logger.log(`[agent] default model: ${model.provider}/${model.id}`);
 			}
 		}
+
+		return new ProjectRuntime(
+			{
+				projectDir,
+				sessionsDir,
+				credentials: config.credentials,
+				defaultModelProvider: config.defaultModelProvider,
+				defaultModelId: config.defaultModelId,
+				defaultThinkingLevel: config.defaultThinkingLevel,
+				logger,
+			},
+			services,
+		);
+	}
+
+	private constructor(fields: ProjectRuntimeFields, services: AgentSessionServices) {
+		this.projectDir = fields.projectDir;
+		this.sessionsDir = fields.sessionsDir;
+		this.credentials = fields.credentials;
+		this.defaultModelProvider = fields.defaultModelProvider;
+		this.defaultModelId = fields.defaultModelId;
+		this.defaultThinkingLevel = fields.defaultThinkingLevel;
+		this.logger = fields.logger;
+		this.services = services;
 	}
 
 	private sessionModelDefaults(): Pick<CreateAgentSessionOptions, "model" | "thinkingLevel"> {
 		const defaults: Pick<CreateAgentSessionOptions, "model" | "thinkingLevel"> = {};
 		if (this.defaultModelProvider && this.defaultModelId) {
-			const model = this.modelRegistry.find(this.defaultModelProvider, this.defaultModelId) as
-				| SessionModel
-				| undefined;
+			const model = this.services.modelRegistry.find(
+				this.defaultModelProvider,
+				this.defaultModelId,
+			) as SessionModel | undefined;
 			if (model) {
 				defaults.model = model;
 				const thinkingLevel = this.credentials.defaultThinkingForModel(model as SessionModel);
 				if (thinkingLevel) defaults.thinkingLevel = thinkingLevel;
 			}
 		}
-		if (!defaults.thinkingLevel && this.defaultThinkingLevel) defaults.thinkingLevel = this.defaultThinkingLevel;
+		if (!defaults.thinkingLevel && this.defaultThinkingLevel) {
+			defaults.thinkingLevel = this.defaultThinkingLevel;
+		}
 		return defaults;
-	}
-
-	/**
-	 * Build a fresh DefaultResourceLoader configured with our pinned
-	 * system-prompt file, if any. Pi's SDK constructs a default loader
-	 * (with full ancestor AGENTS.md/CLAUDE.md discovery) when none is
-	 * passed, so we always pass our own to keep behaviour deterministic.
-	 * A new loader per session is fine — pi creates one anyway.
-	 */
-	private async makeResourceLoader(): Promise<DefaultResourceLoader> {
-		const settingsManager = SettingsManager.create(this.projectDir, this.agentDir);
-		const loader = new DefaultResourceLoader({
-			cwd: this.projectDir,
-			agentDir: this.agentDir,
-			settingsManager,
-			additionalExtensionPaths: this.extensionPaths,
-			additionalSkillPaths: this.skillPaths,
-			additionalPromptTemplatePaths: this.promptTemplatePaths,
-			additionalThemePaths: this.themePaths,
-			extensionFactories: this.extensionFactories,
-			noExtensions: this.noExtensions,
-			noSkills: this.noSkills,
-			noPromptTemplates: this.noPromptTemplates,
-			noThemes: this.noThemes,
-			// When we have an explicit agentsFile, suppress all ancestor-walk
-			// AGENTS.md/CLAUDE.md discovery and feed our content via
-			// systemPrompt instead.
-			noContextFiles: this.systemPrompt !== undefined,
-			systemPrompt: this.systemPrompt,
-		});
-		await loader.reload();
-		return loader;
 	}
 
 	/** Wrap a freshly created/reopened AgentSession in a ProjectSession and remember it. */
 	private adopt(session: AgentSession): ProjectSession {
 		const ps = new ProjectSession(session, {
 			credentials: this.credentials,
-			modelRegistry: this.modelRegistry,
+			modelRegistry: this.services.modelRegistry,
 			logger: this.logger,
 		});
 		this.sessions.set(ps.sessionId, ps);
@@ -300,12 +351,10 @@ export class ProjectRuntime {
 	 * first prompt, list pending extension UI requests).
 	 */
 	async createNewSession(): Promise<ProjectSession> {
-		const { session } = await createAgentSession({
-			...this.sessionModelDefaults(),
-			authStorage: this.authStorage,
-			modelRegistry: this.modelRegistry,
+		const { session } = await createAgentSessionFromServices({
+			services: this.services,
 			sessionManager: SessionManager.create(this.projectDir, this.sessionsDir),
-			resourceLoader: await this.makeResourceLoader(),
+			...this.sessionModelDefaults(),
 		});
 		return this.adopt(session);
 	}
@@ -322,12 +371,10 @@ export class ProjectRuntime {
 		const info = sessions.find((s) => s.id === id);
 		if (!info) return null;
 
-		const { session } = await createAgentSession({
-			...this.sessionModelDefaults(),
-			authStorage: this.authStorage,
-			modelRegistry: this.modelRegistry,
+		const { session } = await createAgentSessionFromServices({
+			services: this.services,
 			sessionManager: SessionManager.open(info.path),
-			resourceLoader: await this.makeResourceLoader(),
+			...this.sessionModelDefaults(),
 		});
 		return this.adopt(session);
 	}
@@ -370,12 +417,66 @@ export class ProjectRuntime {
 		return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 	}
 
+	// ── Resource refresh + diagnostics ───────────────────────────────
+
+	/**
+	 * Reload project resources (skills, extensions, prompts, themes,
+	 * AGENTS.md context) from disk. Existing live sessions keep their
+	 * already-bound extensions; only sessions created after this call
+	 * see the new resources.
+	 *
+	 * Behaviour change vs. pre-services design: previously every
+	 * createNewSession()/getSession() walked the filesystem afresh, so
+	 * skill files added mid-session were picked up automatically. Now
+	 * resources are snapshotted at project startup; call `reload()`
+	 * explicitly to refresh them.
+	 */
+	async reload(): Promise<void> {
+		await this.services.resourceLoader.reload();
+	}
+
+	/**
+	 * Non-fatal issues collected during services creation (extension load
+	 * errors, unknown extension flags, custom provider registration
+	 * failures). Live reference to the services bundle's array — not a
+	 * copy. Surface these to operators / API consumers as appropriate.
+	 */
+	diagnostics(): readonly AgentSessionRuntimeDiagnostic[] {
+		return this.services.diagnostics;
+	}
+
 	// ── Two-step session lookup is the only public API ──────────────
 	//
 	// All session-mutating operations live on ProjectSession. Routes do
 	// `const ps = await runtime.getSession(id)` then call methods on the
 	// returned ProjectSession directly (e.g. `await ps.sendPrompt(text)`).
 	//
-	// AgentRuntime exposes only the project-level operations: createNewSession,
-	// getSession, listSessions.
+	// ProjectRuntime exposes only the project-level operations:
+	// createNewSession, getSession, listSessions, reload, diagnostics.
+}
+
+/**
+ * Read pinned system prompt file if specified. Returns the prompt
+ * content and the resolved absolute path. Throws on read failure
+ * (consistent with the pre-services behaviour — a misconfigured
+ * agentsFile is a startup error).
+ */
+function readPinnedSystemPrompt(
+	config: ProjectRuntimeConfig,
+	projectDir: string,
+	logger: Pick<Console, "log" | "error">,
+): { systemPrompt: string | undefined; agentsFilePath: string | undefined } {
+	if (!config.agentsFile) {
+		return { systemPrompt: undefined, agentsFilePath: undefined };
+	}
+	const path = isAbsolute(config.agentsFile)
+		? config.agentsFile
+		: resolve(projectDir, config.agentsFile);
+	try {
+		const systemPrompt = readFileSync(path, "utf8");
+		return { systemPrompt, agentsFilePath: path };
+	} catch (err) {
+		logger.error(`[agent] failed to read agentsFile ${path}: ${String(err)}`);
+		throw err;
+	}
 }

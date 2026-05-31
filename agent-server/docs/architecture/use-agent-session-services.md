@@ -2,7 +2,10 @@
 
 ## Status
 
-Proposed. **Depends on `project-runtime-and-session-split.md` landing first.**
+**Landed.** Implemented on the `pi-switch-refactor` branch alongside the
+project-runtime/session split. See `src/projectRuntime.ts`,
+`src/runtimeRegistry.ts`, and the `ProjectRuntime — AgentSessionServices
+integration` test suite in `test/projectRuntimeServices.test.ts`.
 
 ## Goal
 

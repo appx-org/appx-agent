@@ -45,4 +45,6 @@ export { subscribe, publish, channelStats } from "./sseBroker.js";
 export type {
 	AgentSession,
 	AgentSessionEvent,
+	AgentSessionRuntimeDiagnostic,
+	AgentSessionServices,
 } from "@earendil-works/pi-coding-agent";

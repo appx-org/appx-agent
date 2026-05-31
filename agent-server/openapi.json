@@ -3,7 +3,7 @@
   "info": {
     "title": "Appx Agent Server",
     "version": "0.1.0",
-    "description": "Pi-SDK-based agent orchestration for standalone app sessions."
+    "description": "Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes."
   },
   "components": {
     "schemas": {
@@ -1106,7 +1106,7 @@
         }
       }
     },
-    "/v1/sessions": {
+    "/v1/projects/{projectId}/sessions": {
       "get": {
         "tags": [
           "sessions"
@@ -1144,7 +1144,7 @@
         }
       }
     },
-    "/v1/sessions/{id}/settings": {
+    "/v1/projects/{projectId}/sessions/{id}/settings": {
       "get": {
         "tags": [
           "models"
@@ -1264,7 +1264,7 @@
         }
       }
     },
-    "/v1/sessions/{id}": {
+    "/v1/projects/{projectId}/sessions/{id}": {
       "get": {
         "tags": [
           "sessions"
@@ -1305,7 +1305,7 @@
         }
       }
     },
-    "/v1/sessions/{id}/extension-ui": {
+    "/v1/projects/{projectId}/sessions/{id}/extension-ui": {
       "get": {
         "tags": [
           "extensions"
@@ -1346,7 +1346,7 @@
         }
       }
     },
-    "/v1/sessions/{id}/extension-ui/{requestId}/response": {
+    "/v1/projects/{projectId}/sessions/{id}/extension-ui/{requestId}/response": {
       "post": {
         "tags": [
           "extensions"
@@ -1406,7 +1406,7 @@
         }
       }
     },
-    "/v1/sessions/{id}/prompt": {
+    "/v1/projects/{projectId}/sessions/{id}/prompt": {
       "post": {
         "tags": [
           "sessions"
@@ -1457,7 +1457,7 @@
         }
       }
     },
-    "/v1/sessions/{id}/abort": {
+    "/v1/projects/{projectId}/sessions/{id}/abort": {
       "post": {
         "tags": [
           "sessions"
@@ -1498,7 +1498,7 @@
         }
       }
     },
-    "/v1/sessions/{id}/events": {
+    "/v1/projects/{projectId}/sessions/{id}/events": {
       "get": {
         "tags": [
           "sessions"

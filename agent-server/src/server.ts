@@ -112,7 +112,7 @@ const mode = parseMode();
 
 logLiteLlmStartupConfig();
 
-const runtimeRegistry = new AgentRuntimeRegistry({
+const runtimeRegistry = await AgentRuntimeRegistry.create({
 	projectDir,
 	sessionsDir,
 	agentDir,
@@ -130,7 +130,7 @@ const runtimeRegistry = new AgentRuntimeRegistry({
 	...litellmRuntimeConfig(),
 });
 
-function projectRuntimeFromRequest(c: Context) {
+function projectRuntimeFromRequest(c: Context): Promise<import("./projectRuntime.js").ProjectRuntime> {
 	const projectId = c.req.param("projectId");
 	const projectDir = c.req.header("x-appx-project-dir")?.trim();
 	if (!projectId || !projectDir) {

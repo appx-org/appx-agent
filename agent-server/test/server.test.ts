@@ -107,7 +107,7 @@ async function startServer(opts: {
 		});
 	}
 
-	const registry = new AgentRuntimeRegistry({
+	const registry = await AgentRuntimeRegistry.create({
 		projectDir: opts.projectDir,
 		sessionsDir: resolve(opts.projectDir, "data/sessions"),
 		agentDir: resolve(opts.projectDir, ".pi-agent"),
@@ -153,7 +153,7 @@ describe("agent-server: LiteLLM config", () => {
 		resetLiteLlmConfigForTests();
 	});
 
-	test("registers configured LiteLLM models with thinking defaults", () => {
+	test("registers configured LiteLLM models with thinking defaults", async () => {
 		const previous = new Map(envKeys.map((key) => [key, process.env[key]]));
 		const project = makeProject();
 		try {
@@ -179,7 +179,7 @@ describe("agent-server: LiteLLM config", () => {
 				modelThinkingDefaults: litellmConfig.modelThinkingDefaults,
 				logger: { log: () => {}, error: () => {} },
 			});
-			new ProjectRuntime({
+			await ProjectRuntime.create({
 				...litellmConfig,
 				configureModelRegistry: undefined,
 				projectDir: project.dir,
@@ -323,12 +323,12 @@ describe("agent-server: REST surface", () => {
 		assert.deepEqual((await del.json()) as { ok: boolean }, { ok: true });
 	});
 
-	test("provider auth status treats runtime credentials as configured", () => {
+	test("provider auth status treats runtime credentials as configured", async () => {
 		const project = makeProject();
 		try {
 			const agentDir = resolve(project.dir, ".pi-agent");
 			const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
-			new ProjectRuntime({
+			await ProjectRuntime.create({
 				projectDir: project.dir,
 				sessionsDir: resolve(project.dir, "data/sessions"),
 				agentDir,
@@ -761,7 +761,7 @@ describe("agent-server: project-scoped runtimes", () => {
 	test("multi-project route split keeps credentials global and sessions project-scoped", async () => {
 		const project = makeProject();
 		const port = await pickPort();
-		const registry = new AgentRuntimeRegistry({
+		const registry = await AgentRuntimeRegistry.create({
 			projectDir: project.dir,
 			sessionsDir: resolve(project.dir, "data/default-sessions"),
 			agentDir: resolve(project.dir, ".pi-agent"),
@@ -813,7 +813,7 @@ describe("agent-server: project-scoped runtimes", () => {
 		const projectA = makeProject();
 		const projectB = makeProject();
 		const port = await pickPort();
-		const registry = new AgentRuntimeRegistry({
+		const registry = await AgentRuntimeRegistry.create({
 			projectDir: projectA.dir,
 			sessionsDir: resolve(projectA.dir, "data/sessions"),
 			agentDir: resolve(projectA.dir, ".pi-agent"),
