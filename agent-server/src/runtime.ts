@@ -38,6 +38,7 @@ import {
   SessionManager,
   type SessionInfo,
   SettingsManager,
+  type WidgetPlacement,
 } from "@earendil-works/pi-coding-agent";
 import { publish } from "./sseBroker.js";
 import {
@@ -146,6 +147,14 @@ export type SessionModelSettings = {
   isStreaming: boolean;
 };
 
+/**
+ * Extension UI request types for SSE transport.
+ * 
+ * These match Pi's `RpcExtensionUIRequest` from `@earendil-works/pi-coding-agent/modes/rpc`
+ * but are kept locally because they're not exported from Pi's public API.
+ * 
+ * @see https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/rpc/rpc-types.ts
+ */
 export type ExtensionUiRequest =
   | { type: "extension_ui_request"; id: string; method: "select"; title: string; options: string[]; timeout?: number }
   | { type: "extension_ui_request"; id: string; method: "confirm"; title: string; message: string; timeout?: number }
@@ -165,11 +174,17 @@ export type ExtensionUiRequest =
       method: "setWidget";
       widgetKey: string;
       widgetLines: string[] | undefined;
-      widgetPlacement?: "aboveEditor" | "belowEditor";
+      widgetPlacement?: WidgetPlacement;
     }
   | { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
   | { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string };
 
+/**
+ * Extension UI response types for SSE transport.
+ * 
+ * Simplified from Pi's `RpcExtensionUIResponse` - we omit `type` and `id` fields
+ * because the resolver already knows which request this responds to.
+ */
 export type ExtensionUiResponse =
   | { value: string }
   | { confirmed: boolean }
@@ -346,6 +361,12 @@ export class AgentRuntime {
     publish(sessionId, request);
   }
 
+  /**
+   * Create a promise-based dialog flow for extension UI requests.
+   * 
+   * Pattern adapted from Pi's RPC mode implementation - manages request lifecycle
+   * with timeout, abort signal handling, and SSE transport.
+   */
   private createDialogPromise<T>(
     sessionId: string,
     opts: ExtensionUIDialogOptions | undefined,
@@ -387,6 +408,15 @@ export class AgentRuntime {
     });
   }
 
+  /**
+   * Create an ExtensionUIContext for Pi extensions to interact with the frontend.
+   * 
+   * Implements Pi's ExtensionUIContext interface, providing dialog prompts, notifications,
+   * and UI state updates via SSE transport. Based on Pi's RPC mode implementation but
+   * adapted for agent-server's multi-session SSE architecture.
+   * 
+   * @see https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/rpc/rpc-mode.ts
+   */
   private createExtensionUiContext(sessionId: string): ExtensionUIContext {
     return {
       select: (title, options, opts) =>

@@ -10,3 +10,6 @@ dist/
 
 # Docs
 docs/misc/
+
+# Agents
+.pi/todos/
