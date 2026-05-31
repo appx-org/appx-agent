@@ -48,15 +48,15 @@ import {
 	SessionManager,
 	type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
-import { AgentCredentialsService } from "./credentialsService.js";
+import { AgentCredentialsService } from "../credentials/credentialsService.js";
 import { ProjectSession } from "./projectSession.js";
-import { type ThinkingLevel } from "./thinking.js";
+import { type ThinkingLevel } from "../shared/thinking.js";
 
 type SessionModel = NonNullable<CreateAgentSessionOptions["model"]>;
 
-export type { ExtensionUiRequest, ExtensionUiResponse } from "./extensionUi.js";
+export type { ExtensionUiRequest, ExtensionUiResponse } from "../shared/extensionUi.js";
 export type { SessionModelSettings } from "./projectSession.js";
-export type { ThinkingLevel } from "./thinking.js";
+export type { ThinkingLevel } from "../shared/thinking.js";
 export type {
 	AgentAuthPrompt,
 	AgentAuthProviderRow,
@@ -66,7 +66,7 @@ export type {
 	AgentModelRow,
 	AgentOAuthFlowState,
 	UpsertCustomProviderRequest,
-} from "./credentialsService.js";
+} from "../credentials/credentialsService.js";
 
 /** Configuration for a single ProjectRuntime instance. */
 export type ProjectRuntimeConfig = {

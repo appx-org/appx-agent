@@ -31,12 +31,12 @@ import { after, before, describe, test } from "node:test";
 import { serve } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { litellmRuntimeConfig, resetLiteLlmConfigForTests, resolveLiteLlmConfig } from "../src/litellm.js";
-import { ProjectRuntime } from "../src/projectRuntime.js";
-import { AgentCredentialsService } from "../src/credentialsService.js";
-import { AgentRuntimeRegistry, type AgentRuntimeRegistryConfig } from "../src/runtimeRegistry.js";
-import { createCredentialsApp, createSessionsApp } from "../src/routes.js";
-import { publish } from "../src/sseBroker.js";
+import { litellmRuntimeConfig, resetLiteLlmConfigForTests, resolveLiteLlmConfig } from "../src/providers/litellm.js";
+import { ProjectRuntime } from "../src/runtime/projectRuntime.js";
+import { AgentCredentialsService } from "../src/credentials/credentialsService.js";
+import { AgentRuntimeRegistry, type AgentRuntimeRegistryConfig } from "../src/runtime/runtimeRegistry.js";
+import { createCredentialsApp, createSessionsApp } from "../src/http/routes.js";
+import { publish } from "../src/http/sseBroker.js";
 
 /**
  * Pick a free TCP port by binding to 0, reading the assigned port, and

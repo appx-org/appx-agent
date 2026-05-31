@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { THINKING_LEVELS, clampThinkingLevelForModel, supportedThinkingLevelsForModel, type ThinkingLevel } from "../src/thinking.js";
+import { THINKING_LEVELS, clampThinkingLevelForModel, supportedThinkingLevelsForModel, type ThinkingLevel } from "../src/shared/thinking.js";
 
 const reasoningModel = {
   reasoning: true as const,

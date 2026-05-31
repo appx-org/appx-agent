@@ -6,13 +6,13 @@
  * ModelRegistry before createAgentSession().
  */
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
-import type { ProjectRuntimeConfig } from "./projectRuntime.js";
+import type { ProjectRuntimeConfig } from "../runtime/projectRuntime.js";
 import {
   THINKING_LEVELS as SHARED_THINKING_LEVELS,
   clampThinkingLevelForModel,
   supportedThinkingLevelsForModel,
   type ThinkingLevel,
-} from "./thinking.js";
+} from "../shared/thinking.js";
 
 type ProviderApi = "openai-completions" | "openai-responses" | "anthropic-messages";
 

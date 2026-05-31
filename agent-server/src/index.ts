@@ -8,7 +8,7 @@
  * larger Node process (for tests, or for hosts that prefer to mount
  * our routes inside their own Hono app).
  */
-export { ProjectRuntime } from "./projectRuntime.js";
+export { ProjectRuntime } from "./runtime/projectRuntime.js";
 export type {
 	AgentAuthProviderRow,
 	AgentCustomProviderApi,
@@ -19,29 +19,29 @@ export type {
 	ProjectRuntimeConfig,
 	SessionRow,
 	ThinkingLevel,
-} from "./projectRuntime.js";
-export { ProjectSession } from "./projectSession.js";
-export type { SessionModelSettings } from "./projectSession.js";
-export type { ExtensionUiRequest, ExtensionUiResponse } from "./extensionUi.js";
-export { AgentRuntimeRegistry } from "./runtimeRegistry.js";
+} from "./runtime/projectRuntime.js";
+export { ProjectSession } from "./runtime/projectSession.js";
+export type { SessionModelSettings } from "./runtime/projectSession.js";
+export type { ExtensionUiRequest, ExtensionUiResponse } from "./shared/extensionUi.js";
+export { AgentRuntimeRegistry } from "./runtime/runtimeRegistry.js";
 export type {
 	AgentRuntimeRegistryConfig,
 	ProjectRuntimeContext,
-} from "./runtimeRegistry.js";
-export { AgentCredentialsService } from "./credentialsService.js";
+} from "./runtime/runtimeRegistry.js";
+export { AgentCredentialsService } from "./credentials/credentialsService.js";
 export type {
 	AgentCredentialsServiceConfig,
-} from "./credentialsService.js";
-export { createSessionsApp, createCredentialsApp } from "./routes.js";
+} from "./credentials/credentialsService.js";
+export { createSessionsApp, createCredentialsApp } from "./http/routes.js";
 export type {
 	ProjectRuntimeResolver,
 	CreateSessionsAppOptions,
 	AgentCredentialsResolver,
 	CreateCredentialsAppOptions,
-} from "./routes.js";
-export { litellmRuntimeConfig, logLiteLlmStartupConfig, resolveLiteLlmConfig } from "./litellm.js";
-export { THINKING_LEVELS, clampThinkingLevelForModel, supportedThinkingLevelsForModel } from "./thinking.js";
-export { subscribe, publish, channelStats } from "./sseBroker.js";
+} from "./http/routes.js";
+export { litellmRuntimeConfig, logLiteLlmStartupConfig, resolveLiteLlmConfig } from "./providers/litellm.js";
+export { THINKING_LEVELS, clampThinkingLevelForModel, supportedThinkingLevelsForModel } from "./shared/thinking.js";
+export { subscribe, publish, channelStats } from "./http/sseBroker.js";
 export type {
 	AgentSession,
 	AgentSessionEvent,

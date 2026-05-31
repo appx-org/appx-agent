@@ -12,8 +12,8 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { AgentRuntimeRegistry } from "./runtimeRegistry.js";
-import { createCredentialsApp, createSessionsApp } from "./routes.js";
+import { AgentRuntimeRegistry } from "./runtime/runtimeRegistry.js";
+import { createCredentialsApp, createSessionsApp } from "./http/routes.js";
 
 const mode = process.env.AGENT_SERVER_MODE === "multi" ? "multi" : "single";
 

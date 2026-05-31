@@ -42,8 +42,8 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import type { ProjectRuntime } from "./projectRuntime.js";
-import type { AgentCredentialsService } from "./credentialsService.js";
+import type { ProjectRuntime } from "../runtime/projectRuntime.js";
+import type { AgentCredentialsService } from "../credentials/credentialsService.js";
 import {
   CreateSessionResponseSchema,
   ContinueOAuthFlowRequestSchema,

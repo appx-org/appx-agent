@@ -46,9 +46,9 @@ import { serve } from "@hono/node-server";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { Context } from "hono";
-import { litellmRuntimeConfig, logLiteLlmStartupConfig } from "./litellm.js";
-import { createCredentialsApp, createSessionsApp } from "./routes.js";
-import { AgentRuntimeRegistry } from "./runtimeRegistry.js";
+import { litellmRuntimeConfig, logLiteLlmStartupConfig } from "./providers/litellm.js";
+import { createCredentialsApp, createSessionsApp } from "./http/routes.js";
+import { AgentRuntimeRegistry } from "./runtime/runtimeRegistry.js";
 
 function required(name: string): string {
 	const v = process.env[name];
@@ -130,7 +130,7 @@ const runtimeRegistry = await AgentRuntimeRegistry.create({
 	...litellmRuntimeConfig(),
 });
 
-function projectRuntimeFromRequest(c: Context): Promise<import("./projectRuntime.js").ProjectRuntime> {
+function projectRuntimeFromRequest(c: Context): Promise<import("./runtime/projectRuntime.js").ProjectRuntime> {
 	const projectId = c.req.param("projectId");
 	const projectDir = c.req.header("x-appx-project-dir")?.trim();
 	if (!projectId || !projectDir) {

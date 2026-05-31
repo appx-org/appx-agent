@@ -6,7 +6,7 @@ import {
   ModelRegistry,
   type ModelRegistry as ModelRegistryType,
 } from "@earendil-works/pi-coding-agent";
-import { AgentCredentialsService } from "./credentialsService.js";
+import { AgentCredentialsService } from "../credentials/credentialsService.js";
 import { ProjectRuntime, type ProjectRuntimeConfig } from "./projectRuntime.js";
 
 export type ProjectRuntimeContext = {

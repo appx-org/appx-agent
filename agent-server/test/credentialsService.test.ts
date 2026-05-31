@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { AgentCredentialsService } from "../src/credentialsService.js";
+import { AgentCredentialsService } from "../src/credentials/credentialsService.js";
 
 function makeAgentDir(): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(resolve(tmpdir(), "agent-server-creds-"));

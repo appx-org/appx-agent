@@ -36,13 +36,13 @@ import type {
 	ExtensionWidgetOptions,
 	ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentCredentialsService, AgentModelRow } from "./credentialsService.js";
-import type { ExtensionUiRequest, ExtensionUiResponse } from "./extensionUi.js";
-import { publish } from "./sseBroker.js";
+import type { AgentCredentialsService, AgentModelRow } from "../credentials/credentialsService.js";
+import type { ExtensionUiRequest, ExtensionUiResponse } from "../shared/extensionUi.js";
+import { publish } from "../http/sseBroker.js";
 import {
 	type ThinkingLevel,
 	supportedThinkingLevelsForModel,
-} from "./thinking.js";
+} from "../shared/thinking.js";
 
 type SessionModel = NonNullable<CreateAgentSessionOptions["model"]>;
 

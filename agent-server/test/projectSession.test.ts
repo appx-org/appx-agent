@@ -25,10 +25,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { AgentSession, ExtensionBindings } from "@earendil-works/pi-coding-agent";
-import type { AgentCredentialsService, AgentModelRow } from "../src/credentialsService.js";
-import { ProjectSession } from "../src/projectSession.js";
-import { subscribe } from "../src/sseBroker.js";
-import type { ThinkingLevel } from "../src/thinking.js";
+import type { AgentCredentialsService, AgentModelRow } from "../src/credentials/credentialsService.js";
+import { ProjectSession } from "../src/runtime/projectSession.js";
+import { subscribe } from "../src/http/sseBroker.js";
+import type { ThinkingLevel } from "../src/shared/thinking.js";
 
 type FakeListener = (event: unknown) => void;
 

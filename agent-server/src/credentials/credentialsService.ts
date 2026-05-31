@@ -14,7 +14,7 @@ import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent"
 import {
   type ThinkingLevel,
   clampThinkingLevelForModel,
-} from "./thinking.js";
+} from "../shared/thinking.js";
 
 type SessionModel = NonNullable<CreateAgentSessionOptions["model"]>;
 const CUSTOM_PROVIDER_APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const;

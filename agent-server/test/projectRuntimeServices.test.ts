@@ -27,8 +27,8 @@ import {
 	ModelRegistry,
 	type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
-import { AgentCredentialsService } from "../src/credentialsService.js";
-import { ProjectRuntime } from "../src/projectRuntime.js";
+import { AgentCredentialsService } from "../src/credentials/credentialsService.js";
+import { ProjectRuntime } from "../src/runtime/projectRuntime.js";
 
 const silentLogger = { log: () => {}, error: () => {} } as const;
 
