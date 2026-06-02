@@ -11,7 +11,7 @@ Two route modes are supported:
 - `AGENT_SERVER_MODE=single` (default) — standalone apps such as Eventx use
   `/v1/sessions` directly with one project per process.
 - `AGENT_SERVER_MODE=multi` — Appx runs one shared service, keeps
-  provider auth/model state under `AGENT_DIR`, and routes sessions through
+  provider auth/model state under `GLOBAL_AGENT_DIR`, and routes sessions through
   `/v1/projects/:projectId/*` with trusted project context headers.
 
 ## Run it
@@ -39,9 +39,7 @@ All via env vars (see `.env.example`):
 | -------------------- | -------- | ---------------------------- | --------------------------------------------------------------------- |
 | `PROJECT_DIR`        | yes      | —                            | cwd for `single`; host root/default cwd for `multi`                   |
 | `AGENT_SERVER_MODE`  | no       | `single`                     | `single` exposes `/v1/sessions`; `multi` exposes project sessions under `/v1/projects/:projectId` |
-| `SESSIONS_DIR`       | no       | `$PROJECT_DIR/data/sessions` | session dir for `single`; default runtime dir for `multi`             |
-| `AGENT_DIR`          | no       | Pi default                   | pi config/auth/models dir; falls back to `PI_CODING_AGENT_DIR` / `~/.pi/agent` |
-| `AGENTS_FILE`        | no       | `.pi/AGENTS.md`              | system prompt file (relative to `PROJECT_DIR` or absolute)            |
+| `GLOBAL_AGENT_DIR`   | no       | Pi default                   | Pi's process-global config dir holding `auth.json` + `models.json`. Falls back to `PI_CODING_AGENT_DIR` / `~/.pi/agent`. Distinct from `<PROJECT_DIR>/.pi/` — credentials live above any project's commit/share boundary. |
 | `ANTHROPIC_API_KEY`  | no       | —                            | injected into pi's AuthStorage; falls back to `~/.pi/agent/auth.json` |
 | `PI_EXTENSION_PATHS` | no       | —                            | comma-separated temporary Pi extension/package sources (`npm:`, `git:`, or paths) |
 | `PI_SKILL_PATHS`     | no       | —                            | comma-separated temporary Pi skill file/directory paths                |
@@ -56,10 +54,61 @@ All via env vars (see `.env.example`):
 | `AGENT_SERVER_PORT`  | no       | `4001`                       | bind port                                                             |
 | `AGENT_SERVER_TOKEN` | no       | —                            | if set, `/v1/*` requires `Authorization: Bearer <token>`              |
 
+### Filesystem layout
+
+Every runtime — default and per-project alike — reads its project-local
+resources from `<projectDir>/.pi/`. The only state that lives outside
+any project is the org-scoped credential and model-registry data, which
+has to be shared across runtimes because one agent-server process
+serves one organisation.
+
+| Tier | Location | Owner | Contents |
+| --- | --- | --- | --- |
+| Org-shared (`agentDir`) | `$GLOBAL_AGENT_DIR` (default `~/.pi/agent/`) | process-global — every runtime references the same instances | `auth.json`, `models.json` |
+| Project (`piDir`)       | `$PROJECT_DIR/.pi/`                    | each runtime (default + per-project)                          | `AGENTS.md`, `sessions/`, `skills/`, `extensions/`, `settings.json` |
+
+Operators set `PROJECT_DIR` and the project tier is derived — there are
+no separate env vars for AGENTS.md or session paths. If
+`<projectDir>/.pi/AGENTS.md` is missing the runtime starts with no
+pinned prompt (silent skip) and Pi's normal context-file discovery
+takes over.
+
+Pi additionally auto-discovers user-level resources from `~/.pi/agent/skills/`,
+`~/.agents/skills/`, and similar locations if they happen to exist.
+agent-server inherits that behaviour for free but doesn't prescribe
+it — the contract above is what each runtime owns explicitly.
+
+#### `<projectDir>/.pi/.gitignore` (auto-created)
+
+On first runtime construction, agent-server writes a `.gitignore` inside
+the project's `.pi/` directory containing a single `sessions/` rule.
+This is the standard pattern Next.js / cargo / Hugging Face follow:
+any tool that creates a directory inside a workspace is responsible for
+not leaking its volatile output into git. The file is **safe to
+commit** and is left untouched if you've already provided one.
+
+What lives where, with respect to git:
+
+| Path | Commit? | Why |
+| --- | --- | --- |
+| `.pi/AGENTS.md`, `.pi/skills/`, `.pi/extensions/` | yes | Project resources — the agent's prompt and tools belong with the project. |
+| `.pi/sessions/` | **no** (auto-ignored) | Volatile per-developer chat transcripts. Unbounded volume; may include pasted code or API output. |
+| `.pi/settings.json` | up to you | Project-level Pi settings — commit if shared across the team, ignore if user-specific. |
+| `~/.pi/agent/auth.json`, `models.json` | n/a | Lives outside any project workspace. Never within reach of `git`. |
+
+> **Migrating existing single-mode deployments.** Before this change,
+> sessions were written to `<projectDir>/data/sessions/`. They now live
+> at `<projectDir>/.pi/sessions/`. To preserve history:
+>
+> ```bash
+> mkdir -p "$PROJECT_DIR/.pi"
+> mv "$PROJECT_DIR/data/sessions" "$PROJECT_DIR/.pi/sessions"
+> ```
+
 In `multi` mode, project-scoped Appx calls use
 `/v1/projects/:projectId/sessions...`. The standalone server resolves those
 runtimes from `X-Appx-Project-Dir`, which Appx sets after validating the
-project id. Each project runtime writes sessions to `<projectDir>/data/sessions`
+project id. Each project runtime writes sessions to `<projectDir>/.pi/sessions/`
 and reads its prompt from `<projectDir>/.pi/AGENTS.md`. Shared auth and custom
 provider routes stay global at `/v1/auth/*` and `/v1/custom/*`.
 
@@ -265,32 +314,28 @@ import {
   createSessionsApp,
 } from "@appx/agent-server";
 
-// ProjectRegistry.create is async — it walks the filesystem once to load
-// extensions/skills/themes for the default runtime. Use top-level await
-// in an ESM entrypoint, or wrap in an async bootstrap function.
-const registry = await ProjectRegistry.create({ projectDir, sessionsDir, agentsFile });
+// ProjectRegistry.create is async — it sets up shared auth/model
+// state. Project runtimes are built lazily on demand via forProject(),
+// which walks the filesystem once per project to load
+// extensions/skills/themes. Use top-level await in an ESM entrypoint,
+// or wrap in an async bootstrap function.
+const registry = await ProjectRegistry.create({ projectDir });
+const runtime = await registry.forProject({ id: "default", projectDir });
 const app = new Hono();
 app.route("/v1", createCredentialsApp(registry.credentials));
-app.route("/v1", createSessionsApp(registry.defaultRuntime));
+app.route("/v1", createSessionsApp(runtime));
 ```
 
 This exists for tests and for hosts that have a strong reason to share a
 process. The standalone server is the primary deployment.
 
 For an embedded Appx-style multi-project host, mount shared credentials at
-`/v1` and per-project sessions under `/v1/projects/:projectId`. Set
-`defaultAgentsFile: false` so the placeholder default runtime doesn't try
-to auto-load an `AGENTS.md` from the host root — each per-project runtime
-loads its own:
+`/v1` and per-project sessions under `/v1/projects/:projectId`. There is
+no eager default runtime to set up — each per-project runtime is built
+lazily via `forProject()` from the request headers:
 
 ```ts
-const registry = await ProjectRegistry.create({
-  projectDir,            // host root; only the default runtime uses it
-  sessionsDir,           // default runtime only; per-project runtimes use
-                         //   <projectDir>/data/sessions automatically
-  agentsFile: ".pi/AGENTS.md",   // resolved per project
-  defaultAgentsFile: false,      // skip AGENTS.md on the default runtime
-});
+const registry = await ProjectRegistry.create({ projectDir });
 
 app.route("/v1", createCredentialsApp(registry.credentials));
 app.route("/v1/projects/:projectId", createSessionsApp((c) =>
@@ -300,6 +345,10 @@ app.route("/v1/projects/:projectId", createSessionsApp((c) =>
   }),
 ));
 ```
+
+Each per-project runtime derives its session dir, AGENTS.md, skills, and
+extensions from `<projectDir>/.pi/` automatically. The registry itself
+holds only org-shared state (auth, models, credentials).
 
 ## Pi specifics
 

@@ -23,22 +23,25 @@ const mode: ServerMode =
 
 // We need a registry to construct the routes apps, but we never actually
 // call any methods during doc generation — the routes just reference
-// handler functions whose signatures don't depend on state. Use a stub
-// projectDir so the registry's constructor passes its sanity checks.
+// handler functions whose signatures don't depend on state. Build a stub
+// runtime via the same forProject() path the live server uses, against
+// the current cwd.
 const stubProjectDir = resolve(process.cwd());
 const registry = await ProjectRegistry.create({
 	projectDir: stubProjectDir,
-	sessionsDir: resolve(stubProjectDir, ".tmp-openapi-sessions"),
-	defaultAgentsFile: false,
 	logger: { log: () => {}, error: () => {} },
+});
+const stubRuntime = await registry.forProject({
+	id: "openapi-stub",
+	projectDir: stubProjectDir,
 });
 
 const root = new OpenAPIHono();
 root.route("/v1", createCredentialsApp(registry.credentials));
 if (mode === ServerMode.Single) {
-	root.route("/v1", createSessionsApp(registry.defaultRuntime));
+	root.route("/v1", createSessionsApp(stubRuntime));
 } else {
-	root.route("/v1/projects/:projectId", createSessionsApp(registry.defaultRuntime));
+	root.route("/v1/projects/:projectId", createSessionsApp(stubRuntime));
 }
 
 const doc = root.getOpenAPI31Document({

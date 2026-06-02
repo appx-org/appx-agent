@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import {
   AuthStorage,
   getAgentDir,
@@ -15,22 +15,20 @@ export type ProjectRuntimeContext = {
   projectDir: string;
 };
 
+/**
+ * ProjectRegistry config — same shape as a ProjectRuntime config minus
+ * the shared services (which the registry owns and injects per runtime).
+ *
+ * Per Pi's project convention each runtime derives its own paths from
+ * `<projectDir>/.pi/` automatically; the registry passes config through
+ * untouched and lets every runtime go through the same `forProject()`
+ * recipe — there is no eager "default" runtime and no mode awareness at
+ * the registry level.
+ */
 export type ProjectRegistryConfig = Omit<
   ProjectRuntimeConfig,
   "authStorage" | "modelRegistry" | "credentials"
-> & {
-  /**
-   * Agents file for the default runtime. Set to false for multi-project hosts
-   * where the default runtime only owns shared auth/model settings and should
-   * not try to load a prompt from the host project root.
-   */
-  defaultAgentsFile?: string | false; // FIXME: for multi mode projects started from scratch should get a template AGENTS.md for builder-agents
-  /**
-   * Project-local extension files loaded for each project when present.
-   * Relative paths are resolved against that project's root.
-   */
-  projectExtensionPaths?: string[];
-};
+>;
 
 type RuntimeEntry = {
   projectDir: string;
@@ -41,16 +39,37 @@ type RuntimeEntry = {
  * Registry of per-project ProjectRuntimes sharing one process-global
  * AuthStorage / ModelRegistry / AgentCredentialsService.
  *
- * Construction is async because each ProjectRuntime now builds an
- * AgentSessionServices bundle (which walks the filesystem to resolve
- * extensions/skills/themes once per project). Use the static factory:
+ * The registry owns **only** org-scoped state: credentials and the
+ * model catalog (one agent-server process serves one organisation).
+ * Every project runtime — single mode's boot-time runtime included —
+ * is built lazily through `forProject()` and references the registry's
+ * shared services. There is no eager `defaultRuntime`: in multi mode it
+ * was pure dead work (filesystem walks, AGENTS.md probes, services
+ * bundle construction) that no session route ever consumed; in single
+ * mode the boot entrypoint just awaits one `forProject()` call.
+ *
+ * Industry best practice followed here: keep mode awareness in the
+ * routing layer (server.ts / openapi.ts), not in the state-management
+ * layer. The registry is mode-agnostic.
+ *
+ * Filesystem convention:
+ *   - Org-shared (`agentDir`, defaults to `~/.pi/agent/`):
+ *     `auth.json`, `models.json`. Org-scoped — must be shared because
+ *     one agent-server process serves one organisation.
+ *   - Project tier (`<projectDir>/.pi/`): AGENTS.md, sessions/,
+ *     skills/, extensions/, settings.json. Per-runtime — agent-server's
+ *     contract has no separate "global skills" or "global settings"
+ *     location.
+ *
+ * Construction is async because each ProjectRuntime builds an
+ * AgentSessionServices bundle that walks the filesystem to resolve
+ * extensions/skills/themes once per project. Use the static factory:
  *
  *     const registry = await ProjectRegistry.create(config);
+ *     const runtime  = await registry.forProject({ id, projectDir });
  *
- * forProject() is also async — it lazily constructs project runtimes
- * on first request and caches them by id.
- *
- * See docs/architecture/use-agent-session-services.md.
+ * See docs/architecture/use-agent-session-services.md and
+ * docs/superpowers/plans/2026-06-02-pi-conventions-alignment.md.
  */
 export class ProjectRegistry {
   private readonly config: ProjectRegistryConfig;
@@ -58,11 +77,10 @@ export class ProjectRegistry {
   private readonly modelRegistry: ModelRegistryType;
   private readonly runtimes = new Map<string, RuntimeEntry>();
   readonly credentials: AgentCredentialsService;
-  readonly defaultRuntime: ProjectRuntime;
 
   /**
-   * Async factory. Sets up shared auth/model state, then builds the
-   * default runtime by awaiting its services bundle.
+   * Async factory. Sets up shared auth/model state and the credentials
+   * service. Project runtimes are built lazily via `forProject()`.
    */
   static async create(config: ProjectRegistryConfig): Promise<ProjectRegistry> {
     // Resolve agentDir once so AuthStorage, ModelRegistry, AgentCredentialsService,
@@ -74,12 +92,7 @@ export class ProjectRegistry {
     const resolvedConfig: ProjectRegistryConfig = {
       ...config,
       projectDir: resolve(config.projectDir),
-      sessionsDir: resolve(config.sessionsDir),
       agentDir,
-      defaultAgentsFile: config.defaultAgentsFile,
-      projectExtensionPaths: config.projectExtensionPaths ?? [
-        ".pi/extensions/appx-guardrails.ts",
-      ],
     };
 
     mkdirSync(agentDir, { recursive: true });
@@ -101,22 +114,11 @@ export class ProjectRegistry {
       logger: resolvedConfig.logger,
     });
 
-    // Build the default runtime up-front so the registry exposes it
-    // synchronously (matching server.ts's mounting expectations).
-    const defaultRuntime = await buildRuntime(
-      { id: "default", projectDir: resolvedConfig.projectDir },
-      resolvedConfig,
-      authStorage,
-      modelRegistry,
-      credentials,
-    );
-
     return new ProjectRegistry(
       resolvedConfig,
       authStorage,
       modelRegistry,
       credentials,
-      defaultRuntime,
     );
   }
 
@@ -125,19 +127,24 @@ export class ProjectRegistry {
     authStorage: AuthStorage,
     modelRegistry: ModelRegistryType,
     credentials: AgentCredentialsService,
-    defaultRuntime: ProjectRuntime,
   ) {
     this.config = config;
     this.authStorage = authStorage;
     this.modelRegistry = modelRegistry;
     this.credentials = credentials;
-    this.defaultRuntime = defaultRuntime;
   }
 
   /**
    * Get (or lazily build) the ProjectRuntime for a project context.
-   * Async because ProjectRuntime.create walks the filesystem once to
-   * load resources.
+   *
+   * Used by both single mode (called once at boot with the
+   * `PROJECT_DIR`-derived context) and multi mode (called per request
+   * with header-derived context). Async because ProjectRuntime.create
+   * walks the filesystem once to load resources.
+   *
+   * Cache semantics: keyed by `context.id`. If the same id arrives
+   * with a different `projectDir`, the entry is rebuilt — a project
+   * "moved" on disk gets a fresh runtime rather than a stale cached one.
    */
   async forProject(context: ProjectRuntimeContext): Promise<ProjectRuntime> {
     const projectDir = resolve(context.projectDir);
@@ -161,9 +168,11 @@ export class ProjectRegistry {
 }
 
 /**
- * Module-private helper so both `create()` (static) and `forProject()`
- * (instance) can share the runtime-construction recipe without
- * needing access to half-initialised instance state.
+ * Module-private helper that constructs a ProjectRuntime against the
+ * shared registry services. Identical for every runtime — no
+ * default-vs-per-project branching. Each runtime derives
+ * `<projectDir>/.pi/sessions/` and `<projectDir>/.pi/AGENTS.md` via Pi's
+ * project convention (see ProjectRuntime.create).
  */
 async function buildRuntime(
   context: ProjectRuntimeContext,
@@ -173,19 +182,6 @@ async function buildRuntime(
   credentials: AgentCredentialsService,
 ): Promise<ProjectRuntime> {
   const projectDir = resolve(context.projectDir);
-  const agentsFile =
-    context.id === "default"
-      ? config.defaultAgentsFile === false
-        ? undefined
-        : (config.defaultAgentsFile ?? config.agentsFile)
-      : config.agentsFile;
-  const extensionPaths = [
-    ...(config.extensionPaths ?? []),
-    ...resolveProjectExtensionPaths(
-      config.projectExtensionPaths ?? [],
-      projectDir,
-    ),
-  ];
 
   config.logger?.log(
     `[agent-server] creating Pi runtime project=${context.id} dir=${projectDir}`,
@@ -194,10 +190,11 @@ async function buildRuntime(
   return ProjectRuntime.create({
     ...config,
     projectDir,
-    sessionsDir:
-      context.id === "default"
-        ? config.sessionsDir
-        : resolve(projectDir, "data/sessions"),
+    // Always derive sessions per project from <projectDir>/.pi/sessions
+    // — the convention is uniform across every runtime. Callers who
+    // need a non-conventional layout can pass sessionsDir on
+    // ProjectRuntimeConfig directly when embedding ProjectRuntime.
+    sessionsDir: undefined,
     credentials,
     authStorage,
     modelRegistry,
@@ -205,16 +202,5 @@ async function buildRuntime(
     // ProjectRegistry.create; clear the hook so per-project
     // ProjectRuntime.create doesn't double-apply it.
     configureModelRegistry: undefined,
-    extensionPaths,
-    agentsFile,
   });
-}
-
-function resolveProjectExtensionPaths(
-  paths: string[],
-  projectDir: string,
-): string[] {
-  return paths
-    .map((entry) => (isAbsolute(entry) ? entry : resolve(projectDir, entry)))
-    .filter((entry) => existsSync(entry));
 }

@@ -13,12 +13,15 @@
  *   - Extension factories run exactly once at project startup, even when
  *     N sessions are created — guards against the regression where a
  *     factory was re-invoked for every session.
- *   - A bad agentsFile path is a fatal startup error (ProjectRuntime.create
- *     rejects rather than constructing a half-broken runtime).
+ *   - An **explicitly configured** missing agentsFile is a fatal startup
+ *     error (loud misconfig). The **convention default** missing
+ *     `<projectDir>/.pi/AGENTS.md` is a silent skip — the runtime
+ *     starts with no pinned prompt.
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { describe, test } from "node:test";
@@ -35,8 +38,17 @@ const silentLogger = { log: () => {}, error: () => {} } as const;
 function makeProject(): { dir: string; cleanup: () => void } {
 	const dir = mkdtempSync(resolve(tmpdir(), "project-runtime-services-test-"));
 	mkdirSync(resolve(dir, ".pi"), { recursive: true });
-	mkdirSync(resolve(dir, "data/sessions"), { recursive: true });
 	writeFileSync(resolve(dir, ".pi/AGENTS.md"), "# test agents file\n");
+	return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+/**
+ * Variant that does **not** create `.pi/AGENTS.md` — used to verify
+ * convention-default behaviour (silent skip when the file is absent).
+ */
+function makeProjectWithoutAgentsFile(): { dir: string; cleanup: () => void } {
+	const dir = mkdtempSync(resolve(tmpdir(), "project-runtime-services-test-noprompt-"));
+	mkdirSync(resolve(dir, ".pi"), { recursive: true });
 	return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
@@ -66,9 +78,7 @@ describe("ProjectRuntime — AgentSessionServices integration", () => {
 		try {
 			const runtime = await ProjectRuntime.create({
 				projectDir: project.dir,
-				sessionsDir: resolve(project.dir, "data/sessions"),
 				agentDir,
-				agentsFile: ".pi/AGENTS.md",
 				credentials,
 				authStorage,
 				modelRegistry,
@@ -95,9 +105,7 @@ describe("ProjectRuntime — AgentSessionServices integration", () => {
 		try {
 			const runtime = await ProjectRuntime.create({
 				projectDir: project.dir,
-				sessionsDir: resolve(project.dir, "data/sessions"),
 				agentDir,
-				agentsFile: ".pi/AGENTS.md",
 				credentials,
 				authStorage,
 				modelRegistry,
@@ -119,9 +127,7 @@ describe("ProjectRuntime — AgentSessionServices integration", () => {
 		try {
 			const runtime = await ProjectRuntime.create({
 				projectDir: project.dir,
-				sessionsDir: resolve(project.dir, "data/sessions"),
 				agentDir,
-				agentsFile: ".pi/AGENTS.md",
 				credentials,
 				authStorage,
 				modelRegistry,
@@ -140,9 +146,7 @@ describe("ProjectRuntime — AgentSessionServices integration", () => {
 		try {
 			const runtime = await ProjectRuntime.create({
 				projectDir: project.dir,
-				sessionsDir: resolve(project.dir, "data/sessions"),
 				agentDir,
-				agentsFile: ".pi/AGENTS.md",
 				credentials,
 				authStorage,
 				modelRegistry,
@@ -186,9 +190,7 @@ describe("ProjectRuntime — AgentSessionServices integration", () => {
 
 			const runtime = await ProjectRuntime.create({
 				projectDir: project.dir,
-				sessionsDir: resolve(project.dir, "data/sessions"),
 				agentDir,
-				agentsFile: ".pi/AGENTS.md",
 				credentials,
 				authStorage,
 				modelRegistry,
@@ -214,7 +216,7 @@ describe("ProjectRuntime — AgentSessionServices integration", () => {
 		}
 	});
 
-	test("ProjectRuntime.create() rejects when agentsFile points at a missing path", async () => {
+	test("ProjectRuntime.create() rejects when an explicitly configured agentsFile is missing", async () => {
 		const project = makeProject();
 		const agentDir = resolve(project.dir, ".pi-agent");
 		const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
@@ -222,7 +224,6 @@ describe("ProjectRuntime — AgentSessionServices integration", () => {
 			await assert.rejects(
 				ProjectRuntime.create({
 					projectDir: project.dir,
-					sessionsDir: resolve(project.dir, "data/sessions"),
 					agentDir,
 					agentsFile: ".pi/does-not-exist.md",
 					credentials,
@@ -232,6 +233,95 @@ describe("ProjectRuntime — AgentSessionServices integration", () => {
 				}),
 				/does-not-exist|ENOENT/,
 			);
+		} finally {
+			project.cleanup();
+		}
+	});
+
+	test("ProjectRuntime.create() silently skips a missing convention-default AGENTS.md", async () => {
+		// Convention-default semantics: when `agentsFile` is unset, the
+		// runtime falls back to `<projectDir>/.pi/AGENTS.md` and treats
+		// "file not present" as the natural no-prompt signal. This is
+		// what replaces the old `defaultAgentsFile: false` kill switch —
+		// multi-mode default runtimes pointed at a host root with no
+		// AGENTS.md just start up fine.
+		const project = makeProjectWithoutAgentsFile();
+		const agentDir = resolve(project.dir, ".pi-agent");
+		const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
+		try {
+			const runtime = await ProjectRuntime.create({
+				projectDir: project.dir,
+				agentDir,
+				credentials,
+				authStorage,
+				modelRegistry,
+				logger: silentLogger,
+			});
+			assert.ok(runtime, "runtime should construct without an AGENTS.md");
+			const promptDiagnostics = runtime
+				.diagnostics()
+				.filter((diagnostic) => /agentsFile|AGENTS\.md/i.test(diagnostic.message));
+			assert.deepEqual(promptDiagnostics, [], "no prompt-load diagnostics expected");
+		} finally {
+			project.cleanup();
+		}
+	});
+
+	test("ProjectRuntime.create() writes <projectDir>/.pi/.gitignore excluding sessions/", async () => {
+		// Auto-gitignore is the safety net that keeps session transcripts
+		// out of git. Without it, a developer running `git add .pi/` to
+		// commit AGENTS.md / skills / extensions would also stage every
+		// chat history JSONL file the runtime has written. Verify the
+		// gitignore is created on first runtime construction.
+		const project = makeProject();
+		const agentDir = resolve(project.dir, ".pi-agent");
+		const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
+		try {
+			await ProjectRuntime.create({
+				projectDir: project.dir,
+				agentDir,
+				credentials,
+				authStorage,
+				modelRegistry,
+				logger: silentLogger,
+			});
+			const gitignorePath = resolve(project.dir, ".pi/.gitignore");
+			assert.ok(
+				existsSync(gitignorePath),
+				`expected ${gitignorePath} to be created on first runtime construction`,
+			);
+			const contents = readFileSync(gitignorePath, "utf8");
+			assert.match(
+				contents,
+				/^sessions\/$/m,
+				"gitignore should contain a 'sessions/' rule",
+			);
+		} finally {
+			project.cleanup();
+		}
+	});
+
+	test("ProjectRuntime.create() leaves an existing .pi/.gitignore untouched (idempotent)", async () => {
+		// Strict idempotency: surprise mutation of files in someone's
+		// workspace is worse than missing a default. If the operator
+		// already has a custom .gitignore we don't overwrite it — they
+		// can take responsibility for adding 'sessions/' themselves.
+		const project = makeProject();
+		const agentDir = resolve(project.dir, ".pi-agent");
+		const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
+		const customContents = "# my own gitignore\n*.log\n";
+		writeFileSync(resolve(project.dir, ".pi/.gitignore"), customContents);
+		try {
+			await ProjectRuntime.create({
+				projectDir: project.dir,
+				agentDir,
+				credentials,
+				authStorage,
+				modelRegistry,
+				logger: silentLogger,
+			});
+			const contents = readFileSync(resolve(project.dir, ".pi/.gitignore"), "utf8");
+			assert.equal(contents, customContents, "existing .gitignore must not be modified");
 		} finally {
 			project.cleanup();
 		}

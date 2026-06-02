@@ -7,8 +7,8 @@
  *   - multi: Appx uses shared /v1 auth/custom routes plus project sessions
  *     under /v1/projects/:projectId.
  *
- * In both modes shared Pi auth/model state is kept under AGENT_DIR. Multi
- * mode creates project session runtimes lazily from trusted Appx proxy
+ * In both modes shared Pi auth/model state is kept under GLOBAL_AGENT_DIR.
+ * Multi mode creates project session runtimes lazily from trusted Appx proxy
  * headers. Bind to 127.0.0.1 by default so app backends reach us over
  * loopback.
  *
@@ -44,10 +44,7 @@ logLiteLlmStartupConfig();
 
 const projectRegistry = await ProjectRegistry.create({
   projectDir: config.projectDir,
-  sessionsDir: config.sessionsDir,
   agentDir: config.agentDir,
-  agentsFile: config.agentsFile,
-  defaultAgentsFile: config.mode === ServerMode.Multi ? false : undefined,
   anthropicApiKey: config.anthropicApiKey,
   extensionPaths: config.extensionPaths,
   skillPaths: config.skillPaths,
@@ -119,7 +116,14 @@ root.onError((err, c) => {
 // explicit and keeps credentials at one shared URL surface.
 root.route("/v1", createCredentialsApp(projectRegistry.credentials));
 if (config.mode === ServerMode.Single) {
-  root.route("/v1", createSessionsApp(projectRegistry.defaultRuntime));
+  // Build the single-mode runtime once at boot via the same lazy
+  // path multi mode uses per-request. Keeps the registry mode-agnostic
+  // — mode awareness lives only in this routing block.
+  const defaultRuntime = await projectRegistry.forProject({
+    id: "default",
+    projectDir: config.projectDir,
+  });
+  root.route("/v1", createSessionsApp(defaultRuntime));
 } else {
   root.route(
     "/v1/projects/:projectId",
@@ -169,15 +173,16 @@ serve(
       `[agent-server] listening on http://${info.address}:${info.port}`,
     );
     console.log(`[agent-server] mode=${config.mode}`);
+    // Filesystem layout: every runtime (default + per-project) reads
+    // project-local resources from <projectDir>/.pi/. GLOBAL_AGENT_DIR
+    // is only for the org-shared auth.json + models.json that have to
+    // be shared across runtimes (one agent-server process = one org).
+    // The default runtime is rooted at PROJECT_DIR; per-project
+    // runtimes (multi mode) come from request headers.
     console.log(`[agent-server] defaultProjectDir=${config.projectDir}`);
-    console.log(`[agent-server] defaultSessionsDir=${config.sessionsDir}`);
+    console.log(`[agent-server] projectPiDir=${config.projectDir}/.pi`);
     if (config.agentDir) {
-      console.log(`[agent-server] agentDir=${config.agentDir}`);
-    }
-    if (config.mode === ServerMode.Single) {
-      console.log(`[agent-server] agentsFile=${config.agentsFile}`);
-    } else {
-      console.log(`[agent-server] projectAgentsFile=${config.agentsFile}`);
+      console.log(`[agent-server] globalAgentDir=${config.agentDir}`);
     }
     if (config.extensionPaths.length) {
       console.log(

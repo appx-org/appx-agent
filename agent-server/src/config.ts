@@ -17,19 +17,42 @@
  *     Matches GitHub Actions / 12-factor convention.
  *   - Empty / whitespace-only values are treated as unset.
  *
+ * Filesystem convention
+ * ─────────────────────
+ *   - Org-shared (`GLOBAL_AGENT_DIR`, defaults to `~/.pi/agent/`):
+ *       auth.json, models.json. These are org-scoped (one
+ *       agent-server process = one org) and *must* be shared, so
+ *       every runtime references the same instances.
+ *   - Project tier (`<projectDir>/.pi/`):
+ *       AGENTS.md, sessions/, skills/, extensions/, settings.json.
+ *       Per-runtime — the default runtime uses its own projectDir's
+ *       `.pi/`, just like every per-project runtime in multi mode.
+ *
+ * The runtime derives the project tier from `PROJECT_DIR` automatically;
+ * there are no separate env vars for AGENTS.md or sessions paths. If a
+ * project has no `.pi/AGENTS.md`, the runtime starts with no pinned
+ * prompt (silent skip). Place project-local skills/extensions/prompts
+ * under `.pi/` and Pi auto-discovers them.
+ *
+ * Pi additionally auto-discovers user-level resources from
+ * `~/.pi/agent/skills/`, `~/.agents/skills/`, etc. if they exist;
+ * agent-server inherits that for free but does not treat those
+ * locations as part of its own contract.
+ *
  * Environment variables
  * ─────────────────────
  *   PROJECT_DIR            (required) cwd handed to pi in single mode;
  *                          host root in multi mode. Must exist on disk.
  *
  *   AGENT_SERVER_MODE      "single" | "multi" (default: single).
- *   SESSIONS_DIR           where pi writes session JSONL files
- *                          (default: <PROJECT_DIR>/data/sessions)
- *   AGENT_DIR              pi agent config dir; falls back to Pi's own
- *                          getAgentDir() (which honours PI_CODING_AGENT_DIR)
- *                          when unset.
- *   AGENTS_FILE            system-prompt path, relative to PROJECT_DIR
- *                          or absolute (default: .pi/AGENTS.md)
+ *   GLOBAL_AGENT_DIR       Pi's process-global config dir holding
+ *                          auth.json + models.json. Falls back to
+ *                          Pi's own getAgentDir() (which honours
+ *                          PI_CODING_AGENT_DIR) when unset. Distinct
+ *                          from <PROJECT_DIR>/.pi/, which is the
+ *                          project tier. The name signals scope:
+ *                          credentials live above any project's
+ *                          commit/share boundary.
  *   ANTHROPIC_API_KEY      injected into pi's AuthStorage if set
  *
  *   PI_EXTENSION_PATHS     comma-separated extension/package sources
@@ -54,6 +77,7 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
+
 
 export const ServerMode = {
   Single: "single",
@@ -136,9 +160,7 @@ const modeSchema = z.preprocess(
  */
 const RawEnv = z.object({
   PROJECT_DIR: requiredString,
-  SESSIONS_DIR: optionalString,
-  AGENT_DIR: optionalString,
-  AGENTS_FILE: stringWithDefault(".pi/AGENTS.md"),
+  GLOBAL_AGENT_DIR: optionalString,
 
   ANTHROPIC_API_KEY: optionalString,
 
@@ -164,9 +186,7 @@ const RawEnv = z.object({
 /** Fully resolved, validated server configuration. */
 export type ServerConfig = {
   projectDir: string;
-  sessionsDir: string;
   agentDir: string | undefined;
-  agentsFile: string;
   anthropicApiKey: string | undefined;
   extensionPaths: string[];
   skillPaths: string[];
@@ -219,15 +239,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     throw new ConfigError([`PROJECT_DIR does not exist: ${projectDir}`]);
   }
 
-  // Cross-field path resolution: relative SESSIONS_DIR / AGENT_DIR are
+  // Cross-field path resolution: a relative GLOBAL_AGENT_DIR is
   // resolved against the project directory so deployments can use
-  // short relative paths without surprises.
-  const sessionsDir = resolveAgainst(
-    raw.SESSIONS_DIR ?? resolve(projectDir, "data/sessions"),
-    projectDir,
-  );
-  const agentDir = raw.AGENT_DIR
-    ? resolveAgainst(raw.AGENT_DIR, projectDir)
+  // short relative paths without surprises. (Sessions and AGENTS.md are
+  // derived inside the runtime from `<PROJECT_DIR>/.pi/` per Pi's
+  // project convention — no env vars needed.)
+  const agentDir = raw.GLOBAL_AGENT_DIR
+    ? resolveAgainst(raw.GLOBAL_AGENT_DIR, projectDir)
     : undefined;
 
   // AGENT_SERVER_TOKEN wins over the legacy APPX_AGENT_SERVER_TOKEN
@@ -236,9 +254,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 
   return {
     projectDir,
-    sessionsDir,
     agentDir,
-    agentsFile: raw.AGENTS_FILE,
     anthropicApiKey: raw.ANTHROPIC_API_KEY,
     extensionPaths: raw.PI_EXTENSION_PATHS,
     skillPaths: raw.PI_SKILL_PATHS,

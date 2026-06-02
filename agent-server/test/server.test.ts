@@ -61,7 +61,6 @@ async function pickPort(): Promise<number> {
 function makeProject(): { dir: string; cleanup: () => void } {
 	const dir = mkdtempSync(resolve(tmpdir(), "agent-server-test-"));
 	mkdirSync(resolve(dir, ".pi"), { recursive: true });
-	mkdirSync(resolve(dir, "data/sessions"), { recursive: true });
 	writeFileSync(resolve(dir, ".pi/AGENTS.md"), "# test agents file\n");
 	return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
@@ -109,15 +108,21 @@ async function startServer(opts: {
 
 	const registry = await ProjectRegistry.create({
 		projectDir: opts.projectDir,
-		sessionsDir: resolve(opts.projectDir, "data/sessions"),
 		agentDir: resolve(opts.projectDir, ".pi-agent"),
-		agentsFile: ".pi/AGENTS.md",
 		logger: { log: () => {}, error: () => {} },
 		...(opts.runtimeConfig ?? {}),
 	});
 
+	// Mirror server.ts: single-mode boot awaits forProject() once for
+	// the configured PROJECT_DIR, then mounts session routes against
+	// the resulting runtime.
+	const defaultRuntime = await registry.forProject({
+		id: "default",
+		projectDir: opts.projectDir,
+	});
+
 	root.route("/v1", createCredentialsApp(registry.credentials));
-	root.route("/v1", createSessionsApp(registry.defaultRuntime));
+	root.route("/v1", createSessionsApp(defaultRuntime));
 	root.doc("/openapi.json", {
 		openapi: "3.1.0",
 		info: { title: "Test Agent Server", version: "0.0.0" },
@@ -183,9 +188,7 @@ describe("agent-server: LiteLLM config", () => {
 				...litellmConfig,
 				configureModelRegistry: undefined,
 				projectDir: project.dir,
-				sessionsDir: resolve(project.dir, "data/sessions"),
 				agentDir,
-				agentsFile: ".pi/AGENTS.md",
 				credentials,
 				authStorage,
 				modelRegistry,
@@ -330,9 +333,7 @@ describe("agent-server: REST surface", () => {
 			const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
 			await ProjectRuntime.create({
 				projectDir: project.dir,
-				sessionsDir: resolve(project.dir, "data/sessions"),
 				agentDir,
-				agentsFile: ".pi/AGENTS.md",
 				credentials,
 				authStorage,
 				modelRegistry,
@@ -763,10 +764,7 @@ describe("agent-server: project-scoped runtimes", () => {
 		const port = await pickPort();
 		const registry = await ProjectRegistry.create({
 			projectDir: project.dir,
-			sessionsDir: resolve(project.dir, "data/default-sessions"),
 			agentDir: resolve(project.dir, ".pi-agent"),
-			agentsFile: ".pi/AGENTS.md",
-			defaultAgentsFile: false,
 			logger: { log: () => {}, error: () => {} },
 		});
 
@@ -815,9 +813,7 @@ describe("agent-server: project-scoped runtimes", () => {
 		const port = await pickPort();
 		const registry = await ProjectRegistry.create({
 			projectDir: projectA.dir,
-			sessionsDir: resolve(projectA.dir, "data/sessions"),
 			agentDir: resolve(projectA.dir, ".pi-agent"),
-			agentsFile: ".pi/AGENTS.md",
 			logger: { log: () => {}, error: () => {} },
 		});
 

@@ -60,8 +60,8 @@ export class ProjectRegistry {
 
 Each runtime gets isolated:
 - `projectDir`: Root for skill/extension discovery
-- `sessionsDir`: `${projectDir}/data/sessions`
-- `agentsFile`: Project-specific system prompt
+- `sessionsDir`: `${projectDir}/.pi/sessions`
+- `agentsFile`: `${projectDir}/.pi/AGENTS.md` (auto-loaded per Pi convention)
 - Extensions: Project-local `.pi/extensions/`
 
 **With RPC, we would need:**
