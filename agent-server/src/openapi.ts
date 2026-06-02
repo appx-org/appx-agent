@@ -12,10 +12,14 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { ServerMode } from "./config.js";
 import { ProjectRegistry } from "./runtime/projectRegistry.js";
 import { createCredentialsApp, createSessionsApp } from "./http/routes.js";
 
-const mode = process.env.AGENT_SERVER_MODE === "multi" ? "multi" : "single";
+const mode: ServerMode =
+	process.env.AGENT_SERVER_MODE === ServerMode.Multi
+		? ServerMode.Multi
+		: ServerMode.Single;
 
 // We need a registry to construct the routes apps, but we never actually
 // call any methods during doc generation — the routes just reference
@@ -31,7 +35,7 @@ const registry = await ProjectRegistry.create({
 
 const root = new OpenAPIHono();
 root.route("/v1", createCredentialsApp(registry.credentials));
-if (mode === "single") {
+if (mode === ServerMode.Single) {
 	root.route("/v1", createSessionsApp(registry.defaultRuntime));
 } else {
 	root.route("/v1/projects/:projectId", createSessionsApp(registry.defaultRuntime));
@@ -43,7 +47,7 @@ const doc = root.getOpenAPI31Document({
 		title: "Appx Agent Server",
 		version: "0.1.0",
 		description:
-			mode === "multi"
+			mode === ServerMode.Multi
 				? "Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes."
 				: "Pi-SDK-based agent orchestration for standalone app sessions.",
 	},

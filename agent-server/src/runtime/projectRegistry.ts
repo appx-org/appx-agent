@@ -24,7 +24,7 @@ export type ProjectRegistryConfig = Omit<
    * where the default runtime only owns shared auth/model settings and should
    * not try to load a prompt from the host project root.
    */
-  defaultAgentsFile?: string | false;
+  defaultAgentsFile?: string | false; // FIXME: for multi mode projects started from scratch should get a template AGENTS.md for builder-agents
   /**
    * Project-local extension files loaded for each project when present.
    * Relative paths are resolved against that project's root.
@@ -77,13 +77,17 @@ export class ProjectRegistry {
       sessionsDir: resolve(config.sessionsDir),
       agentDir,
       defaultAgentsFile: config.defaultAgentsFile,
-      projectExtensionPaths:
-        config.projectExtensionPaths ?? [".pi/extensions/appx-guardrails.ts"],
+      projectExtensionPaths: config.projectExtensionPaths ?? [
+        ".pi/extensions/appx-guardrails.ts",
+      ],
     };
 
     mkdirSync(agentDir, { recursive: true });
     const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
-    const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
+    const modelRegistry = ModelRegistry.create(
+      authStorage,
+      join(agentDir, "models.json"),
+    );
     resolvedConfig.configureModelRegistry?.(modelRegistry);
 
     const credentials = new AgentCredentialsService({
@@ -138,7 +142,8 @@ export class ProjectRegistry {
   async forProject(context: ProjectRuntimeContext): Promise<ProjectRuntime> {
     const projectDir = resolve(context.projectDir);
     if (!context.id.trim()) throw new Error("project id is required");
-    if (!existsSync(projectDir)) throw new Error(`project directory does not exist: ${projectDir}`);
+    if (!existsSync(projectDir))
+      throw new Error(`project directory does not exist: ${projectDir}`);
 
     const existing = this.runtimes.get(context.id);
     if (existing?.projectDir === projectDir) return existing.runtime;
@@ -172,11 +177,14 @@ async function buildRuntime(
     context.id === "default"
       ? config.defaultAgentsFile === false
         ? undefined
-        : config.defaultAgentsFile ?? config.agentsFile
+        : (config.defaultAgentsFile ?? config.agentsFile)
       : config.agentsFile;
   const extensionPaths = [
     ...(config.extensionPaths ?? []),
-    ...resolveProjectExtensionPaths(config.projectExtensionPaths ?? [], projectDir),
+    ...resolveProjectExtensionPaths(
+      config.projectExtensionPaths ?? [],
+      projectDir,
+    ),
   ];
 
   config.logger?.log(

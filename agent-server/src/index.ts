@@ -40,6 +40,8 @@ export type {
 	CreateCredentialsAppOptions,
 } from "./http/routes.js";
 export { litellmRuntimeConfig, logLiteLlmStartupConfig, resolveLiteLlmConfig } from "./providers/litellm.js";
+export { ServerMode } from "./config.js";
+export type { ServerConfig } from "./config.js";
 export { THINKING_LEVELS, clampThinkingLevelForModel, supportedThinkingLevelsForModel } from "./shared/thinking.js";
 export { subscribe, publish, channelStats } from "./http/sseBroker.js";
 export type {

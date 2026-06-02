@@ -47,10 +47,10 @@ All via env vars (see `.env.example`):
 | `PI_SKILL_PATHS`     | no       | —                            | comma-separated temporary Pi skill file/directory paths                |
 | `PI_PROMPT_PATHS`    | no       | —                            | comma-separated temporary Pi prompt template paths                     |
 | `PI_THEME_PATHS`     | no       | —                            | comma-separated temporary Pi theme paths                               |
-| `PI_NO_EXTENSIONS`   | no       | false                        | disables project/global extension discovery except `PI_EXTENSION_PATHS` |
-| `PI_NO_SKILLS`       | no       | false                        | disables project/global skill discovery                               |
-| `PI_NO_PROMPTS`      | no       | false                        | disables project/global prompt template discovery                     |
-| `PI_NO_THEMES`       | no       | false                        | disables project/global theme discovery                               |
+| `PI_NO_EXTENSIONS`   | no       | `false`                      | `"true"` disables project/global extension discovery except `PI_EXTENSION_PATHS` |
+| `PI_NO_SKILLS`       | no       | `false`                      | `"true"` disables project/global skill discovery                               |
+| `PI_NO_PROMPTS`      | no       | `false`                      | `"true"` disables project/global prompt template discovery                     |
+| `PI_NO_THEMES`       | no       | `false`                      | `"true"` disables project/global theme discovery                               |
 | `LITELLM_BASE_URL`   | no       | —                            | when set, registers a `litellm` provider from `LITELLM_*` model envs  |
 | `AGENT_SERVER_HOST`  | no       | `127.0.0.1`                  | bind host                                                             |
 | `AGENT_SERVER_PORT`  | no       | `4001`                       | bind port                                                             |
