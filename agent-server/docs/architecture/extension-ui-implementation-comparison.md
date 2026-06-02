@@ -373,7 +373,7 @@ export class AgentRuntime {
 - ✅ Handles multiple sessions naturally (Map-based)
 - ✅ Explicit lifetime management (create/destroy instances)
 - ✅ State isolation per-session via `sessionId` parameter
-- ✅ Can instantiate multiple `AgentRuntime` (multi-project via `AgentRuntimeRegistry`)
+- ✅ Can instantiate multiple `AgentRuntime` (multi-project via `ProjectRegistry`)
 
 ## Key Architectural Differences
 

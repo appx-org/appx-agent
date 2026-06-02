@@ -41,11 +41,11 @@ const client = new RpcClient({ cwd: "/project-a" });
 await client.switchSession("other.jsonl");
 ```
 
-**Agent-server solution:** `AgentRuntimeRegistry` manages multiple in-process runtimes:
+**Agent-server solution:** `ProjectRegistry` manages multiple in-process runtimes:
 
 ```typescript
-// src/runtimeRegistry.ts
-export class AgentRuntimeRegistry {
+// src/projectRegistry.ts
+export class ProjectRegistry {
   private readonly runtimes = new Map<string, RuntimeEntry>();
 
   forProject(context: ProjectRuntimeContext): AgentRuntime {
@@ -70,7 +70,7 @@ Each runtime gets isolated:
 3. Handle process lifecycle (spawn, crash recovery, cleanup)
 4. Serialize access to each project's stdio pipe
 
-**Reference:** [`src/runtimeRegistry.ts`](../../src/runtimeRegistry.ts)
+**Reference:** [`src/projectRegistry.ts`](../../src/projectRegistry.ts)
 
 ### 2. Web-Native Protocol
 
@@ -213,7 +213,7 @@ private bind(session: AgentSession): void {
 ```
 ┌─────────────────────────────────────┐
 │  HTTP Server (Node.js)              │
-│  ├─ AgentRuntimeRegistry            │
+│  ├─ ProjectRegistry            │
 │  │  └─ Map<projectId, AgentRuntime> │
 │  ├─ Direct method calls             │
 │  │  └─ runtime.sendPrompt(id, text) │
@@ -221,7 +221,7 @@ private bind(session: AgentSession): void {
 └─────────────────────────────────────┘
 ```
 
-From `runtimeRegistry.ts`:
+From `projectRegistry.ts`:
 ```typescript
 forProject(context: ProjectRuntimeContext): AgentRuntime {
   const existing = this.runtimes.get(context.id);
@@ -254,7 +254,7 @@ proxy := &httputil.ReverseProxy{
 
 No special handling for child processes, stdio, or IPC.
 
-**Reference:** [`src/runtimeRegistry.ts`](../../src/runtimeRegistry.ts), [`appx/internal/server/agent_proxy.go`](https://github.com/neuromaxer/appx/blob/main/internal/server/agent_proxy.go)
+**Reference:** [`src/projectRegistry.ts`](../../src/projectRegistry.ts), [`appx/internal/server/agent_proxy.go`](https://github.com/neuromaxer/appx/blob/main/internal/server/agent_proxy.go)
 
 ## When to Use RPC Mode
 

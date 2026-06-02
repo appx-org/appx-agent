@@ -260,12 +260,15 @@ If you'd rather embed the runtime inside your own Hono app:
 ```ts
 import { Hono } from "hono";
 import {
-  AgentRuntimeRegistry,
+  ProjectRegistry,
   createCredentialsApp,
   createSessionsApp,
 } from "@appx/agent-server";
 
-const registry = new AgentRuntimeRegistry({ projectDir, sessionsDir, agentsFile });
+// ProjectRegistry.create is async — it walks the filesystem once to load
+// extensions/skills/themes for the default runtime. Use top-level await
+// in an ESM entrypoint, or wrap in an async bootstrap function.
+const registry = await ProjectRegistry.create({ projectDir, sessionsDir, agentsFile });
 const app = new Hono();
 app.route("/v1", createCredentialsApp(registry.credentials));
 app.route("/v1", createSessionsApp(registry.defaultRuntime));
@@ -275,9 +278,20 @@ This exists for tests and for hosts that have a strong reason to share a
 process. The standalone server is the primary deployment.
 
 For an embedded Appx-style multi-project host, mount shared credentials at
-`/v1` and per-project sessions under `/v1/projects/:projectId`:
+`/v1` and per-project sessions under `/v1/projects/:projectId`. Set
+`defaultAgentsFile: false` so the placeholder default runtime doesn't try
+to auto-load an `AGENTS.md` from the host root — each per-project runtime
+loads its own:
 
 ```ts
+const registry = await ProjectRegistry.create({
+  projectDir,            // host root; only the default runtime uses it
+  sessionsDir,           // default runtime only; per-project runtimes use
+                         //   <projectDir>/data/sessions automatically
+  agentsFile: ".pi/AGENTS.md",   // resolved per project
+  defaultAgentsFile: false,      // skip AGENTS.md on the default runtime
+});
+
 app.route("/v1", createCredentialsApp(registry.credentials));
 app.route("/v1/projects/:projectId", createSessionsApp((c) =>
   registry.forProject({

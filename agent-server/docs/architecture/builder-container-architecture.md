@@ -29,7 +29,7 @@ Build a system where:
 │  │  │  agent-server (one Node.js process)                 │  │  │
 │  │  │  • AuthStorage (LLM keys, runtime-only)             │  │  │
 │  │  │  • ModelRegistry                                    │  │  │
-│  │  │  • AgentRuntimeRegistry                             │  │  │
+│  │  │  • ProjectRegistry                             │  │  │
 │  │  │     ├─ ProjectRuntime: project "eventx"             │  │  │
 │  │  │     │    └─ ProjectSession (the builder agent for   │  │  │
 │  │  │     │       eventx — modifies code, runs podman)    │  │  │
@@ -81,11 +81,11 @@ Build a system where:
 |---|---|
 | Unprivileged builder-container | Outer container, no `--privileged`, runs as non-root user |
 | running agent-server | One Node.js process inside outer container |
-| spins up builder agents for each project | `AgentRuntimeRegistry.forProject()` creates a `ProjectRuntime` per project; each runtime owns a `Map<sessionId, ProjectSession>` |
+| spins up builder agents for each project | `ProjectRegistry.forProject()` creates a `ProjectRuntime` per project; each runtime owns a `Map<sessionId, ProjectSession>` |
 | modify app source | `read`/`write`/`edit` tools on `/workspace/<project>/` |
 | create app containers using rootless podman | `bash` tool runs `podman build` / `podman run` inside the outer container |
 | isolate builder agents and apps from host | Outer container is the host-side security boundary |
-| share auth between builder agents | All `ProjectRuntime`s in the registry share the same `AuthStorage` and `ModelRegistry` (already designed this way in `runtimeRegistry.ts`) |
+| share auth between builder agents | All `ProjectRuntime`s in the registry share the same `AuthStorage` and `ModelRegistry` (already designed this way in `projectRegistry.ts`) |
 
 ## Two Subtle Points
 
@@ -166,7 +166,7 @@ No host-level work happens for any of this beyond running the outer container. *
 
 ## What Already Exists
 
-- ✅ `AgentRuntimeRegistry` — handles multi-project
+- ✅ `ProjectRegistry` — handles multi-project
 - ✅ Shared `AuthStorage` / `ModelRegistry` across projects
 - ✅ Per-session HTTP+SSE API
 - ✅ Pluggable bash via `BashOperations` / `customTools`

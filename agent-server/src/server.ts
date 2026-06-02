@@ -48,7 +48,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { litellmRuntimeConfig, logLiteLlmStartupConfig } from "./providers/litellm.js";
 import { createCredentialsApp, createSessionsApp } from "./http/routes.js";
-import { AgentRuntimeRegistry } from "./runtime/runtimeRegistry.js";
+import { ProjectRegistry } from "./runtime/projectRegistry.js";
 
 function required(name: string): string {
 	const v = process.env[name];
@@ -112,7 +112,7 @@ const mode = parseMode();
 
 logLiteLlmStartupConfig();
 
-const runtimeRegistry = await AgentRuntimeRegistry.create({
+const projectRegistry = await ProjectRegistry.create({
 	projectDir,
 	sessionsDir,
 	agentDir,
@@ -136,7 +136,7 @@ function projectRuntimeFromRequest(c: Context): Promise<import("./runtime/projec
 	if (!projectId || !projectDir) {
 		throw new Error("project context required");
 	}
-	return runtimeRegistry.forProject({
+	return projectRegistry.forProject({
 		id: projectId,
 		name: c.req.header("x-appx-project-name")?.trim(),
 		projectDir,
@@ -176,9 +176,9 @@ root.onError((err, c) => {
 // Mount the versioned API under /v1. Single mode keeps the standalone surface
 // for eventx/spotifyx-style callers; multi mode makes Appx project scoping
 // explicit and keeps credentials at one shared URL surface.
-root.route("/v1", createCredentialsApp(runtimeRegistry.credentials));
+root.route("/v1", createCredentialsApp(projectRegistry.credentials));
 if (mode === "single") {
-	root.route("/v1", createSessionsApp(runtimeRegistry.defaultRuntime));
+	root.route("/v1", createSessionsApp(projectRegistry.defaultRuntime));
 } else {
 	root.route("/v1/projects/:projectId", createSessionsApp(projectRuntimeFromRequest));
 }

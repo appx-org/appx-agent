@@ -34,7 +34,7 @@ import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { litellmRuntimeConfig, resetLiteLlmConfigForTests, resolveLiteLlmConfig } from "../src/providers/litellm.js";
 import { ProjectRuntime } from "../src/runtime/projectRuntime.js";
 import { AgentCredentialsService } from "../src/credentials/credentialsService.js";
-import { AgentRuntimeRegistry, type AgentRuntimeRegistryConfig } from "../src/runtime/runtimeRegistry.js";
+import { ProjectRegistry, type ProjectRegistryConfig } from "../src/runtime/projectRegistry.js";
 import { createCredentialsApp, createSessionsApp } from "../src/http/routes.js";
 import { publish } from "../src/http/sseBroker.js";
 
@@ -94,7 +94,7 @@ async function startServer(opts: {
 	projectDir: string;
 	port: number;
 	token?: string;
-	runtimeConfig?: Partial<AgentRuntimeRegistryConfig>;
+	runtimeConfig?: Partial<ProjectRegistryConfig>;
 }): Promise<{ baseUrl: string; close: () => Promise<void> }> {
 	const root = new OpenAPIHono();
 
@@ -107,7 +107,7 @@ async function startServer(opts: {
 		});
 	}
 
-	const registry = await AgentRuntimeRegistry.create({
+	const registry = await ProjectRegistry.create({
 		projectDir: opts.projectDir,
 		sessionsDir: resolve(opts.projectDir, "data/sessions"),
 		agentDir: resolve(opts.projectDir, ".pi-agent"),
@@ -761,7 +761,7 @@ describe("agent-server: project-scoped runtimes", () => {
 	test("multi-project route split keeps credentials global and sessions project-scoped", async () => {
 		const project = makeProject();
 		const port = await pickPort();
-		const registry = await AgentRuntimeRegistry.create({
+		const registry = await ProjectRegistry.create({
 			projectDir: project.dir,
 			sessionsDir: resolve(project.dir, "data/default-sessions"),
 			agentDir: resolve(project.dir, ".pi-agent"),
@@ -813,7 +813,7 @@ describe("agent-server: project-scoped runtimes", () => {
 		const projectA = makeProject();
 		const projectB = makeProject();
 		const port = await pickPort();
-		const registry = await AgentRuntimeRegistry.create({
+		const registry = await ProjectRegistry.create({
 			projectDir: projectA.dir,
 			sessionsDir: resolve(projectA.dir, "data/sessions"),
 			agentDir: resolve(projectA.dir, ".pi-agent"),

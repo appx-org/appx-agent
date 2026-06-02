@@ -23,11 +23,11 @@ export type {
 export { ProjectSession } from "./runtime/projectSession.js";
 export type { SessionModelSettings } from "./runtime/projectSession.js";
 export type { ExtensionUiRequest, ExtensionUiResponse } from "./shared/extensionUi.js";
-export { AgentRuntimeRegistry } from "./runtime/runtimeRegistry.js";
+export { ProjectRegistry } from "./runtime/projectRegistry.js";
 export type {
-	AgentRuntimeRegistryConfig,
+	ProjectRegistryConfig,
 	ProjectRuntimeContext,
-} from "./runtime/runtimeRegistry.js";
+} from "./runtime/projectRegistry.js";
 export { AgentCredentialsService } from "./credentials/credentialsService.js";
 export type {
 	AgentCredentialsServiceConfig,

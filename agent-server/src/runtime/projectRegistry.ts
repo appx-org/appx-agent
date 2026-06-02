@@ -15,7 +15,7 @@ export type ProjectRuntimeContext = {
   projectDir: string;
 };
 
-export type AgentRuntimeRegistryConfig = Omit<
+export type ProjectRegistryConfig = Omit<
   ProjectRuntimeConfig,
   "authStorage" | "modelRegistry" | "credentials"
 > & {
@@ -45,15 +45,15 @@ type RuntimeEntry = {
  * AgentSessionServices bundle (which walks the filesystem to resolve
  * extensions/skills/themes once per project). Use the static factory:
  *
- *     const registry = await AgentRuntimeRegistry.create(config);
+ *     const registry = await ProjectRegistry.create(config);
  *
  * forProject() is also async — it lazily constructs project runtimes
  * on first request and caches them by id.
  *
  * See docs/architecture/use-agent-session-services.md.
  */
-export class AgentRuntimeRegistry {
-  private readonly config: AgentRuntimeRegistryConfig;
+export class ProjectRegistry {
+  private readonly config: ProjectRegistryConfig;
   private readonly authStorage: AuthStorage;
   private readonly modelRegistry: ModelRegistryType;
   private readonly runtimes = new Map<string, RuntimeEntry>();
@@ -64,14 +64,14 @@ export class AgentRuntimeRegistry {
    * Async factory. Sets up shared auth/model state, then builds the
    * default runtime by awaiting its services bundle.
    */
-  static async create(config: AgentRuntimeRegistryConfig): Promise<AgentRuntimeRegistry> {
+  static async create(config: ProjectRegistryConfig): Promise<ProjectRegistry> {
     // Resolve agentDir once so AuthStorage, ModelRegistry, AgentCredentialsService,
     // and every per-project ProjectRuntime all read/write the same auth.json and
     // models.json files. Without this, an undefined agentDir falls back to Pi's
     // getAgentDir() inside each AuthStorage/ModelRegistry/ProjectRuntime, while the
     // credentials service would silently target a different path.
     const agentDir = config.agentDir ? resolve(config.agentDir) : getAgentDir();
-    const resolvedConfig: AgentRuntimeRegistryConfig = {
+    const resolvedConfig: ProjectRegistryConfig = {
       ...config,
       projectDir: resolve(config.projectDir),
       sessionsDir: resolve(config.sessionsDir),
@@ -107,7 +107,7 @@ export class AgentRuntimeRegistry {
       credentials,
     );
 
-    return new AgentRuntimeRegistry(
+    return new ProjectRegistry(
       resolvedConfig,
       authStorage,
       modelRegistry,
@@ -117,7 +117,7 @@ export class AgentRuntimeRegistry {
   }
 
   private constructor(
-    config: AgentRuntimeRegistryConfig,
+    config: ProjectRegistryConfig,
     authStorage: AuthStorage,
     modelRegistry: ModelRegistryType,
     credentials: AgentCredentialsService,
@@ -162,7 +162,7 @@ export class AgentRuntimeRegistry {
  */
 async function buildRuntime(
   context: ProjectRuntimeContext,
-  config: AgentRuntimeRegistryConfig,
+  config: ProjectRegistryConfig,
   authStorage: AuthStorage,
   modelRegistry: ModelRegistryType,
   credentials: AgentCredentialsService,
@@ -194,7 +194,7 @@ async function buildRuntime(
     authStorage,
     modelRegistry,
     // Shared modelRegistry was already configured by the caller of
-    // AgentRuntimeRegistry.create; clear the hook so per-project
+    // ProjectRegistry.create; clear the hook so per-project
     // ProjectRuntime.create doesn't double-apply it.
     configureModelRegistry: undefined,
     extensionPaths,

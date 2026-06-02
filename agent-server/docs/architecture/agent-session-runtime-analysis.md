@@ -34,7 +34,7 @@ The bundle exists to make cwd transitions atomic — irrelevant for us.
 | Member | Status in agent-server |
 |---|---|
 | `cwd`, `agentDir` | Already on `AgentRuntime` |
-| `authStorage`, `modelRegistry` | Shared on `AgentRuntimeRegistry` |
+| `authStorage`, `modelRegistry` | Shared on `ProjectRegistry` |
 | `resourceLoader` | Created per session via `makeResourceLoader()` |
 | `settingsManager` | Not used; could enable future project-settings API |
 | `diagnostics` | **Currently dropped on the floor** — should surface |

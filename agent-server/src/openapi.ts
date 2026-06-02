@@ -12,7 +12,7 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { AgentRuntimeRegistry } from "./runtime/runtimeRegistry.js";
+import { ProjectRegistry } from "./runtime/projectRegistry.js";
 import { createCredentialsApp, createSessionsApp } from "./http/routes.js";
 
 const mode = process.env.AGENT_SERVER_MODE === "multi" ? "multi" : "single";
@@ -22,7 +22,7 @@ const mode = process.env.AGENT_SERVER_MODE === "multi" ? "multi" : "single";
 // handler functions whose signatures don't depend on state. Use a stub
 // projectDir so the registry's constructor passes its sanity checks.
 const stubProjectDir = resolve(process.cwd());
-const registry = await AgentRuntimeRegistry.create({
+const registry = await ProjectRegistry.create({
 	projectDir: stubProjectDir,
 	sessionsDir: resolve(stubProjectDir, ".tmp-openapi-sessions"),
 	defaultAgentsFile: false,
