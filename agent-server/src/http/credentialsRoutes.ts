@@ -15,7 +15,7 @@
  *   GET    /custom/providers        list custom models.json providers
  *   PUT    /custom/providers        create/update a custom provider
  *   DELETE /custom/providers/{provider}         remove a custom provider
- *   GET    /healthz                 liveness + channel stats
+ *   GET    /healthz                 liveness + channel stats  // FIXME: Do we need healthz here?
  *
  * Session routes live in sessionsRoutes.ts; project-lifecycle routes in
  * projectsRoutes.ts.

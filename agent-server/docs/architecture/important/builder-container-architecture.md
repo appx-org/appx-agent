@@ -29,7 +29,7 @@ Build a system where:
 │  │  │  agent-server (one Node.js process)                 │  │  │
 │  │  │  • AuthStorage (LLM keys, runtime-only)             │  │  │
 │  │  │  • ModelRegistry                                    │  │  │
-│  │  │  • ProjectRegistry                             │  │  │
+│  │  │  • ProjectRegistry                                  │  │  │
 │  │  │     ├─ ProjectRuntime: project "eventx"             │  │  │
 │  │  │     │    └─ ProjectSession (the builder agent for   │  │  │
 │  │  │     │       eventx — modifies code, runs podman)    │  │  │
@@ -77,15 +77,15 @@ Build a system where:
 
 ## Component Mapping
 
-| Concept | What it maps to in code |
-|---|---|
-| Unprivileged builder-container | Outer container, no `--privileged`, runs as non-root user |
-| running agent-server | One Node.js process inside outer container |
-| spins up builder agents for each project | `ProjectRegistry.forProject()` creates a `ProjectRuntime` per project; each runtime owns a `Map<sessionId, ProjectSession>` |
-| modify app source | `read`/`write`/`edit` tools on `/workspace/<project>/` |
-| create app containers using rootless podman | `bash` tool runs `podman build` / `podman run` inside the outer container |
-| isolate builder agents and apps from host | Outer container is the host-side security boundary |
-| share auth between builder agents | All `ProjectRuntime`s in the registry share the same `AuthStorage` and `ModelRegistry` (already designed this way in `projectRegistry.ts`) |
+| Concept                                     | What it maps to in code                                                                                                                                                  |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unprivileged builder-container              | Outer container, no `--privileged`, runs as non-root user                                                                                                                |
+| running agent-server                        | One Node.js process inside outer container                                                                                                                               |
+| spins up builder agents for each project    | `ProjectRegistry.createProject()` registers a project; `getRuntime()` lazily builds a `ProjectRuntime` per project; each runtime owns a `Map<sessionId, ProjectSession>` |
+| modify app source                           | `read`/`write`/`edit` tools on `/workspace/<project>/`                                                                                                                   |
+| create app containers using rootless podman | `bash` tool runs `podman build` / `podman run` inside the outer container                                                                                                |
+| isolate builder agents and apps from host   | Outer container is the host-side security boundary                                                                                                                       |
+| share auth between builder agents           | All `ProjectRuntime`s in the registry share the same `AuthStorage` and `ModelRegistry` (already designed this way in `projectRegistry.ts`)                               |
 
 ## Two Subtle Points
 
@@ -99,7 +99,8 @@ In agent-server's design, all "builder agents" are **`ProjectSession` instances 
 
 ```typescript
 // What "spins up a builder agent for a project" actually is:
-const runtime = registry.forProject({ id: "eventx", projectDir: "/workspace/eventx" });
+const project = registry.createProject({ name: "eventx" }); // id "eventx", dir WORKSPACE_DIR/eventx
+const runtime = await registry.getRuntime(project.id);
 const session = await runtime.createNewSession();
 await session.sendPrompt("scaffold a Next.js app");
 ```
@@ -110,7 +111,7 @@ There's no fork, no new process, no separate auth context. It's a `Map<projectId
 
 **When it stops being fine:** if multiple end-users (Alice, Bob, etc.) are added later, "builder agents share a process" means a bug in Alice's session could potentially interfere with Bob's. At that point, graduate to per-user outer containers or per-user systemd units (the patterns from `systemd-isolation.md`).
 
-For now, "spins up builder agents" is a logical operation — calling `forProject(...)` to get (or create) the `ProjectRuntime`, then `createNewSession()` to get a `ProjectSession` — not a process operation.
+For now, "spins up builder agents" is a logical operation — calling `createProject(...)` once to register the project, then `getRuntime(...)` to get (or lazily build) the `ProjectRuntime` and `createNewSession()` to get a `ProjectSession` — not a process operation.
 
 ### Point 2: Auth sharing happens automatically
 
@@ -128,7 +129,7 @@ authStorage.setRuntimeApiKey("openai", process.env.OPENAI_API_KEY);
 
 The keys come in via the `docker run -e ANTHROPIC_API_KEY=...` flag on the outer container, get pushed to `AuthStorage` once at startup, and every builder agent uses them naturally because they're all reading from the same `AuthStorage` instance.
 
-**What this means for credentials never reaching app containers:** when the builder agent runs `podman run myapp`, the inner container inherits whatever env vars the agent passes via `-e ...`. The agent doesn't (and shouldn't) pass `ANTHROPIC_API_KEY` to the inner app. Even if the LLM tried to be clever and write the key into a Dockerfile, the key would only be in *the file*, not in the running app's environment unless deliberately wired in.
+**What this means for credentials never reaching app containers:** when the builder agent runs `podman run myapp`, the inner container inherits whatever env vars the agent passes via `-e ...`. The agent doesn't (and shouldn't) pass `ANTHROPIC_API_KEY` to the inner app. Even if the LLM tried to be clever and write the key into a Dockerfile, the key would only be in _the file_, not in the running app's environment unless deliberately wired in.
 
 For defense in depth, configure agent-server's bash tool with a `spawnHook` that strips LLM keys from the env before running any command — but in practice it doesn't tend to happen because the keys aren't in env vars at the bash level; they're in the agent-server process's heap.
 
@@ -137,12 +138,13 @@ For defense in depth, configure agent-server's bash tool with a `spawnHook` that
 Concrete walkthrough of "user creates eventx and prompts the agent":
 
 ```
-1. User (admin) → POST /v1/projects { id: "eventx", projectDir: "/workspace/eventx" }
-   appx control logic creates the dir, registers the project
+1. User (admin) → POST /v1/projects { name: "eventx" }
+   agent-server slugifies the name to id "eventx", creates WORKSPACE_DIR/eventx,
+   and persists the project to .pi-global/projects.json (idempotent on name)
 
 2. User → POST /v1/projects/eventx/sessions
-   agent-server: registry.forProject("eventx").createNewSession()
-   → Creates ProjectRuntime for eventx (or returns existing)
+   agent-server: (await registry.getRuntime("eventx")).createNewSession()
+   → Lazily builds the ProjectRuntime for eventx (or returns the cached one)
    → Creates AgentSession bound to that runtime
    → Returns sessionId
 
@@ -166,17 +168,17 @@ No host-level work happens for any of this beyond running the outer container. *
 
 ## What Already Exists
 
-- ✅ `ProjectRegistry` — handles multi-project
+- ✅ `ProjectRegistry` — multi-project, with a durable `projects.json` registry
 - ✅ Shared `AuthStorage` / `ModelRegistry` across projects
 - ✅ Per-session HTTP+SSE API
 - ✅ Pluggable bash via `BashOperations` / `customTools`
-- ✅ Project-scoped routes (`/v1/projects/:id/sessions/...`)
+- ✅ Project lifecycle + scoped routes (`POST /v1/projects`, `/v1/projects/:id/sessions/...`)
 
 ## What Needs to Be Built
 
 1. **The outer container's Dockerfile** — Ubuntu/Alpine + podman + nodejs + agent-server (~10 lines, draft in `rootless-podman-isolation.md`)
 2. **A run script / docker-compose** that launches the outer container with the right flags (`--device /dev/fuse`, port forwards, volume mount, env vars)
-3. **Project provisioning logic** — when admin creates a new project, ensure `/workspace/<id>/` exists and call `registry.forProject(...)` to register it
+3. **Project provisioning logic** — `POST /v1/projects { name }` already creates `WORKSPACE_DIR/<id>/` and registers the project; provisioning is just calling that endpoint (plus any product-specific scaffolding the caller layers on top)
 4. **System prompt for the builder agent** — telling it that `podman` is available, where projects live, how to expose ports
 5. **(Optional) An idle-eviction sweep** — if many projects exist and stopping unused `ProjectRuntime`s would free memory; not needed for one admin user
 
@@ -184,15 +186,15 @@ That's it. Maybe 1-2 days of work for the outer container + provisioning, plus p
 
 ## What This Architecture Buys You
 
-| Goal | How it's met |
-|---|---|
+| Goal                                          | How it's met                                                                                                                     |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | **Isolate builder agents and apps from host** | Outer container is unprivileged + user-namespaced. Inner containers are nested in the outer's namespaces. Host can't be touched. |
-| **Share auth between builder agents** | All sessions live in one process with one shared `AuthStorage`. Trivial. |
-| **Builder agents can modify code** | Pi's `write`/`edit`/`read` tools, with `/workspace` mounted from host. |
-| **Builder agents can spin up app containers** | `bash` tool runs `podman` commands. Inner containers are children of the outer. |
-| **App containers don't have LLM keys** | Keys live in `AuthStorage` in agent-server's memory. They never enter the env of inner containers unless deliberately passed. |
-| **One sandbox to manage, scale, debug** | One outer container = one PID to monitor on the host. |
-| **Single-admin scenario is simple** | No multi-user complexity, no per-user systemd units, no namespace-per-tenant. |
+| **Share auth between builder agents**         | All sessions live in one process with one shared `AuthStorage`. Trivial.                                                         |
+| **Builder agents can modify code**            | Pi's `write`/`edit`/`read` tools, with `/workspace` mounted from host.                                                           |
+| **Builder agents can spin up app containers** | `bash` tool runs `podman` commands. Inner containers are children of the outer.                                                  |
+| **App containers don't have LLM keys**        | Keys live in `AuthStorage` in agent-server's memory. They never enter the env of inner containers unless deliberately passed.    |
+| **One sandbox to manage, scale, debug**       | One outer container = one PID to monitor on the host.                                                                            |
+| **Single-admin scenario is simple**           | No multi-user complexity, no per-user systemd units, no namespace-per-tenant.                                                    |
 
 ## Known Limitations
 
@@ -211,12 +213,12 @@ None of these are dealbreakers; just trade-offs to be aware of.
 
 When the single-admin scenario outgrows this design, here's how the architecture composes:
 
-| Future need | Escalation |
-|---|---|
-| Multiple end-users with strong isolation | One outer container per user; appx routes by user → container (see `systemd-isolation.md`) |
-| Cross-host scaling | Each outer container becomes a k8s pod; namespace per user (see `hosted-platform-migration.md` if added later) |
-| Stronger isolation for hostile workloads | Sysbox runtime for the outer container; or microVMs (Firecracker/Kata) |
-| Anonymous public users (untrusted) | Pattern 5 from `builder-agent-isolation.md`: platform Build/Deploy API with ephemeral sandboxes |
+| Future need                              | Escalation                                                                                                     |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Multiple end-users with strong isolation | One outer container per user; appx routes by user → container (see `systemd-isolation.md`)                     |
+| Cross-host scaling                       | Each outer container becomes a k8s pod; namespace per user (see `hosted-platform-migration.md` if added later) |
+| Stronger isolation for hostile workloads | Sysbox runtime for the outer container; or microVMs (Firecracker/Kata)                                         |
+| Anonymous public users (untrusted)       | Pattern 5 from `builder-agent-isolation.md`: platform Build/Deploy API with ephemeral sandboxes                |
 
 None of these invalidate this design — they layer on top. The "one outer container with agent-server + rootless podman + projects mounted" core pattern remains the unit of deployment.
 
