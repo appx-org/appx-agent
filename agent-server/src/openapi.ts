@@ -10,52 +10,44 @@
  * matches what the live server publishes. Keep them in sync.
  */
 import { writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { ServerMode } from "./config.js";
 import { ProjectRegistry } from "./runtime/projectRegistry.js";
-import { createCredentialsApp, createSessionsApp } from "./http/routes.js";
+import { createSessionsApp } from "./http/sessionsRoutes.js";
+import { createCredentialsApp } from "./http/credentialsRoutes.js";
+import { createProjectsApp } from "./http/projectsRoutes.js";
+import type { ProjectRuntime } from "./runtime/projectRuntime.js";
 
-const mode: ServerMode =
-	process.env.AGENT_SERVER_MODE === ServerMode.Multi
-		? ServerMode.Multi
-		: ServerMode.Single;
-
-// We need a registry to construct the routes apps, but we never actually
-// call any methods during doc generation — the routes just reference
-// handler functions whose signatures don't depend on state. Build a stub
-// runtime via the same forProject() path the live server uses, against
-// the current cwd.
-const stubProjectDir = resolve(process.cwd());
+// We need a registry to construct the route apps, but we never actually call
+// any methods during doc generation — the routes just reference handler
+// functions whose signatures don't depend on state. Build it against a throwaway
+// workspace so nothing touches the real filesystem layout.
+const workspaceDir = mkdtempSync(resolve(tmpdir(), "agent-server-openapi-"));
 const registry = await ProjectRegistry.create({
-	projectDir: stubProjectDir,
-	logger: { log: () => {}, error: () => {} },
+  workspaceDir,
+  logger: { log: () => {}, error: () => {} },
 });
-const stubRuntime = await registry.forProject({
-	id: "openapi-stub",
-	projectDir: stubProjectDir,
-});
+const stubResolver = async (): Promise<ProjectRuntime> => {
+  throw new Error("openapi stub resolver should never be invoked");
+}; // FIXME: What is this?
 
 const root = new OpenAPIHono();
 root.route("/v1", createCredentialsApp(registry.credentials));
-if (mode === ServerMode.Single) {
-	root.route("/v1", createSessionsApp(stubRuntime));
-} else {
-	root.route("/v1/projects/:projectId", createSessionsApp(stubRuntime));
-}
+root.route("/v1", createProjectsApp(registry));
+root.route("/v1/projects/:projectId", createSessionsApp(stubResolver));
 
 const doc = root.getOpenAPI31Document({
-	openapi: "3.1.0",
-	info: {
-		title: "Appx Agent Server",
-		version: "0.1.0",
-		description:
-			mode === ServerMode.Multi
-				? "Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes."
-				: "Pi-SDK-based agent orchestration for standalone app sessions.",
-	},
+  openapi: "3.1.0",
+  info: {
+    title: "Appx Agent Server",
+    version: "0.1.0",
+    description:
+      "Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes.",
+  },
 });
 
 const outPath = resolve(process.cwd(), "openapi.json");
 writeFileSync(outPath, `${JSON.stringify(doc, null, 2)}\n`);
-console.log(`[openapi] wrote ${outPath} (${mode} mode)`);
+console.log(`[openapi] wrote ${outPath}`);

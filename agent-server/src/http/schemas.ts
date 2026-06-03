@@ -257,6 +257,47 @@ export const SessionIdParamSchema = z.object({
 	id: z.string().min(1).openapi({ param: { name: "id", in: "path" } }),
 });
 
+/** Path param for project lifecycle routes (`/v1/projects/{id}`). */
+export const ProjectIdParamSchema = z.object({
+	id: z.string().min(1).openapi({ param: { name: "id", in: "path" } }),
+});
+
+/** Body for `POST /v1/projects`. Name-only — the id/dir are derived server-side. */
+export const CreateProjectRequestSchema = z
+	.object({
+		name: z.string().min(1).openapi({
+			example: "My Cool App",
+			description:
+				"Human-facing project name. Slugified into the immutable id and directory name.",
+		}),
+	})
+	.openapi("CreateProjectRequest");
+
+/** Public view of a project returned by the lifecycle routes. */
+export const ProjectInfoSchema = z
+	.object({
+		id: z.string().openapi({
+			example: "my-cool-app",
+			description: "Immutable slug; registry key, route param, and directory name.",
+		}),
+		name: z.string().openapi({ example: "My Cool App" }),
+		projectDir: z.string().openapi({
+			example: "/workspace/my-cool-app",
+			description: "Absolute working directory under WORKSPACE_DIR.",
+		}),
+		createdAt: z.string().openapi({
+			example: "2026-06-03T10:00:00.000Z",
+			description: "ISO-8601 UTC timestamp",
+		}),
+	})
+	.openapi("ProjectInfo");
+
+export const ListProjectsResponseSchema = z
+	.object({
+		projects: z.array(ProjectInfoSchema),
+	})
+	.openapi("ListProjectsResponse");
+
 export const ProviderParamSchema = z.object({
 	provider: z
 		.string()

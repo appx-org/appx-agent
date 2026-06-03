@@ -23,24 +23,29 @@ export type {
 export { ProjectSession } from "./runtime/projectSession.js";
 export type { SessionModelSettings } from "./runtime/projectSession.js";
 export type { ExtensionUiRequest, ExtensionUiResponse } from "./shared/extensionUi.js";
-export { ProjectRegistry } from "./runtime/projectRegistry.js";
+export { ProjectRegistry, InvalidProjectNameError } from "./runtime/projectRegistry.js";
 export type {
 	ProjectRegistryConfig,
-	ProjectRuntimeContext,
+	ProjectInfo,
 } from "./runtime/projectRegistry.js";
+export { ProjectStore } from "./runtime/projectStore.js";
+export type { ProjectRecord } from "./runtime/projectStore.js";
 export { AgentCredentialsService } from "./credentials/credentialsService.js";
 export type {
 	AgentCredentialsServiceConfig,
 } from "./credentials/credentialsService.js";
-export { createSessionsApp, createCredentialsApp } from "./http/routes.js";
+export { createSessionsApp } from "./http/sessionsRoutes.js";
+export { createCredentialsApp } from "./http/credentialsRoutes.js";
+export { createProjectsApp } from "./http/projectsRoutes.js";
 export type {
 	ProjectRuntimeResolver,
 	CreateSessionsAppOptions,
+} from "./http/sessionsRoutes.js";
+export type {
 	AgentCredentialsResolver,
 	CreateCredentialsAppOptions,
-} from "./http/routes.js";
+} from "./http/credentialsRoutes.js";
 export { litellmRuntimeConfig, logLiteLlmStartupConfig, resolveLiteLlmConfig } from "./providers/litellm.js";
-export { ServerMode } from "./config.js";
 export type { ServerConfig } from "./config.js";
 export { THINKING_LEVELS, clampThinkingLevelForModel, supportedThinkingLevelsForModel } from "./shared/thinking.js";
 export { subscribe, publish, channelStats } from "./http/sseBroker.js";

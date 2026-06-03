@@ -7,6 +7,11 @@
  * touching `process.env` directly — fail-fast at the boundary, twelve-
  * factor "config in env" with proper validation.
  *
+ * Routing is always project-scoped (`/v1/projects/{id}/...`); there is
+ * no single/multi mode switch. A standalone deployment is simply a
+ * workspace that holds one project. See
+ * docs/architecture/project-lifecycle-and-workspace-layout.md.
+ *
  * Conventions
  * ───────────
  *   - Enum-valued vars accept exactly the canonical names listed below;
@@ -19,20 +24,20 @@
  *
  * Filesystem convention
  * ─────────────────────
- *   - Org-shared (`GLOBAL_AGENT_DIR`, defaults to `~/.pi/agent/`):
- *       auth.json, models.json. These are org-scoped (one
- *       agent-server process = one org) and *must* be shared, so
- *       every runtime references the same instances.
- *   - Project tier (`<projectDir>/.pi/`):
- *       AGENTS.md, sessions/, skills/, extensions/, settings.json.
- *       Per-runtime — the default runtime uses its own projectDir's
- *       `.pi/`, just like every per-project runtime in multi mode.
+ * Everything lives under one mountable root, `WORKSPACE_DIR`:
+ *   - Org-shared (`WORKSPACE_DIR/.pi-global/`):
+ *       auth.json, models.json (Pi), plus projects.json (agent-server's
+ *       durable project registry) and sessions/{id}/ (transcripts).
+ *       Org-scoped (one agent-server process = one org).
+ *   - Project tier (`WORKSPACE_DIR/{id}/.pi/`):
+ *       AGENTS.md, skills/, extensions/, settings.json. Per project,
+ *       config-only (committable) — transcripts live centrally under
+ *       `.pi-global/sessions/{id}/`, not here.
  *
- * The runtime derives the project tier from `PROJECT_DIR` automatically;
- * there are no separate env vars for AGENTS.md or sessions paths. If a
- * project has no `.pi/AGENTS.md`, the runtime starts with no pinned
- * prompt (silent skip). Place project-local skills/extensions/prompts
- * under `.pi/` and Pi auto-discovers them.
+ * Project directories are created on demand by the project lifecycle
+ * endpoints (`POST /v1/projects`); operators only configure
+ * `WORKSPACE_DIR`. If a project has no `.pi/AGENTS.md`, its runtime
+ * starts with no pinned prompt (silent skip).
  *
  * Pi additionally auto-discovers user-level resources from
  * `~/.pi/agent/skills/`, `~/.agents/skills/`, etc. if they exist;
@@ -41,18 +46,10 @@
  *
  * Environment variables
  * ─────────────────────
- *   PROJECT_DIR            (required) cwd handed to pi in single mode;
- *                          host root in multi mode. Must exist on disk.
- *
- *   AGENT_SERVER_MODE      "single" | "multi" (default: single).
- *   GLOBAL_AGENT_DIR       Pi's process-global config dir holding
- *                          auth.json + models.json. Falls back to
- *                          Pi's own getAgentDir() (which honours
- *                          PI_CODING_AGENT_DIR) when unset. Distinct
- *                          from <PROJECT_DIR>/.pi/, which is the
- *                          project tier. The name signals scope:
- *                          credentials live above any project's
- *                          commit/share boundary.
+ *   WORKSPACE_DIR          (required) root holding every project dir
+ *                          plus `.pi-global/`. Must exist on disk.
+ *                          Mount as a Docker volume for restart-safe
+ *                          projects + registry.
  *   ANTHROPIC_API_KEY      injected into pi's AuthStorage if set
  *
  *   PI_EXTENSION_PATHS     comma-separated extension/package sources
@@ -75,17 +72,10 @@
  * separately at the same boundary.
  */
 import { existsSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
 import { z } from "zod";
 
 
-export const ServerMode = {
-  Single: "single",
-  Multi: "multi",
-} as const;
-export type ServerMode = (typeof ServerMode)[keyof typeof ServerMode];
-
-const SERVER_MODE_VALUES = [ServerMode.Single, ServerMode.Multi] as const;
 
 /**
  * Treat empty / whitespace-only env vars as unset (POSIX convention).
@@ -142,25 +132,12 @@ const booleanFlag = z
   .transform((value) => value === "true");
 
 /**
- * Server routing mode. Strict enum — only canonical lowercase names.
- */
-const modeSchema = z.preprocess(
-  blankToUndefined,
-  z
-    .enum(SERVER_MODE_VALUES, {
-      errorMap: () => ({ message: 'must be "single" or "multi"' }),
-    })
-    .default(ServerMode.Single),
-);
-
-/**
  * Raw env schema. Coerces primitives but defers cross-field path
  * resolution and filesystem checks to `loadConfig()` below — schemas
  * stay pure (no I/O), which keeps tests trivial to mock.
  */
 const RawEnv = z.object({
-  PROJECT_DIR: requiredString,
-  GLOBAL_AGENT_DIR: optionalString,
+  WORKSPACE_DIR: requiredString,
 
   ANTHROPIC_API_KEY: optionalString,
 
@@ -180,13 +157,12 @@ const RawEnv = z.object({
   ),
   AGENT_SERVER_TOKEN: optionalString,
   APPX_AGENT_SERVER_TOKEN: optionalString,
-  AGENT_SERVER_MODE: modeSchema,
 });
 
 /** Fully resolved, validated server configuration. */
 export type ServerConfig = {
-  projectDir: string;
-  agentDir: string | undefined;
+  /** Root holding every project dir plus `.pi-global/`. */
+  workspaceDir: string;
   anthropicApiKey: string | undefined;
   extensionPaths: string[];
   skillPaths: string[];
@@ -199,7 +175,6 @@ export type ServerConfig = {
   host: string;
   port: number;
   token: string | undefined;
-  mode: ServerMode;
 };
 
 /**
@@ -234,27 +209,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   }
   const raw = parsed.data;
 
-  const projectDir = resolve(raw.PROJECT_DIR);
-  if (!existsSync(projectDir)) {
-    throw new ConfigError([`PROJECT_DIR does not exist: ${projectDir}`]);
+  const workspaceDir = resolve(raw.WORKSPACE_DIR);
+  if (!existsSync(workspaceDir)) {
+    throw new ConfigError([`WORKSPACE_DIR does not exist: ${workspaceDir}`]);
   }
-
-  // Cross-field path resolution: a relative GLOBAL_AGENT_DIR is
-  // resolved against the project directory so deployments can use
-  // short relative paths without surprises. (Sessions and AGENTS.md are
-  // derived inside the runtime from `<PROJECT_DIR>/.pi/` per Pi's
-  // project convention — no env vars needed.)
-  const agentDir = raw.GLOBAL_AGENT_DIR
-    ? resolveAgainst(raw.GLOBAL_AGENT_DIR, projectDir)
-    : undefined;
 
   // AGENT_SERVER_TOKEN wins over the legacy APPX_AGENT_SERVER_TOKEN
   // alias when both are set.
   const token = raw.AGENT_SERVER_TOKEN ?? raw.APPX_AGENT_SERVER_TOKEN;
 
   return {
-    projectDir,
-    agentDir,
+    workspaceDir,
     anthropicApiKey: raw.ANTHROPIC_API_KEY,
     extensionPaths: raw.PI_EXTENSION_PATHS,
     skillPaths: raw.PI_SKILL_PATHS,
@@ -267,10 +232,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     host: raw.AGENT_SERVER_HOST,
     port: raw.AGENT_SERVER_PORT,
     token,
-    mode: raw.AGENT_SERVER_MODE,
   };
-}
-
-function resolveAgainst(path: string, anchorDir: string): string {
-  return isAbsolute(path) ? path : resolve(anchorDir, path);
 }

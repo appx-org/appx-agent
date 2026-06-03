@@ -3,7 +3,7 @@
   "info": {
     "title": "Appx Agent Server",
     "version": "0.1.0",
-    "description": "Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes."
+    "description": "Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes."
   },
   "components": {
     "schemas": {
@@ -467,6 +467,64 @@
           "service",
           "time",
           "channels"
+        ]
+      },
+      "ProjectInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Immutable slug; registry key, route param, and directory name.",
+            "example": "my-cool-app"
+          },
+          "name": {
+            "type": "string",
+            "example": "My Cool App"
+          },
+          "projectDir": {
+            "type": "string",
+            "description": "Absolute working directory under WORKSPACE_DIR.",
+            "example": "/workspace/my-cool-app"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-06-03T10:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "projectDir",
+          "createdAt"
+        ]
+      },
+      "CreateProjectRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-facing project name. Slugified into the immutable id and directory name.",
+            "example": "My Cool App"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "ListProjectsResponse": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectInfo"
+            }
+          }
+        },
+        "required": [
+          "projects"
         ]
       },
       "SessionRow": {
@@ -1099,6 +1157,144 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Create a project, or return the existing one (idempotent on name).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created or already-existing project.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Name does not yield a valid project id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List registered projects, newest first.",
+        "responses": {
+          "200": {
+            "description": "Registered projects.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListProjectsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{id}": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Get a single project's metadata.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Remove a project: evict runtime, drop metadata, delete working dir + transcripts.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project removed if it existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

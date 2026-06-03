@@ -2,31 +2,36 @@
 /**
  * Standalone agent-server entrypoint.
  *
- * The server supports two explicit routing modes:
- *   - single: standalone apps (eventx-style) use /v1/sessions directly.
- *   - multi: Appx uses shared /v1 auth/custom routes plus project sessions
- *     under /v1/projects/:projectId.
- *
- * In both modes shared Pi auth/model state is kept under GLOBAL_AGENT_DIR.
- * Multi mode creates project session runtimes lazily from trusted Appx proxy
- * headers. Bind to 127.0.0.1 by default so app backends reach us over
- * loopback.
+ * Routing is always project-scoped. Shared Pi auth/model state lives under
+ * `WORKSPACE_DIR/.pi-global/`; projects are explicit, persisted resources
+ * created via `POST /v1/projects` and addressed at
+ * `/v1/projects/:projectId/...`. Bind to 127.0.0.1 by default so app backends
+ * reach us over loopback.
  *
  * Configuration is loaded from environment variables; see `./config.ts`
  * for the full schema, defaults, and validation rules. The OpenAPI doc
  * is published at /openapi.json and Swagger UI at /docs.
+ *
+ * See docs/architecture/project-lifecycle-and-workspace-layout.md.
  */
 import { serve } from "@hono/node-server";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { Context } from "hono";
-import { ConfigError, loadConfig, ServerMode, type ServerConfig } from "./config.js";
+import {
+  ConfigError,
+  loadConfig,
+  type ServerConfig,
+} from "./config.js";
 import {
   litellmRuntimeConfig,
   logLiteLlmStartupConfig,
 } from "./providers/litellm.js";
-import { createCredentialsApp, createSessionsApp } from "./http/routes.js";
+import { createSessionsApp } from "./http/sessionsRoutes.js";
+import { createCredentialsApp } from "./http/credentialsRoutes.js";
+import { createProjectsApp } from "./http/projectsRoutes.js";
 import { ProjectRegistry } from "./runtime/projectRegistry.js";
+import type { ProjectRuntime } from "./runtime/projectRuntime.js";
 
 let config: ServerConfig;
 try {
@@ -43,8 +48,7 @@ try {
 logLiteLlmStartupConfig();
 
 const projectRegistry = await ProjectRegistry.create({
-  projectDir: config.projectDir,
-  agentDir: config.agentDir,
+  workspaceDir: config.workspaceDir,
   anthropicApiKey: config.anthropicApiKey,
   extensionPaths: config.extensionPaths,
   skillPaths: config.skillPaths,
@@ -57,20 +61,33 @@ const projectRegistry = await ProjectRegistry.create({
   ...litellmRuntimeConfig(),
 });
 
-// FIXME: What's this mess with hardcoded path? We should have an endpoint for creating a projectRuntime and registering it in projectRegistry
-function projectRuntimeFromRequest(
-  c: Context,
-): Promise<import("./runtime/projectRuntime.js").ProjectRuntime> {
-  const projectId = c.req.param("projectId");
-  const projectDir = c.req.header("x-appx-project-dir")?.trim();
-  if (!projectId || !projectDir) {
-    throw new Error("project context required");
+/** Raised when a session request targets a project that was never created. */
+class ProjectNotRegisteredError extends Error {
+  constructor(projectId: string) {
+    super(
+      projectId
+        ? `project not registered: ${projectId}`
+        : "project id required",
+    );
+    this.name = "ProjectNotRegisteredError";
   }
-  return projectRegistry.forProject({
-    id: projectId,
-    name: c.req.header("x-appx-project-name")?.trim(),
-    projectDir,
-  });
+}
+
+/**
+ * Resolve the ProjectRuntime for a session request by its path `projectId`.
+ *
+ * Pure lookup against the registry — the project must already have been created
+ * via `POST /v1/projects`. An unknown id throws `ProjectNotRegisteredError`,
+ * which the global error handler maps to 404. This replaces the old
+ * header-driven lazy creation: project definition no longer rides on every
+ * request.
+ */
+async function projectRuntimeFromRequest(c: Context): Promise<ProjectRuntime> {
+  const projectId = c.req.param("projectId")?.trim();
+  if (!projectId) throw new ProjectNotRegisteredError("");
+  const runtime = await projectRegistry.getRuntime(projectId);
+  if (!runtime) throw new ProjectNotRegisteredError(projectId);
+  return runtime;
 }
 
 const root = new OpenAPIHono();
@@ -101,35 +118,22 @@ if (config.token) {
 
 root.onError((err, c) => {
   const message = err instanceof Error ? err.message : String(err);
-  if (
-    message.includes("project context") ||
-    message.includes("project directory")
-  ) {
-    return c.json({ error: message }, 400);
+  if (err instanceof ProjectNotRegisteredError) {
+    return c.json({ error: message }, 404);
   }
   console.error("[agent-server] request failed:", err);
   return c.json({ error: "internal server error" }, 500);
 });
 
-// Mount the versioned API under /v1. Single mode keeps the standalone surface
-// for eventx/spotifyx-style callers; multi mode makes Appx project scoping
-// explicit and keeps credentials at one shared URL surface.
+// Mount the versioned API under /v1. Shared auth/custom-provider routes plus
+// project lifecycle management live at /v1; session runtimes are addressed per
+// project under /v1/projects/:projectId.
 root.route("/v1", createCredentialsApp(projectRegistry.credentials));
-if (config.mode === ServerMode.Single) {
-  // Build the single-mode runtime once at boot via the same lazy
-  // path multi mode uses per-request. Keeps the registry mode-agnostic
-  // — mode awareness lives only in this routing block.
-  const defaultRuntime = await projectRegistry.forProject({
-    id: "default",
-    projectDir: config.projectDir,
-  });
-  root.route("/v1", createSessionsApp(defaultRuntime));
-} else {
-  root.route(
-    "/v1/projects/:projectId",
-    createSessionsApp(projectRuntimeFromRequest),
-  );
-}
+root.route("/v1", createProjectsApp(projectRegistry));
+root.route(
+  "/v1/projects/:projectId",
+  createSessionsApp(projectRuntimeFromRequest),
+);
 
 // OpenAPI document + Swagger UI. Doc lives at /openapi.json so consumers
 // (eventx-backend) can fetch it for codegen at build time.
@@ -139,9 +143,7 @@ root.doc("/openapi.json", {
     title: "Appx Agent Server",
     version: "0.1.0",
     description:
-      config.mode === ServerMode.Multi
-        ? "Pi-SDK-based agent orchestration. Shared auth/model state with project-scoped session runtimes."
-        : "Pi-SDK-based agent orchestration for standalone app sessions.",
+      "Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes.",
   },
   servers: [
     { url: `http://${config.host}:${config.port}`, description: "local" },
@@ -155,14 +157,11 @@ root.get("/", (c) =>
   c.json({
     ok: true,
     service: "agent-server",
-    mode: config.mode,
     docs: "/docs",
     openapi: "/openapi.json",
     v1: "/v1",
-    sessions:
-      config.mode === ServerMode.Multi
-        ? "/v1/projects/:projectId/sessions"
-        : "/v1/sessions",
+    projects: "/v1/projects",
+    sessions: "/v1/projects/:projectId/sessions",
   }),
 );
 
@@ -172,18 +171,12 @@ serve(
     console.log(
       `[agent-server] listening on http://${info.address}:${info.port}`,
     );
-    console.log(`[agent-server] mode=${config.mode}`);
-    // Filesystem layout: every runtime (default + per-project) reads
-    // project-local resources from <projectDir>/.pi/. GLOBAL_AGENT_DIR
-    // is only for the org-shared auth.json + models.json that have to
-    // be shared across runtimes (one agent-server process = one org).
-    // The default runtime is rooted at PROJECT_DIR; per-project
-    // runtimes (multi mode) come from request headers.
-    console.log(`[agent-server] defaultProjectDir=${config.projectDir}`);
-    console.log(`[agent-server] projectPiDir=${config.projectDir}/.pi`);
-    if (config.agentDir) {
-      console.log(`[agent-server] globalAgentDir=${config.agentDir}`);
-    }
+    // Filesystem layout: everything lives under WORKSPACE_DIR. Org-shared
+    // auth.json/models.json plus the durable projects.json registry and
+    // session transcripts live in WORKSPACE_DIR/.pi-global/; each project's
+    // config tier is WORKSPACE_DIR/<id>/.pi/.
+    console.log(`[agent-server] workspaceDir=${config.workspaceDir}`);
+    console.log(`[agent-server] globalDir=${config.workspaceDir}/.pi-global`);
     if (config.extensionPaths.length) {
       console.log(
         `[agent-server] PI_EXTENSION_PATHS=${config.extensionPaths.join(",")}`,
