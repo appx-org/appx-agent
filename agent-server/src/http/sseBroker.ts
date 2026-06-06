@@ -17,6 +17,8 @@ type Listener = (event: unknown) => void;
 
 const channels = new Map<string, Set<Listener>>();
 
+// FIXME: Should we create a SSEBroker class or rename functions to sseSubscribe? Currently too generic name
+
 /**
  * Register a listener on the given channel. Returns an unsubscribe
  * function. The listener is invoked synchronously from `publish`; if it
