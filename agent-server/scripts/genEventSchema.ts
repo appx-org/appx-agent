@@ -63,14 +63,9 @@ function sanitize(collection: JsonSchemaCollection): JsonSchemaCollection {
 // root wire-event ref. The extra entries force typia to emit named components
 // (`ExtensionUiRequest`, and `AgentMessage` transitively) so the REST responses
 // that forward these shapes can `$ref` them instead of being typed `unknown[]`.
-const collection = typia.json.schemas<
-	[WireEvent, ExtensionUiRequest],
-	"3.1"
->() as unknown as JsonSchemaCollection;
+const collection = typia.json.schemas<[WireEvent, ExtensionUiRequest], "3.1">() as unknown as JsonSchemaCollection;
 const sanitized = sanitize(collection);
 
 const outPath = resolve(process.cwd(), "src/contract/eventSchema.generated.json");
 writeFileSync(outPath, `${JSON.stringify(sanitized, null, 2)}\n`);
-console.log(
-	`[gen:event-schema] wrote ${outPath} (${Object.keys(sanitized.components.schemas).length} components)`,
-);
+console.log(`[gen:event-schema] wrote ${outPath} (${Object.keys(sanitized.components.schemas).length} components)`);

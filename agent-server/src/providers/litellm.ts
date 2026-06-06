@@ -8,10 +8,10 @@
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { ProjectRuntimeConfig } from "../runtime/projectRuntime.js";
 import {
-  THINKING_LEVELS as SHARED_THINKING_LEVELS,
-  clampThinkingLevelForModel,
-  supportedThinkingLevelsForModel,
-  type ThinkingLevel,
+	clampThinkingLevelForModel,
+	THINKING_LEVELS as SHARED_THINKING_LEVELS,
+	supportedThinkingLevelsForModel,
+	type ThinkingLevel,
 } from "../shared/thinking.js";
 
 type ProviderApi = "openai-completions" | "openai-responses" | "anthropic-messages";
@@ -278,7 +278,10 @@ function normaliseModel(model: LiteLlmModel, providerCompat: Record<string, unkn
 	return {
 		model: providerModel,
 		defaultThinkingLevel: defaultThinkingLevel
-			? clampThinkingLevelForModel(providerModel, parseThinkingLevelValue(defaultThinkingLevel, `LITELLM_MODELS_JSON model ${id} defaultThinkingLevel`)!)
+			? clampThinkingLevelForModel(
+					providerModel,
+					parseThinkingLevelValue(defaultThinkingLevel, `LITELLM_MODELS_JSON model ${id} defaultThinkingLevel`)!,
+				)
 			: undefined,
 	};
 }
@@ -463,7 +466,9 @@ export function litellmRuntimeConfig(): Partial<ProjectRuntimeConfig> {
 	return {
 		configureModelRegistry(modelRegistry) {
 			modelRegistry.registerProvider("litellm", providerConfig);
-			console.log(`${LOG_PREFIX} registered ${config.models.length} model(s); providerDefaultApi=${config.providerApi}`);
+			console.log(
+				`${LOG_PREFIX} registered ${config.models.length} model(s); providerDefaultApi=${config.providerApi}`,
+			);
 			logResolvedConfig(config, "runtime");
 		},
 		defaultModelProvider: "litellm",

@@ -16,28 +16,23 @@ import { readFileSync } from "node:fs";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 
 type GeneratedCollection = {
-  components?: { schemas?: Record<string, unknown> };
-  schemas?: Array<{ $ref: string }>;
+	components?: { schemas?: Record<string, unknown> };
+	schemas?: Array<{ $ref: string }>;
 };
 
 const generated = JSON.parse(
-  readFileSync(
-    new URL("./eventSchema.generated.json", import.meta.url),
-    "utf8",
-  ),
+	readFileSync(new URL("./eventSchema.generated.json", import.meta.url), "utf8"),
 ) as GeneratedCollection;
 
 /** Component schemas generated from `WireEvent` (keyed by sanitized type name). */
-export const eventSchemaComponents: Record<string, unknown> =
-  generated.components?.schemas ?? {};
+export const eventSchemaComponents: Record<string, unknown> = generated.components?.schemas ?? {};
 
 /** `$ref` of the root wire-event schema, e.g. `#/components/schemas/WireEvent`. */
-export const wireEventRef: string =
-  generated.schemas?.[0]?.$ref ?? "#/components/schemas/WireEvent";
+export const wireEventRef: string = generated.schemas?.[0]?.$ref ?? "#/components/schemas/WireEvent";
 
 type OpenApiDoc = {
-  components?: { schemas?: Record<string, unknown> };
-  paths?: Record<string, Record<string, unknown>>;
+	components?: { schemas?: Record<string, unknown> };
+	paths?: Record<string, Record<string, unknown>>;
 };
 
 /**
@@ -48,20 +43,20 @@ type OpenApiDoc = {
  * `requests` array to the canonical (typia-generated) component it carries.
  */
 const forwardedArrayItemRefs: ReadonlyArray<{
-  schema: string;
-  property: string;
-  itemRef: string;
+	schema: string;
+	property: string;
+	itemRef: string;
 }> = [
-  {
-    schema: "SessionMessagesResponse",
-    property: "messages",
-    itemRef: "AgentMessage",
-  },
-  {
-    schema: "PendingExtensionUiRequestsResponse",
-    property: "requests",
-    itemRef: "ExtensionUiRequest",
-  },
+	{
+		schema: "SessionMessagesResponse",
+		property: "messages",
+		itemRef: "AgentMessage",
+	},
+	{
+		schema: "PendingExtensionUiRequestsResponse",
+		property: "requests",
+		itemRef: "ExtensionUiRequest",
+	},
 ];
 
 type ArraySchema = { type?: string; items?: unknown };
@@ -72,16 +67,14 @@ type ObjectSchema = { properties?: Record<string, ArraySchema> };
  * rewrites when both the target response schema and the referenced component
  * are present, so the doc stays valid even if a schema is renamed upstream.
  */
-function pointForwardedArraysAtComponents(
-  schemas: Record<string, unknown>,
-): void {
-  for (const { schema, property, itemRef } of forwardedArrayItemRefs) {
-    const objectSchema = schemas[schema] as ObjectSchema | undefined;
-    const arraySchema = objectSchema?.properties?.[property];
-    if (!arraySchema || arraySchema.type !== "array") continue;
-    if (!(itemRef in schemas)) continue;
-    arraySchema.items = { $ref: `#/components/schemas/${itemRef}` };
-  }
+function pointForwardedArraysAtComponents(schemas: Record<string, unknown>): void {
+	for (const { schema, property, itemRef } of forwardedArrayItemRefs) {
+		const objectSchema = schemas[schema] as ObjectSchema | undefined;
+		const arraySchema = objectSchema?.properties?.[property];
+		if (!arraySchema || arraySchema.type !== "array") continue;
+		if (!(itemRef in schemas)) continue;
+		arraySchema.items = { $ref: `#/components/schemas/${itemRef}` };
+	}
 }
 
 /**
@@ -90,28 +83,28 @@ function pointForwardedArraysAtComponents(
  * Mutates and returns `doc`.
  */
 export function mergeEventSchema<T>(doc: T): T {
-  const target = doc as OpenApiDoc;
-  target.components ??= {};
-  target.components.schemas = {
-    ...(target.components.schemas ?? {}),
-    ...eventSchemaComponents,
-  };
+	const target = doc as OpenApiDoc;
+	target.components ??= {};
+	target.components.schemas = {
+		...(target.components.schemas ?? {}),
+		...eventSchemaComponents,
+	};
 
-  pointForwardedArraysAtComponents(target.components.schemas);
+	pointForwardedArraysAtComponents(target.components.schemas);
 
-  for (const pathItem of Object.values(target.paths ?? {})) {
-    for (const operation of Object.values(pathItem ?? {})) {
-      const content = (
-        operation as {
-          responses?: {
-            "200"?: { content?: Record<string, { schema?: unknown }> };
-          };
-        }
-      )?.responses?.["200"]?.content?.["text/event-stream"];
-      if (content) content.schema = { $ref: wireEventRef };
-    }
-  }
-  return doc;
+	for (const pathItem of Object.values(target.paths ?? {})) {
+		for (const operation of Object.values(pathItem ?? {})) {
+			const content = (
+				operation as {
+					responses?: {
+						"200"?: { content?: Record<string, { schema?: unknown }> };
+					};
+				}
+			)?.responses?.["200"]?.content?.["text/event-stream"];
+			if (content) content.schema = { $ref: wireEventRef };
+		}
+	}
+	return doc;
 }
 
 /**
@@ -120,19 +113,19 @@ export function mergeEventSchema<T>(doc: T): T {
  * version, or description.
  */
 export const OPENAPI_INFO = {
-  title: "Appx Agent Server",
-  version: "0.1.0",
-  description:
-    "Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes.",
+	title: "Appx Agent Server",
+	version: "0.1.0",
+	description:
+		"Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes.",
 } as const;
 
 export interface BuildOpenApiDocumentOptions {
-  /**
-   * Optional `servers` block. The live server advertises its own address; the
-   * build-time dump deliberately omits it so the committed spec stays
-   * host-agnostic for downstream codegen.
-   */
-  servers?: Array<{ url: string; description?: string }>;
+	/**
+	 * Optional `servers` block. The live server advertises its own address; the
+	 * build-time dump deliberately omits it so the committed spec stays
+	 * host-agnostic for downstream codegen.
+	 */
+	servers?: Array<{ url: string; description?: string }>;
 }
 
 /**
@@ -143,15 +136,12 @@ export interface BuildOpenApiDocumentOptions {
  * `server.ts` (`/openapi.json`) call it, so they can only differ in the
  * explicit `servers` block.
  */
-export function buildOpenApiDocument(
-  root: OpenAPIHono,
-  options: BuildOpenApiDocumentOptions = {},
-) {
-  return mergeEventSchema(
-    root.getOpenAPI31Document({
-      openapi: "3.1.0",
-      info: { ...OPENAPI_INFO },
-      ...(options.servers ? { servers: options.servers } : {}),
-    }),
-  );
+export function buildOpenApiDocument(root: OpenAPIHono, options: BuildOpenApiDocumentOptions = {}) {
+	return mergeEventSchema(
+		root.getOpenAPI31Document({
+			openapi: "3.1.0",
+			info: { ...OPENAPI_INFO },
+			...(options.servers ? { servers: options.servers } : {}),
+		}),
+	);
 }

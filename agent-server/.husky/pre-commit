@@ -1,0 +1,46 @@
+# agent-server pre-commit: shared formatting + a typed, in-sync contract.
+#
+# Always (fast, always relevant):
+#   1. Biome format + lint (pi's conventions: tab/width-3, lineWidth 120).
+#      `--write` applies safe fixes; `--error-on-warnings` blocks on the rest.
+#   2. Typecheck (tsc --noEmit) — fail fast on type errors.
+#
+# Only when the contract could have changed (a staged `src/` file or a
+# dependency bump that might move pi's types):
+#   3. Regenerate the typia SSE event schema, then the merged OpenAPI dump,
+#      and re-stage the artifacts. On unrelated commits this is skipped — the
+#      CI freshness gate (.github/workflows/contract.yml) remains the
+#      authoritative net for any deviation that slips through.
+#
+# Finally, re-stage everything that was already staged (Biome may have
+# reformatted it). `set -e` aborts the commit on the first failing step.
+set -e
+
+# Snapshot what the user staged before Biome rewrites files in place.
+STAGED_FILES=$(git diff --cached --name-only)
+
+npm run check
+npm run typecheck
+
+# Does this commit touch anything that could change the published contract?
+contract_touched=0
+for file in $STAGED_FILES; do
+	case "$file" in
+		src/*.ts | src/**/*.ts | package.json | package-lock.json)
+			contract_touched=1
+			break
+			;;
+	esac
+done
+
+if [ "$contract_touched" -eq 1 ]; then
+	echo "Contract-relevant change staged — regenerating openapi.json + event schema..."
+	npm run gen:event-schema
+	npm run openapi
+	git add openapi.json src/contract/eventSchema.generated.json
+fi
+
+# Re-stage the previously-staged files (now possibly reformatted by Biome).
+for file in $STAGED_FILES; do
+	[ -f "$file" ] && git add -- "$file"
+done

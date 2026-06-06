@@ -36,14 +36,11 @@ import type {
 	ExtensionWidgetOptions,
 	ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentCredentialsService, AgentModelRow } from "../credentials/credentialsService.js";
-import type { ExtensionUiRequest, ExtensionUiResponse } from "../shared/extensionUi.js";
-import { publish } from "../http/sseBroker.js";
 import { validateAgentSessionEvent } from "../contract/eventValidation.js";
-import {
-	type ThinkingLevel,
-	supportedThinkingLevelsForModel,
-} from "../shared/thinking.js";
+import type { AgentCredentialsService, AgentModelRow } from "../credentials/credentialsService.js";
+import { publish } from "../http/sseBroker.js";
+import type { ExtensionUiRequest, ExtensionUiResponse } from "../shared/extensionUi.js";
+import { supportedThinkingLevelsForModel, type ThinkingLevel } from "../shared/thinking.js";
 
 type SessionModel = NonNullable<CreateAgentSessionOptions["model"]>;
 
@@ -121,9 +118,7 @@ export class ProjectSession {
 						error: err.error,
 						stack: err.stack,
 					});
-					this.deps.logger.error(
-						`[agent] extension error in ${err.extensionPath}: ${err.error}`,
-					);
+					this.deps.logger.error(`[agent] extension error in ${err.extensionPath}: ${err.error}`);
 				},
 			})
 			.catch((err) => {
@@ -134,9 +129,7 @@ export class ProjectSession {
 					event: "session_start",
 					error: message,
 				});
-				this.deps.logger.error(
-					`[agent] extension binding failed for ${this.sessionId}: ${message}`,
-				);
+				this.deps.logger.error(`[agent] extension binding failed for ${this.sessionId}: ${message}`);
 			});
 	}
 
@@ -149,9 +142,7 @@ export class ProjectSession {
 
 	getModelSettings(): SessionModelSettings {
 		return {
-			model: this.session.model
-				? this.deps.credentials.modelRow(this.session.model as SessionModel)
-				: null,
+			model: this.session.model ? this.deps.credentials.modelRow(this.session.model as SessionModel) : null,
 			thinkingLevel: this.session.thinkingLevel as ThinkingLevel,
 			availableThinkingLevels: this.session.getAvailableThinkingLevels() as ThinkingLevel[],
 			supportsThinking: this.session.supportsThinking(),
@@ -165,9 +156,7 @@ export class ProjectSession {
 		if (this.session.isStreaming) {
 			throw new Error("Cannot change model while the agent is running");
 		}
-		const model = this.deps.modelRegistry.find(provider, modelId) as
-			| SessionModel
-			| undefined;
+		const model = this.deps.modelRegistry.find(provider, modelId) as SessionModel | undefined;
 		if (!model) throw new Error(`model ${provider}/${modelId} not found`);
 		await this.applyModel(model);
 		return this.getModelSettings();
@@ -190,9 +179,7 @@ export class ProjectSession {
 			throw new Error("Cannot change model settings while the agent is running");
 		}
 		if (settings.provider && settings.modelId) {
-			const model = this.deps.modelRegistry.find(settings.provider, settings.modelId) as
-				| SessionModel
-				| undefined;
+			const model = this.deps.modelRegistry.find(settings.provider, settings.modelId) as SessionModel | undefined;
 			if (!model) {
 				throw new Error(`model ${settings.provider}/${settings.modelId} not found`);
 			}
@@ -236,10 +223,7 @@ export class ProjectSession {
 		return Array.from(this.pendingExtensionUi.values()).map((entry) => entry.request);
 	}
 
-	resolveExtensionUiRequest(
-		requestId: string,
-		response: ExtensionUiResponse,
-	): boolean {
+	resolveExtensionUiRequest(requestId: string, response: ExtensionUiResponse): boolean {
 		const pending = this.pendingExtensionUi.get(requestId);
 		if (!pending) return false;
 		pending.resolve(response);

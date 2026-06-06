@@ -75,41 +75,33 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 
-
-
 /**
  * Treat empty / whitespace-only env vars as unset (POSIX convention).
  * Trims surrounding whitespace from non-empty values so downstream
  * consumers don't have to.
  */
 const blankToUndefined = (value: unknown): unknown => {
-  if (typeof value !== "string") return value;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+	if (typeof value !== "string") return value;
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
 };
 
 /** Required string field. Empty / whitespace-only counts as missing. */
-const requiredString = z.preprocess(
-  blankToUndefined,
-  z.string({ required_error: "is required" }),
-);
+const requiredString = z.preprocess(blankToUndefined, z.string({ required_error: "is required" }));
 
 /** Optional string field. Empty → undefined. */
 const optionalString = z.preprocess(blankToUndefined, z.string().optional());
 
 /** Optional string with an explicit default. Empty → default. */
-const stringWithDefault = (defaultValue: string) =>
-  z.preprocess(blankToUndefined, z.string().default(defaultValue));
+const stringWithDefault = (defaultValue: string) => z.preprocess(blankToUndefined, z.string().default(defaultValue));
 
 /** Comma-separated list → string[]; empty entries dropped. */
-const commaList = z
-  .preprocess(blankToUndefined, z.string().optional())
-  .transform((raw) =>
-    (raw ?? "")
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean),
-  );
+const commaList = z.preprocess(blankToUndefined, z.string().optional()).transform((raw) =>
+	(raw ?? "")
+		.split(",")
+		.map((entry) => entry.trim())
+		.filter(Boolean),
+);
 
 /**
  * Strict boolean env flag. Accepts exactly "true" or "false" (lowercase).
@@ -121,15 +113,15 @@ const commaList = z
  * "flase" silently coerce to false.
  */
 const booleanFlag = z
-  .preprocess(
-    blankToUndefined,
-    z
-      .enum(["true", "false"], {
-        errorMap: () => ({ message: 'must be "true" or "false"' }),
-      })
-      .optional(),
-  )
-  .transform((value) => value === "true");
+	.preprocess(
+		blankToUndefined,
+		z
+			.enum(["true", "false"], {
+				errorMap: () => ({ message: 'must be "true" or "false"' }),
+			})
+			.optional(),
+	)
+	.transform((value) => value === "true");
 
 /**
  * Raw env schema. Coerces primitives but defers cross-field path
@@ -137,44 +129,41 @@ const booleanFlag = z
  * stay pure (no I/O), which keeps tests trivial to mock.
  */
 const RawEnv = z.object({
-  WORKSPACE_DIR: requiredString,
+	WORKSPACE_DIR: requiredString,
 
-  ANTHROPIC_API_KEY: optionalString,
+	ANTHROPIC_API_KEY: optionalString,
 
-  PI_EXTENSION_PATHS: commaList,
-  PI_SKILL_PATHS: commaList,
-  PI_PROMPT_PATHS: commaList,
-  PI_THEME_PATHS: commaList,
-  PI_NO_EXTENSIONS: booleanFlag,
-  PI_NO_SKILLS: booleanFlag,
-  PI_NO_PROMPTS: booleanFlag,
-  PI_NO_THEMES: booleanFlag,
+	PI_EXTENSION_PATHS: commaList,
+	PI_SKILL_PATHS: commaList,
+	PI_PROMPT_PATHS: commaList,
+	PI_THEME_PATHS: commaList,
+	PI_NO_EXTENSIONS: booleanFlag,
+	PI_NO_SKILLS: booleanFlag,
+	PI_NO_PROMPTS: booleanFlag,
+	PI_NO_THEMES: booleanFlag,
 
-  AGENT_SERVER_HOST: stringWithDefault("127.0.0.1"),
-  AGENT_SERVER_PORT: z.preprocess(
-    blankToUndefined,
-    z.coerce.number().int().positive().max(65535).default(4001),
-  ),
-  AGENT_SERVER_TOKEN: optionalString,
-  APPX_AGENT_SERVER_TOKEN: optionalString,
+	AGENT_SERVER_HOST: stringWithDefault("127.0.0.1"),
+	AGENT_SERVER_PORT: z.preprocess(blankToUndefined, z.coerce.number().int().positive().max(65535).default(4001)),
+	AGENT_SERVER_TOKEN: optionalString,
+	APPX_AGENT_SERVER_TOKEN: optionalString,
 });
 
 /** Fully resolved, validated server configuration. */
 export type ServerConfig = {
-  /** Root holding every project dir plus `.pi-global/`. */
-  workspaceDir: string;
-  anthropicApiKey: string | undefined;
-  extensionPaths: string[];
-  skillPaths: string[];
-  promptTemplatePaths: string[];
-  themePaths: string[];
-  noExtensions: boolean;
-  noSkills: boolean;
-  noPromptTemplates: boolean;
-  noThemes: boolean;
-  host: string;
-  port: number;
-  token: string | undefined;
+	/** Root holding every project dir plus `.pi-global/`. */
+	workspaceDir: string;
+	anthropicApiKey: string | undefined;
+	extensionPaths: string[];
+	skillPaths: string[];
+	promptTemplatePaths: string[];
+	themePaths: string[];
+	noExtensions: boolean;
+	noSkills: boolean;
+	noPromptTemplates: boolean;
+	noThemes: boolean;
+	host: string;
+	port: number;
+	token: string | undefined;
 };
 
 /**
@@ -182,15 +171,13 @@ export type ServerConfig = {
  * are expected to print `.message` and exit with a non-zero status.
  */
 export class ConfigError extends Error {
-  readonly issues: readonly string[];
+	readonly issues: readonly string[];
 
-  constructor(issues: readonly string[]) {
-    super(
-      `invalid configuration:\n${issues.map((issue) => `  ${issue}`).join("\n")}`,
-    );
-    this.name = "ConfigError";
-    this.issues = issues;
-  }
+	constructor(issues: readonly string[]) {
+		super(`invalid configuration:\n${issues.map((issue) => `  ${issue}`).join("\n")}`);
+		this.name = "ConfigError";
+		this.issues = issues;
+	}
 }
 
 /**
@@ -199,38 +186,38 @@ export class ConfigError extends Error {
  * issues so the entrypoint can print and exit fast.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
-  const parsed = RawEnv.safeParse(env);
-  if (!parsed.success) {
-    const issues = parsed.error.issues.map((issue) => {
-      const key = issue.path.join(".") || "(root)";
-      return `${key}: ${issue.message}`;
-    });
-    throw new ConfigError(issues);
-  }
-  const raw = parsed.data;
+	const parsed = RawEnv.safeParse(env);
+	if (!parsed.success) {
+		const issues = parsed.error.issues.map((issue) => {
+			const key = issue.path.join(".") || "(root)";
+			return `${key}: ${issue.message}`;
+		});
+		throw new ConfigError(issues);
+	}
+	const raw = parsed.data;
 
-  const workspaceDir = resolve(raw.WORKSPACE_DIR);
-  if (!existsSync(workspaceDir)) {
-    throw new ConfigError([`WORKSPACE_DIR does not exist: ${workspaceDir}`]);
-  }
+	const workspaceDir = resolve(raw.WORKSPACE_DIR);
+	if (!existsSync(workspaceDir)) {
+		throw new ConfigError([`WORKSPACE_DIR does not exist: ${workspaceDir}`]);
+	}
 
-  // AGENT_SERVER_TOKEN wins over the legacy APPX_AGENT_SERVER_TOKEN
-  // alias when both are set.
-  const token = raw.AGENT_SERVER_TOKEN ?? raw.APPX_AGENT_SERVER_TOKEN;
+	// AGENT_SERVER_TOKEN wins over the legacy APPX_AGENT_SERVER_TOKEN
+	// alias when both are set.
+	const token = raw.AGENT_SERVER_TOKEN ?? raw.APPX_AGENT_SERVER_TOKEN;
 
-  return {
-    workspaceDir,
-    anthropicApiKey: raw.ANTHROPIC_API_KEY,
-    extensionPaths: raw.PI_EXTENSION_PATHS,
-    skillPaths: raw.PI_SKILL_PATHS,
-    promptTemplatePaths: raw.PI_PROMPT_PATHS,
-    themePaths: raw.PI_THEME_PATHS,
-    noExtensions: raw.PI_NO_EXTENSIONS,
-    noSkills: raw.PI_NO_SKILLS,
-    noPromptTemplates: raw.PI_NO_PROMPTS,
-    noThemes: raw.PI_NO_THEMES,
-    host: raw.AGENT_SERVER_HOST,
-    port: raw.AGENT_SERVER_PORT,
-    token,
-  };
+	return {
+		workspaceDir,
+		anthropicApiKey: raw.ANTHROPIC_API_KEY,
+		extensionPaths: raw.PI_EXTENSION_PATHS,
+		skillPaths: raw.PI_SKILL_PATHS,
+		promptTemplatePaths: raw.PI_PROMPT_PATHS,
+		themePaths: raw.PI_THEME_PATHS,
+		noExtensions: raw.PI_NO_EXTENSIONS,
+		noSkills: raw.PI_NO_SKILLS,
+		noPromptTemplates: raw.PI_NO_PROMPTS,
+		noThemes: raw.PI_NO_THEMES,
+		host: raw.AGENT_SERVER_HOST,
+		port: raw.AGENT_SERVER_PORT,
+		token,
+	};
 }

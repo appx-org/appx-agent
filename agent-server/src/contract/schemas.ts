@@ -119,7 +119,10 @@ export const ContinueOAuthFlowRequestSchema = z
 	.openapi("ContinueOAuthFlowRequest");
 
 export const OAuthFlowIdParamSchema = z.object({
-	flowId: z.string().min(1).openapi({ param: { name: "flowId", in: "path" } }),
+	flowId: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "flowId", in: "path" } }),
 });
 
 export const CustomProviderModelSchema = z
@@ -156,7 +159,10 @@ export const ListCustomProvidersResponseSchema = z
 
 export const UpsertCustomProviderRequestSchema = z
 	.object({
-		provider: z.string().min(1).regex(/^[a-zA-Z0-9_.:-]+$/),
+		provider: z
+			.string()
+			.min(1)
+			.regex(/^[a-zA-Z0-9_.:-]+$/),
 		name: z.string().optional(),
 		baseUrl: z.string().url(),
 		api: z.enum(["openai-completions", "openai-responses", "anthropic-messages"]),
@@ -228,7 +234,10 @@ export const OkResponseSchema = z
 	.openapi("OkResponse");
 
 export const ExtensionUiRequestIdParamSchema = z.object({
-	requestId: z.string().min(1).openapi({ param: { name: "requestId", in: "path" } }),
+	requestId: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "requestId", in: "path" } }),
 });
 
 export const ExtensionUiResponseRequestSchema = z
@@ -272,7 +281,10 @@ export const SessionIdParamSchema = z.object({
 		.string()
 		.min(1)
 		.openapi({ param: { name: "projectId", in: "path" } }),
-	id: z.string().min(1).openapi({ param: { name: "id", in: "path" } }),
+	id: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "id", in: "path" } }),
 });
 
 /**
@@ -290,7 +302,10 @@ export const ProjectScopeParamSchema = z.object({
 
 /** Path param for project lifecycle routes (`/v1/projects/{id}`). */
 export const ProjectIdParamSchema = z.object({
-	id: z.string().min(1).openapi({ param: { name: "id", in: "path" } }),
+	id: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "id", in: "path" } }),
 });
 
 /** Body for `POST /v1/projects`. Name-only — the id/dir are derived server-side. */
@@ -298,8 +313,7 @@ export const CreateProjectRequestSchema = z
 	.object({
 		name: z.string().min(1).openapi({
 			example: "My Cool App",
-			description:
-				"Human-facing project name. Slugified into the immutable id and directory name.",
+			description: "Human-facing project name. Slugified into the immutable id and directory name.",
 		}),
 	})
 	.openapi("CreateProjectRequest");

@@ -17,6 +17,9 @@
   },
   "scripts": {
     "build": "tsc && node -e \"require('fs').cpSync('src/contract/eventSchema.generated.json','dist/contract/eventSchema.generated.json')\"",
+    "typecheck": "tsc --noEmit",
+    "check": "biome check --write --error-on-warnings .",
+    "prepare": "husky",
     "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
     "start": "node --env-file-if-exists=.env dist/server.js",
     "openapi": "tsx --env-file-if-exists=.env src/contract/openapi.ts",
@@ -33,8 +36,10 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.3.5",
     "@types/node": "^22.0.0",
     "ajv": "^8.20.0",
+    "husky": "^9.1.7",
     "ts-patch": "^3.3.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",

@@ -24,21 +24,21 @@
  */
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { type AddressInfo, createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { type AddressInfo, createServer, type Server } from "node:net";
 import { after, before, describe, test } from "node:test";
+import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { serve } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { litellmRuntimeConfig, resetLiteLlmConfigForTests, resolveLiteLlmConfig } from "../src/providers/litellm.js";
-import { ProjectRuntime } from "../src/runtime/projectRuntime.js";
 import { AgentCredentialsService } from "../src/credentials/credentialsService.js";
-import { ProjectRegistry, type ProjectRegistryConfig } from "../src/runtime/projectRegistry.js";
-import { createSessionsApp } from "../src/http/sessionsRoutes.js";
 import { createCredentialsApp } from "../src/http/credentialsRoutes.js";
 import { createProjectsApp } from "../src/http/projectsRoutes.js";
+import { createSessionsApp } from "../src/http/sessionsRoutes.js";
 import { publish } from "../src/http/sseBroker.js";
+import { litellmRuntimeConfig, resetLiteLlmConfigForTests, resolveLiteLlmConfig } from "../src/providers/litellm.js";
+import { ProjectRegistry, type ProjectRegistryConfig } from "../src/runtime/projectRegistry.js";
+import { ProjectRuntime } from "../src/runtime/projectRuntime.js";
 
 /**
  * Pick a free TCP port by binding to 0, reading the assigned port, and
@@ -121,11 +121,14 @@ async function startServer(opts: {
 
 	root.route("/v1", createCredentialsApp(registry.credentials));
 	root.route("/v1", createProjectsApp(registry));
-	root.route("/v1/projects/:projectId", createSessionsApp(async (c) => {
-		const runtime = await registry.getRuntime(c.req.param("projectId"));
-		if (!runtime) throw new Error("project not registered");
-		return runtime;
-	}));
+	root.route(
+		"/v1/projects/:projectId",
+		createSessionsApp(async (c) => {
+			const runtime = await registry.getRuntime(c.req.param("projectId"));
+			if (!runtime) throw new Error("project not registered");
+			return runtime;
+		}),
+	);
 	root.onError((err, c) => {
 		if (err instanceof Error && err.message.includes("project not registered")) {
 			return c.json({ error: err.message }, 404);
@@ -620,7 +623,9 @@ describe("agent-server: REST surface", () => {
 		const modelBody = (await models.json()) as {
 			models: Array<{ provider: string; id: string; available: boolean; reasoning: boolean }>;
 		};
-		const customModel = modelBody.models.find((model) => model.provider === providerId && model.id === "openai/gpt-5.5");
+		const customModel = modelBody.models.find(
+			(model) => model.provider === providerId && model.id === "openai/gpt-5.5",
+		);
 		assert.equal(customModel?.available, true);
 		assert.equal(customModel?.reasoning, true);
 
@@ -777,11 +782,14 @@ describe("agent-server: project-scoped runtimes", () => {
 		const root = new OpenAPIHono();
 		root.route("/v1", createCredentialsApp(registry.credentials));
 		root.route("/v1", createProjectsApp(registry));
-		root.route("/v1/projects/:projectId", createSessionsApp(async (c) => {
-			const runtime = await registry.getRuntime(c.req.param("projectId"));
-			if (!runtime) throw new Error("project not registered");
-			return runtime;
-		}));
+		root.route(
+			"/v1/projects/:projectId",
+			createSessionsApp(async (c) => {
+				const runtime = await registry.getRuntime(c.req.param("projectId"));
+				if (!runtime) throw new Error("project not registered");
+				return runtime;
+			}),
+		);
 		root.onError((err, c) => {
 			if (err instanceof Error && err.message.includes("project not registered")) {
 				return c.json({ error: err.message }, 404);
@@ -965,13 +973,12 @@ describe("agent-server: bearer auth seam", () => {
 
 describe("agent-server: SSE", () => {
 	const project = makeProject();
-	let baseUrl: string;
 	let sessionsBase: string;
 	let close: () => Promise<void>;
 
 	before(async () => {
 		const port = await pickPort();
-		({ baseUrl, sessionsBase, close } = await startServer({ projectDir: project.dir, port }));
+		({ sessionsBase, close } = await startServer({ projectDir: project.dir, port }));
 	});
 
 	after(async () => {
@@ -1046,10 +1053,7 @@ describe("agent-server: SSE", () => {
 		publish(id, { type: "fanout-test" });
 
 		const dec = new TextDecoder();
-		const readUntil = async (
-			r: ReadableStreamDefaultReader<Uint8Array>,
-			needle: string,
-		): Promise<string> => {
+		const readUntil = async (r: ReadableStreamDefaultReader<Uint8Array>, needle: string): Promise<string> => {
 			let buf = "";
 			const deadline = Date.now() + 1000;
 			while (!buf.includes(needle) && Date.now() < deadline) {

@@ -12,10 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
-import {
-	KNOWN_AGENT_SESSION_EVENT_TYPES,
-	validateAgentSessionEvent,
-} from "../src/contract/eventValidation.js";
+import { KNOWN_AGENT_SESSION_EVENT_TYPES, validateAgentSessionEvent } from "../src/contract/eventValidation.js";
 
 const generated = JSON.parse(
 	readFileSync(new URL("../src/contract/eventSchema.generated.json", import.meta.url), "utf8"),
@@ -71,10 +68,7 @@ describe("known-type set is derived from the generated schema", () => {
 			"extension_ui_request",
 			"extension_error",
 		]) {
-			assert.ok(
-				KNOWN_AGENT_SESSION_EVENT_TYPES.has(expected),
-				`expected wire contract to cover '${expected}'`,
-			);
+			assert.ok(KNOWN_AGENT_SESSION_EVENT_TYPES.has(expected), `expected wire contract to cover '${expected}'`);
 		}
 	});
 });

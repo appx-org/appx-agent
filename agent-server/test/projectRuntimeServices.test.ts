@@ -20,16 +20,11 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { describe, test } from "node:test";
-import {
-	AuthStorage,
-	ModelRegistry,
-	type ExtensionFactory,
-} from "@earendil-works/pi-coding-agent";
+import { AuthStorage, type ExtensionFactory, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { AgentCredentialsService } from "../src/credentials/credentialsService.js";
 import { ProjectRuntime } from "../src/runtime/projectRuntime.js";
 
@@ -156,9 +151,7 @@ describe("ProjectRuntime — AgentSessionServices integration", () => {
 			// Spy on the loader's reload() to count invocations. Restore
 			// afterwards so we don't pollute later tests sharing the same
 			// loader instance (we don't, but defense in depth).
-			const originalReload = runtime.services.resourceLoader.reload.bind(
-				runtime.services.resourceLoader,
-			);
+			const originalReload = runtime.services.resourceLoader.reload.bind(runtime.services.resourceLoader);
 			let calls = 0;
 			runtime.services.resourceLoader.reload = async () => {
 				calls += 1;
@@ -286,16 +279,9 @@ describe("ProjectRuntime — AgentSessionServices integration", () => {
 				logger: silentLogger,
 			});
 			const gitignorePath = resolve(project.dir, ".pi/.gitignore");
-			assert.ok(
-				existsSync(gitignorePath),
-				`expected ${gitignorePath} to be created on first runtime construction`,
-			);
+			assert.ok(existsSync(gitignorePath), `expected ${gitignorePath} to be created on first runtime construction`);
 			const contents = readFileSync(gitignorePath, "utf8");
-			assert.match(
-				contents,
-				/^sessions\/$/m,
-				"gitignore should contain a 'sessions/' rule",
-			);
+			assert.match(contents, /^sessions\/$/m, "gitignore should contain a 'sessions/' rule");
 		} finally {
 			project.cleanup();
 		}

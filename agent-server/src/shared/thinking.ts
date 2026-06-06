@@ -7,12 +7,7 @@
  * pass either a real Pi `Model` or a partial { reasoning, thinkingLevelMap }
  * shape (used by litellm config validation).
  */
-import {
-	type Api,
-	clampThinkingLevel,
-	getSupportedThinkingLevels,
-	type Model,
-} from "@earendil-works/pi-ai";
+import { type Api, clampThinkingLevel, getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 

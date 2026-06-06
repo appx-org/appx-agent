@@ -26,8 +26,8 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { AgentSession, ExtensionBindings } from "@earendil-works/pi-coding-agent";
 import type { AgentCredentialsService, AgentModelRow } from "../src/credentials/credentialsService.js";
-import { ProjectSession } from "../src/runtime/projectSession.js";
 import { subscribe } from "../src/http/sseBroker.js";
+import { ProjectSession } from "../src/runtime/projectSession.js";
 import type { ThinkingLevel } from "../src/shared/thinking.js";
 
 type FakeListener = (event: unknown) => void;
@@ -211,9 +211,7 @@ describe("ProjectSession — event subscription", () => {
 			await ps.extensionsReady;
 			const err = capture.events.find(
 				(e): e is { type: "extension_error"; extensionPath: string } =>
-					typeof e === "object" &&
-					e !== null &&
-					(e as { type?: unknown }).type === "extension_error",
+					typeof e === "object" && e !== null && (e as { type?: unknown }).type === "extension_error",
 			);
 			assert.ok(err, "expected an extension_error event");
 			assert.equal(err.extensionPath, "<bindExtensions>");

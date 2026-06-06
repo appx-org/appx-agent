@@ -10,17 +10,16 @@
  * from what the live server publishes at `/openapi.json`; the only difference is
  * that this host-agnostic dump omits the `servers` block.
  */
-import { writeFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { ProjectRegistry } from "../runtime/projectRegistry.js";
-import { createSessionsApp } from "../http/sessionsRoutes.js";
 import { createCredentialsApp } from "../http/credentialsRoutes.js";
 import { createProjectsApp } from "../http/projectsRoutes.js";
-import { buildOpenApiDocument } from "./openapiEventSchema.js";
+import { createSessionsApp } from "../http/sessionsRoutes.js";
+import { ProjectRegistry } from "../runtime/projectRegistry.js";
 import type { ProjectRuntime } from "../runtime/projectRuntime.js";
+import { buildOpenApiDocument } from "./openapiEventSchema.js";
 
 // We need a registry to construct the route apps, but we never actually call
 // any methods during doc generation — the routes just reference handler
@@ -28,11 +27,11 @@ import type { ProjectRuntime } from "../runtime/projectRuntime.js";
 // workspace so nothing touches the real filesystem layout.
 const workspaceDir = mkdtempSync(resolve(tmpdir(), "agent-server-openapi-"));
 const registry = await ProjectRegistry.create({
-  workspaceDir,
-  logger: { log: () => {}, error: () => {} },
+	workspaceDir,
+	logger: { log: () => {}, error: () => {} },
 });
 const stubResolver = async (): Promise<ProjectRuntime> => {
-  throw new Error("openapi stub resolver should never be invoked");
+	throw new Error("openapi stub resolver should never be invoked");
 }; // FIXME: What is this?
 
 const root = new OpenAPIHono();

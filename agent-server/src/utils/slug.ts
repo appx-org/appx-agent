@@ -26,19 +26,19 @@ const MAX_SLUG_LENGTH = 63;
  * name has no usable characters — callers must treat that as invalid.
  */
 export function slugify(name: string): string {
-  return name
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "") // strip diacritics
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, MAX_SLUG_LENGTH)
-    .replace(/-+$/g, ""); // re-trim if the slice landed on a hyphen
+	return name
+		.normalize("NFKD")
+		.replace(/[\u0300-\u036f]/g, "") // strip diacritics
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, MAX_SLUG_LENGTH)
+		.replace(/-+$/g, ""); // re-trim if the slice landed on a hyphen
 }
 
 /** A slug is usable if it is non-empty and not a reserved directory name. */
 export function isValidProjectSlug(slug: string): boolean {
-  return slug.length > 0 && !RESERVED_PROJECT_SLUGS.has(slug);
+	return slug.length > 0 && !RESERVED_PROJECT_SLUGS.has(slug);
 }
 
 /**
@@ -47,8 +47,8 @@ export function isValidProjectSlug(slug: string): boolean {
  * names; collisions on the suffix itself are handled by the caller retrying.
  */
 export function withCollisionSuffix(slug: string): string {
-  const suffix = Math.floor(Math.random() * 0xffff)
-    .toString(16)
-    .padStart(4, "0");
-  return `${slug.slice(0, MAX_SLUG_LENGTH - 5)}-${suffix}`;
+	const suffix = Math.floor(Math.random() * 0xffff)
+		.toString(16)
+		.padStart(4, "0");
+	return `${slug.slice(0, MAX_SLUG_LENGTH - 5)}-${suffix}`;
 }
