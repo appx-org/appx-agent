@@ -37,6 +37,7 @@ import {
   OkResponseSchema,
   PatchSessionSettingsRequestSchema,
   PendingExtensionUiRequestsResponseSchema,
+  ProjectScopeParamSchema,
   PromptRequestSchema,
   SessionIdParamSchema,
   SessionMessagesResponseSchema,
@@ -82,8 +83,10 @@ export function createSessionsApp(
     createRoute({
       method: "get",
       path: "/sessions",
+      operationId: "listSessions",
       tags: ["sessions"],
       summary: "List sessions (persisted + in-memory not yet flushed).",
+      request: { params: ProjectScopeParamSchema },
       responses: {
         200: {
           description: "Sessions, newest first.",
@@ -105,8 +108,10 @@ export function createSessionsApp(
     createRoute({
       method: "post",
       path: "/sessions",
+      operationId: "createSession",
       tags: ["sessions"],
       summary: "Create a new session.",
+      request: { params: ProjectScopeParamSchema },
       responses: {
         200: {
           description: "Newly created session metadata.",
@@ -128,6 +133,7 @@ export function createSessionsApp(
     createRoute({
       method: "get",
       path: "/sessions/{id}/settings",
+      operationId: "getSessionSettings",
       tags: ["models"],
       summary: "Return the active model/thinking settings for a session.",
       request: { params: SessionIdParamSchema },
@@ -158,6 +164,7 @@ export function createSessionsApp(
     createRoute({
       method: "patch",
       path: "/sessions/{id}/settings",
+      operationId: "updateSessionSettings",
       tags: ["models"],
       summary: "Switch model and/or thinking level while a session is idle.",
       request: {
@@ -231,6 +238,7 @@ export function createSessionsApp(
     createRoute({
       method: "get",
       path: "/sessions/{id}",
+      operationId: "getSessionMessages",
       tags: ["sessions"],
       summary: "Persisted message history for a session.",
       request: { params: SessionIdParamSchema },
@@ -261,6 +269,7 @@ export function createSessionsApp(
     createRoute({
       method: "get",
       path: "/sessions/{id}/extension-ui",
+      operationId: "listExtensionUiRequests",
       tags: ["extensions"],
       summary: "List pending extension UI requests for a session.",
       request: { params: SessionIdParamSchema },
@@ -293,6 +302,7 @@ export function createSessionsApp(
     createRoute({
       method: "post",
       path: "/sessions/{id}/extension-ui/{requestId}/response",
+      operationId: "respondExtensionUiRequest",
       tags: ["extensions"],
       summary: "Resolve a pending extension UI request.",
       request: {
@@ -332,6 +342,7 @@ export function createSessionsApp(
     createRoute({
       method: "post",
       path: "/sessions/{id}/prompt",
+      operationId: "sendPrompt",
       tags: ["sessions"],
       summary: "Send a user prompt. Events flow over the SSE stream.",
       request: {
@@ -371,6 +382,7 @@ export function createSessionsApp(
     createRoute({
       method: "post",
       path: "/sessions/{id}/abort",
+      operationId: "abortSession",
       tags: ["sessions"],
       summary: "Abort the in-flight run on a session. No-op if idle.",
       request: { params: SessionIdParamSchema },
@@ -409,6 +421,7 @@ export function createSessionsApp(
     // pure documentation for reference
     method: "get",
     path: "/sessions/{id}/events",
+    operationId: "streamSessionEvents",
     tags: ["sessions"],
     summary:
       "Server-Sent Events stream of pi AgentSessionEvents for the session.",

@@ -72,6 +72,7 @@ export function createCredentialsApp(
     createRoute({
       method: "get",
       path: "/sessions/models",
+      operationId: "listModels",
       tags: ["models"],
       summary:
         "List models known to this runtime, including unavailable ones for diagnostics.",
@@ -95,6 +96,7 @@ export function createCredentialsApp(
     createRoute({
       method: "get",
       path: "/auth/providers",
+      operationId: "listAuthProviders",
       tags: ["auth"],
       summary: "List non-secret provider auth status for the runtime.",
       responses: {
@@ -117,6 +119,7 @@ export function createCredentialsApp(
     createRoute({
       method: "put",
       path: "/auth/providers/{provider}/api-key",
+      operationId: "setProviderApiKey",
       tags: ["auth"],
       summary: "Store an API key for a provider in Pi auth storage.",
       request: {
@@ -160,6 +163,7 @@ export function createCredentialsApp(
     createRoute({
       method: "delete",
       path: "/auth/providers/{provider}",
+      operationId: "removeProviderCredential",
       tags: ["auth"],
       summary: "Remove a stored provider credential from Pi auth storage.",
       request: { params: ProviderParamSchema },
@@ -194,6 +198,7 @@ export function createCredentialsApp(
     createRoute({
       method: "post",
       path: "/auth/providers/{provider}/subscription/start",
+      operationId: "startProviderSubscriptionLogin",
       tags: ["auth"],
       summary: "Start a Pi subscription OAuth login flow.",
       request: { params: ProviderParamSchema },
@@ -231,6 +236,7 @@ export function createCredentialsApp(
     createRoute({
       method: "get",
       path: "/auth/subscription/{flowId}",
+      operationId: "getProviderSubscriptionLogin",
       tags: ["auth"],
       summary: "Return subscription login flow state.",
       request: { params: OAuthFlowIdParamSchema },
@@ -260,6 +266,7 @@ export function createCredentialsApp(
     createRoute({
       method: "post",
       path: "/auth/subscription/{flowId}/continue",
+      operationId: "continueProviderSubscriptionLogin",
       tags: ["auth"],
       summary:
         "Continue a subscription login flow with prompt input or pasted redirect URL.",
@@ -311,6 +318,7 @@ export function createCredentialsApp(
     createRoute({
       method: "delete",
       path: "/auth/subscription/{flowId}",
+      operationId: "cancelProviderSubscriptionLogin",
       tags: ["auth"],
       summary: "Cancel a pending subscription login flow.",
       request: { params: OAuthFlowIdParamSchema },
@@ -340,6 +348,7 @@ export function createCredentialsApp(
     createRoute({
       method: "get",
       path: "/custom/providers",
+      operationId: "listCustomProviders",
       tags: ["models"],
       summary: "List custom models.json providers without secret values.",
       responses: {
@@ -362,6 +371,7 @@ export function createCredentialsApp(
     createRoute({
       method: "put",
       path: "/custom/providers",
+      operationId: "upsertCustomProvider",
       tags: ["models"],
       summary: "Create or update a custom Pi provider in models.json.",
       request: {
@@ -404,6 +414,7 @@ export function createCredentialsApp(
     createRoute({
       method: "delete",
       path: "/custom/providers/{provider}",
+      operationId: "removeCustomProvider",
       tags: ["models"],
       summary: "Remove a custom Pi provider from models.json.",
       request: { params: ProviderParamSchema },
@@ -439,6 +450,7 @@ export function createCredentialsApp(
       createRoute({
         method: "get",
         path: "/healthz",
+        operationId: "healthCheck",
         tags: ["meta"],
         summary: "Liveness + diagnostic counters.",
         responses: {

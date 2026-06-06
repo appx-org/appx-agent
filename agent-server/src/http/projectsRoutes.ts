@@ -39,6 +39,7 @@ export function createProjectsApp(registry: ProjectRegistry): OpenAPIHono {
     createRoute({
       method: "post",
       path: "/projects",
+      operationId: "createProject",
       tags: ["projects"],
       summary:
         "Create a project, or return the existing one (idempotent on name).",
@@ -77,6 +78,7 @@ export function createProjectsApp(registry: ProjectRegistry): OpenAPIHono {
     createRoute({
       method: "get",
       path: "/projects",
+      operationId: "listProjects",
       tags: ["projects"],
       summary: "List registered projects, newest first.",
       responses: {
@@ -94,6 +96,7 @@ export function createProjectsApp(registry: ProjectRegistry): OpenAPIHono {
     createRoute({
       method: "get",
       path: "/projects/{id}",
+      operationId: "getProject",
       tags: ["projects"],
       summary: "Get a single project's metadata.",
       request: { params: ProjectIdParamSchema },
@@ -121,6 +124,7 @@ export function createProjectsApp(registry: ProjectRegistry): OpenAPIHono {
     createRoute({
       method: "delete",
       path: "/projects/{id}",
+      operationId: "deleteProject",
       tags: ["projects"],
       summary:
         "Remove a project: evict runtime, drop metadata, delete working dir + transcripts.",

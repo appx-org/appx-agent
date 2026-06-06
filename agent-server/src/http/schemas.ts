@@ -167,7 +167,11 @@ export const UpsertCustomProviderRequestSchema = z
 
 export const SessionModelSettingsResponseSchema = z
 	.object({
-		model: AgentModelRowSchema.nullable(),
+		// Use a union (not `.nullable()`) so the OpenAPI emits
+		// `anyOf: [$ref, null]` → a clean `AgentModelRow | null` for consumers,
+		// rather than the `allOf: [$ref, {type:[object,null]}]` form that
+		// openapi-typescript renders as a broken `AgentModelRow & Record<string, never>`.
+		model: z.union([AgentModelRowSchema, z.null()]),
 		thinkingLevel: ThinkingLevelSchema,
 		availableThinkingLevels: z.array(ThinkingLevelSchema),
 		supportsThinking: z.boolean(),
@@ -264,7 +268,24 @@ export const HealthResponseSchema = z
 	.openapi("HealthResponse");
 
 export const SessionIdParamSchema = z.object({
+	projectId: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "projectId", in: "path" } }),
 	id: z.string().min(1).openapi({ param: { name: "id", in: "path" } }),
+});
+
+/**
+ * Path params for project-scoped session collection routes (`/sessions`,
+ * `/sessions` POST) that don't carry a session `{id}`. The `{projectId}` is
+ * supplied by the mount prefix (`/v1/projects/{projectId}`); declaring it here
+ * keeps the published contract complete so generated clients can substitute it.
+ */
+export const ProjectScopeParamSchema = z.object({
+	projectId: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "projectId", in: "path" } }),
 });
 
 /** Path param for project lifecycle routes (`/v1/projects/{id}`). */

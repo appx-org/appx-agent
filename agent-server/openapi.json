@@ -600,15 +600,15 @@
         "type": "object",
         "properties": {
           "model": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/AgentModelRow"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -2574,6 +2574,7 @@
   "paths": {
     "/v1/sessions/models": {
       "get": {
+        "operationId": "listModels",
         "tags": [
           "models"
         ],
@@ -2594,6 +2595,7 @@
     },
     "/v1/auth/providers": {
       "get": {
+        "operationId": "listAuthProviders",
         "tags": [
           "auth"
         ],
@@ -2614,6 +2616,7 @@
     },
     "/v1/auth/providers/{provider}/api-key": {
       "put": {
+        "operationId": "setProviderApiKey",
         "tags": [
           "auth"
         ],
@@ -2666,6 +2669,7 @@
     },
     "/v1/auth/providers/{provider}": {
       "delete": {
+        "operationId": "removeProviderCredential",
         "tags": [
           "auth"
         ],
@@ -2708,6 +2712,7 @@
     },
     "/v1/auth/providers/{provider}/subscription/start": {
       "post": {
+        "operationId": "startProviderSubscriptionLogin",
         "tags": [
           "auth"
         ],
@@ -2750,6 +2755,7 @@
     },
     "/v1/auth/subscription/{flowId}": {
       "get": {
+        "operationId": "getProviderSubscriptionLogin",
         "tags": [
           "auth"
         ],
@@ -2789,6 +2795,7 @@
         }
       },
       "delete": {
+        "operationId": "cancelProviderSubscriptionLogin",
         "tags": [
           "auth"
         ],
@@ -2830,6 +2837,7 @@
     },
     "/v1/auth/subscription/{flowId}/continue": {
       "post": {
+        "operationId": "continueProviderSubscriptionLogin",
         "tags": [
           "auth"
         ],
@@ -2891,6 +2899,7 @@
     },
     "/v1/custom/providers": {
       "get": {
+        "operationId": "listCustomProviders",
         "tags": [
           "models"
         ],
@@ -2909,6 +2918,7 @@
         }
       },
       "put": {
+        "operationId": "upsertCustomProvider",
         "tags": [
           "models"
         ],
@@ -2949,6 +2959,7 @@
     },
     "/v1/custom/providers/{provider}": {
       "delete": {
+        "operationId": "removeCustomProvider",
         "tags": [
           "models"
         ],
@@ -2991,6 +3002,7 @@
     },
     "/v1/healthz": {
       "get": {
+        "operationId": "healthCheck",
         "tags": [
           "meta"
         ],
@@ -3011,6 +3023,7 @@
     },
     "/v1/projects": {
       "post": {
+        "operationId": "createProject",
         "tags": [
           "projects"
         ],
@@ -3049,6 +3062,7 @@
         }
       },
       "get": {
+        "operationId": "listProjects",
         "tags": [
           "projects"
         ],
@@ -3069,6 +3083,7 @@
     },
     "/v1/projects/{id}": {
       "get": {
+        "operationId": "getProject",
         "tags": [
           "projects"
         ],
@@ -3108,6 +3123,7 @@
         }
       },
       "delete": {
+        "operationId": "deleteProject",
         "tags": [
           "projects"
         ],
@@ -3149,10 +3165,22 @@
     },
     "/v1/projects/{projectId}/sessions": {
       "get": {
+        "operationId": "listSessions",
         "tags": [
           "sessions"
         ],
         "summary": "List sessions (persisted + in-memory not yet flushed).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Sessions, newest first.",
@@ -3167,10 +3195,22 @@
         }
       },
       "post": {
+        "operationId": "createSession",
         "tags": [
           "sessions"
         ],
         "summary": "Create a new session.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Newly created session metadata.",
@@ -3187,11 +3227,21 @@
     },
     "/v1/projects/{projectId}/sessions/{id}/settings": {
       "get": {
+        "operationId": "getSessionSettings",
         "tags": [
           "models"
         ],
         "summary": "Return the active model/thinking settings for a session.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -3226,11 +3276,21 @@
         }
       },
       "patch": {
+        "operationId": "updateSessionSettings",
         "tags": [
           "models"
         ],
         "summary": "Switch model and/or thinking level while a session is idle.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -3307,11 +3367,21 @@
     },
     "/v1/projects/{projectId}/sessions/{id}": {
       "get": {
+        "operationId": "getSessionMessages",
         "tags": [
           "sessions"
         ],
         "summary": "Persisted message history for a session.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -3348,11 +3418,21 @@
     },
     "/v1/projects/{projectId}/sessions/{id}/extension-ui": {
       "get": {
+        "operationId": "listExtensionUiRequests",
         "tags": [
           "extensions"
         ],
         "summary": "List pending extension UI requests for a session.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -3389,11 +3469,21 @@
     },
     "/v1/projects/{projectId}/sessions/{id}/extension-ui/{requestId}/response": {
       "post": {
+        "operationId": "respondExtensionUiRequest",
         "tags": [
           "extensions"
         ],
         "summary": "Resolve a pending extension UI request.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -3449,11 +3539,21 @@
     },
     "/v1/projects/{projectId}/sessions/{id}/prompt": {
       "post": {
+        "operationId": "sendPrompt",
         "tags": [
           "sessions"
         ],
         "summary": "Send a user prompt. Events flow over the SSE stream.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -3500,11 +3600,21 @@
     },
     "/v1/projects/{projectId}/sessions/{id}/abort": {
       "post": {
+        "operationId": "abortSession",
         "tags": [
           "sessions"
         ],
         "summary": "Abort the in-flight run on a session. No-op if idle.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -3541,12 +3651,22 @@
     },
     "/v1/projects/{projectId}/sessions/{id}/events": {
       "get": {
+        "operationId": "streamSessionEvents",
         "tags": [
           "sessions"
         ],
         "summary": "Server-Sent Events stream of pi AgentSessionEvents for the session.",
         "description": "Long-lived `text/event-stream`. Each `data:` line carries one JSON `AgentSessionEvent` (see the `AgentSessionEvent` schema). Non-JSON lines occur too: an initial `connected to <id>` line and periodic `heartbeat` keepalive events, both of which consumers ignore. The event payload is validated against this contract server-side before being forwarded.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
