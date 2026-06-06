@@ -20,6 +20,7 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import typia from "typia";
 import type { WireEvent } from "../src/http/wireEvents.js";
+import type { ExtensionUiRequest } from "../src/shared/extensionUi.js";
 
 type JsonSchemaCollection = {
 	version: string;
@@ -58,7 +59,14 @@ function sanitize(collection: JsonSchemaCollection): JsonSchemaCollection {
 	return out;
 }
 
-const collection = typia.json.schemas<[WireEvent], "3.1">() as unknown as JsonSchemaCollection;
+// `WireEvent` MUST stay first: `openapiEventSchema.ts` treats `schemas[0]` as the
+// root wire-event ref. The extra entries force typia to emit named components
+// (`ExtensionUiRequest`, and `AgentMessage` transitively) so the REST responses
+// that forward these shapes can `$ref` them instead of being typed `unknown[]`.
+const collection = typia.json.schemas<
+	[WireEvent, ExtensionUiRequest],
+	"3.1"
+>() as unknown as JsonSchemaCollection;
 const sanitized = sanitize(collection);
 
 const outPath = resolve(process.cwd(), "src/http/eventSchema.generated.json");

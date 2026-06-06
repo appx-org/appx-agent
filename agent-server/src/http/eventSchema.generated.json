@@ -1584,12 +1584,284 @@
           "tokensBefore"
         ],
         "description": "Result from compact() - SessionManager adds uuid/parentUuid when saving"
+      },
+      "ExtensionUiRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "select"
+              },
+              "title": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title",
+              "options"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "confirm"
+              },
+              "title": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "input"
+              },
+              "title": {
+                "type": "string"
+              },
+              "placeholder": {
+                "type": "string"
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "editor"
+              },
+              "title": {
+                "type": "string"
+              },
+              "prefill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "notify"
+              },
+              "message": {
+                "type": "string"
+              },
+              "notifyType": {
+                "oneOf": [
+                  {
+                    "const": "info"
+                  },
+                  {
+                    "const": "warning"
+                  },
+                  {
+                    "const": "error"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setStatus"
+              },
+              "statusKey": {
+                "type": "string"
+              },
+              "statusText": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "statusKey"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setWidget"
+              },
+              "widgetKey": {
+                "type": "string"
+              },
+              "widgetLines": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "widgetPlacement": {
+                "oneOf": [
+                  {
+                    "const": "aboveEditor"
+                  },
+                  {
+                    "const": "belowEditor"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "widgetKey"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setTitle"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "set_editor_text"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "text"
+            ]
+          }
+        ]
       }
     }
   },
   "schemas": [
     {
       "$ref": "#/components/schemas/WireEvent"
+    },
+    {
+      "$ref": "#/components/schemas/ExtensionUiRequest"
     }
   ]
 }

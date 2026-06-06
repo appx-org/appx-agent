@@ -32,6 +32,44 @@ type OpenApiDoc = {
 };
 
 /**
+ * REST responses that *forward* pi-shaped data agent-server doesn't author are
+ * validated permissively at runtime (zod `z.array(z.unknown())`, so a new pi
+ * field never 500s) but published with a precise item type so SDK consumers get
+ * the real shape instead of `unknown[]`. Maps each such response's `messages` /
+ * `requests` array to the canonical (typia-generated) component it carries.
+ */
+const forwardedArrayItemRefs: ReadonlyArray<{
+	schema: string;
+	property: string;
+	itemRef: string;
+}> = [
+	{ schema: "SessionMessagesResponse", property: "messages", itemRef: "AgentMessage" },
+	{
+		schema: "PendingExtensionUiRequestsResponse",
+		property: "requests",
+		itemRef: "ExtensionUiRequest",
+	},
+];
+
+type ArraySchema = { type?: string; items?: unknown };
+type ObjectSchema = { properties?: Record<string, ArraySchema> };
+
+/**
+ * Point each forwarded array property at its canonical component `$ref`. Only
+ * rewrites when both the target response schema and the referenced component
+ * are present, so the doc stays valid even if a schema is renamed upstream.
+ */
+function pointForwardedArraysAtComponents(schemas: Record<string, unknown>): void {
+	for (const { schema, property, itemRef } of forwardedArrayItemRefs) {
+		const objectSchema = schemas[schema] as ObjectSchema | undefined;
+		const arraySchema = objectSchema?.properties?.[property];
+		if (!arraySchema || arraySchema.type !== "array") continue;
+		if (!(itemRef in schemas)) continue;
+		arraySchema.items = { $ref: `#/components/schemas/${itemRef}` };
+	}
+}
+
+/**
  * Inject the generated wire-event components into `doc` and set every SSE
  * (`text/event-stream`) 200-response schema to reference the root wire event.
  * Mutates and returns `doc`.
@@ -40,6 +78,8 @@ export function mergeEventSchema<T>(doc: T): T {
 	const target = doc as OpenApiDoc;
 	target.components ??= {};
 	target.components.schemas = { ...(target.components.schemas ?? {}), ...eventSchemaComponents };
+
+	pointForwardedArraysAtComponents(target.components.schemas);
 
 	for (const pathItem of Object.values(target.paths ?? {})) {
 		for (const operation of Object.values(pathItem ?? {})) {

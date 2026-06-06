@@ -191,16 +191,22 @@ export const CreateSessionResponseSchema = z
 	.openapi("CreateSessionResponse");
 
 /**
- * Pi message shape is rich (roles toolCall / toolResult, content parts,
- * tool ids, etc.). We forward whatever pi has persisted; the consumer
- * frontend interprets it. Documented as opaque objects to keep this
- * server's contract decoupled from pi's internal evolution.
+ * Pi message shapes are rich (roles toolCall / toolResult, content parts, tool
+ * ids, etc.) and owned by pi, not this server. At **runtime** we forward
+ * whatever pi has persisted without re-validating it (`z.array(z.unknown())`),
+ * so a new pi message field never makes this endpoint 500.
+ *
+ * In the **published contract**, though, the array items are rewritten to
+ * `$ref` the canonical `AgentMessage` component (see `openapiEventSchema.ts`),
+ * so SDK consumers get the real message union instead of `unknown[]` — the
+ * client has to parse these, so the type is the whole point.
  */
 export const SessionMessagesResponseSchema = z
 	.object({
 		id: z.string(),
 		messages: z.array(z.unknown()).openapi({
-			description: "Pi-shaped message objects (role + content array). Opaque here.",
+			description:
+				"Pi-shaped message objects. Forwarded as-is at runtime; published as AgentMessage[] in the contract.",
 		}),
 	})
 	.openapi("SessionMessagesResponse");
@@ -231,8 +237,11 @@ export const ExtensionUiResponseRequestSchema = z
 
 export const PendingExtensionUiRequestsResponseSchema = z
 	.object({
+		// Runtime-permissive (forwarded pi RPC events); published as ExtensionUiRequest[]
+		// in the contract via $ref rewrite in openapiEventSchema.ts.
 		requests: z.array(z.unknown()).openapi({
-			description: "Pending extension UI request events. Shape follows Pi RPC extension_ui_request events.",
+			description:
+				"Pending extension UI request events. Forwarded as-is at runtime; published as ExtensionUiRequest[] in the contract.",
 		}),
 	})
 	.openapi("PendingExtensionUiRequestsResponse");
