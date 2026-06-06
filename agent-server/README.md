@@ -129,23 +129,19 @@ Plus `GET /openapi.json` (OpenAPI 3.1) and `GET /docs` (Swagger UI).
 
 ### SSE wire format
 
-Each SSE event is `data: <json>` carrying an `AgentSessionEvent`. This event
-union is an **explicit, runtime-validated wire contract** published in the
-OpenAPI document as the `AgentSessionEvent` schema (see `src/http/eventSchemas.ts`),
-so consumers generate types from `openapi.json` instead of re-deriving pi's
-internal event shape by hand. A `heartbeat` named event is sent every 15s
-(ignored by `EventSource` `onmessage` handlers), and the first line is a plain
-`connected to <id>` string; both are non-JSON and should be ignored.
+Each SSE event is `data: <json>` carrying a `WireEvent` — pi's `AgentSessionEvent`
+plus the `extension_ui_request` / `extension_error` events agent-server injects.
+The schema is **generated from pi's TypeScript types** (via typia,
+`scripts/genEventSchema.ts`) and merged into `openapi.json` as `WireEvent`, so
+clients codegen the event + message types (`ToolCall`, `AssistantMessage`, …)
+from the same contract as the REST surface — no hand-mirroring, no importing pi
+in clients. Regenerate after a pi upgrade with `npm run gen:event-schema`; the
+resulting `eventSchema.generated.json` is committed.
 
-The contract is a **tolerant reader**, not a strict gate. agent-server validates
-every event against the schema at the pi → SSE boundary but never drops one:
-events are forwarded regardless, and only the *observability* differs. Members
-are `passthrough`, so forward-compatible field additions are accepted silently;
-a known event with a broken/missing committed field is logged as a contract
-violation; and an event `type` the contract doesn't model yet (e.g. pi added
-one) is forwarded with a soft "unmodeled event" log. This means a pi upgrade
-never breaks the stream — it surfaces as a log signal telling you to refresh the
-contract.
+Non-JSON lines also occur and should be ignored: an initial `connected to <id>`
+line and periodic `heartbeat` keepalives (every 15s). Outgoing events are
+classified server-side against the contract (forward-compatible: an unmodeled
+`type` is forwarded with a soft log; the stream is never broken).
 
 Handle `message_update.assistantMessageEvent` by `contentIndex`: text blocks use
 `text_start`/`text_delta`/`text_end`, tool-call blocks use
@@ -213,16 +209,34 @@ app bundles, put prompt/skill/extension assets under the project's `.pi/` and le
 Pi discover them; the `PI_*_PATHS` vars are for temporary overlays or package
 sources that shouldn't be committed to the workspace.
 
-## Consuming from another app
+## Regenerating `openapi.json`
 
-Generate the static `openapi.json` after a build, then feed it to
-`openapi-typescript` (or any generator):
+`openapi.json` is the published contract — REST routes (described by
+`@hono/zod-openapi`) **and** the SSE `WireEvent` schema, which is generated from
+pi's TypeScript types via typia rather than hand-authored.
 
 ```bash
-# in this repo
-npm run build
-npm run openapi          # writes ./openapi.json
+# only needed after a pi upgrade or a change to WireEvent — regenerates
+# src/http/eventSchema.generated.json (the committed event schema).
+npm run gen:event-schema
 
+# always: rebuild and dump the merged contract to ./openapi.json
+npm run build
+npm run openapi
+```
+
+`gen:event-schema` requires the typia compiler transform ( ts-patch / `tspc`,
+already wired via `tsconfig.gen.json`); the resulting JSON is committed so the
+normal `build`/`openapi`/runtime never need it. The live server serves the same
+merged document at `/openapi.json`.
+
+## Consuming from another app
+
+Feed the generated `openapi.json` to `openapi-typescript` (or any generator) to
+get typed REST DTOs **and** the SSE event/message types (`WireEvent`, `ToolCall`,
+`AssistantMessage`, …) — so consumers never re-derive pi's shapes or import pi:
+
+```bash
 # in the consuming app
 npx openapi-typescript ../../agent-server/openapi.json -o src/generated/agent-server.d.ts
 ```

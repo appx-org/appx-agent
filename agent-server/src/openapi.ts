@@ -18,6 +18,7 @@ import { ProjectRegistry } from "./runtime/projectRegistry.js";
 import { createSessionsApp } from "./http/sessionsRoutes.js";
 import { createCredentialsApp } from "./http/credentialsRoutes.js";
 import { createProjectsApp } from "./http/projectsRoutes.js";
+import { mergeEventSchema } from "./http/openapiEventSchema.js";
 import type { ProjectRuntime } from "./runtime/projectRuntime.js";
 
 // We need a registry to construct the route apps, but we never actually call
@@ -38,15 +39,17 @@ root.route("/v1", createCredentialsApp(registry.credentials));
 root.route("/v1", createProjectsApp(registry));
 root.route("/v1/projects/:projectId", createSessionsApp(stubResolver));
 
-const doc = root.getOpenAPI31Document({
-  openapi: "3.1.0",
-  info: {
-    title: "Appx Agent Server",
-    version: "0.1.0",
-    description:
-      "Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes.",
-  },
-});
+const doc = mergeEventSchema(
+  root.getOpenAPI31Document({
+    openapi: "3.1.0",
+    info: {
+      title: "Appx Agent Server",
+      version: "0.1.0",
+      description:
+        "Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes.",
+    },
+  }),
+);
 
 const outPath = resolve(process.cwd(), "openapi.json");
 writeFileSync(outPath, `${JSON.stringify(doc, null, 2)}\n`);

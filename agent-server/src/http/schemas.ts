@@ -7,11 +7,12 @@
  *   - generated TypeScript types for consumers (eventx-backend uses
  *     `openapi-typescript` against the published openapi.json)
  *
- * The pi-shaped AgentSessionEvent on the SSE stream is intentionally not
- * fully modeled here. Pi owns that contract; locking it down in two places
- * would drift. The SSE endpoint is documented in OpenAPI but typed loosely
- * (string content under `text/event-stream`); consumers parse `data:` JSON
- * payloads using their own knowledge of pi's event shape.
+ * The SSE `AgentSessionEvent` wire contract is NOT authored here. It is
+ * generated from pi's TypeScript types via typia (`scripts/genEventSchema.ts`
+ * → `eventSchema.generated.json`) and merged into the OpenAPI document by
+ * `openapiEventSchema.ts`, so consumers codegen the event/message types from
+ * the same `openapi.json` as the REST surface. pi stays the source of truth for
+ * its shapes; agent-server owns and versions the published contract.
  */
 import { z } from "@hono/zod-openapi";
 

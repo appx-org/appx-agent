@@ -1,0 +1,1595 @@
+{
+  "version": "3.1",
+  "components": {
+    "schemas": {
+      "WireEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "select"
+              },
+              "title": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title",
+              "options"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "confirm"
+              },
+              "title": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "input"
+              },
+              "title": {
+                "type": "string"
+              },
+              "placeholder": {
+                "type": "string"
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "editor"
+              },
+              "title": {
+                "type": "string"
+              },
+              "prefill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "notify"
+              },
+              "message": {
+                "type": "string"
+              },
+              "notifyType": {
+                "oneOf": [
+                  {
+                    "const": "info"
+                  },
+                  {
+                    "const": "warning"
+                  },
+                  {
+                    "const": "error"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setStatus"
+              },
+              "statusKey": {
+                "type": "string"
+              },
+              "statusText": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "statusKey"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setWidget"
+              },
+              "widgetKey": {
+                "type": "string"
+              },
+              "widgetLines": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "widgetPlacement": {
+                "oneOf": [
+                  {
+                    "const": "aboveEditor"
+                  },
+                  {
+                    "const": "belowEditor"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "widgetKey"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setTitle"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "set_editor_text"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "text"
+            ]
+          },
+          {
+            "$ref": "#/components/schemas/ExtensionErrorEvent"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "agent_start"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "turn_start"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "turn_end"
+              },
+              "message": {
+                "$ref": "#/components/schemas/AgentMessage"
+              },
+              "toolResults": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ToolResultMessageany_o1"
+                }
+              }
+            },
+            "required": [
+              "type",
+              "message",
+              "toolResults"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "message_start"
+              },
+              "message": {
+                "$ref": "#/components/schemas/AgentMessage"
+              }
+            },
+            "required": [
+              "type",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "message_update"
+              },
+              "message": {
+                "$ref": "#/components/schemas/AgentMessage"
+              },
+              "assistantMessageEvent": {
+                "$ref": "#/components/schemas/AssistantMessageEvent"
+              }
+            },
+            "required": [
+              "type",
+              "message",
+              "assistantMessageEvent"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "message_end"
+              },
+              "message": {
+                "$ref": "#/components/schemas/AgentMessage"
+              }
+            },
+            "required": [
+              "type",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "tool_execution_start"
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "args": {}
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "toolName",
+              "args"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "tool_execution_update"
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "args": {},
+              "partialResult": {}
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "toolName",
+              "args",
+              "partialResult"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "tool_execution_end"
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "result": {},
+              "isError": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "toolName",
+              "result",
+              "isError"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "agent_end"
+              },
+              "messages": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AgentMessage"
+                }
+              },
+              "willRetry": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "messages",
+              "willRetry"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "queue_update"
+              },
+              "steering": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "followUp": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "type",
+              "steering",
+              "followUp"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "compaction_start"
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "const": "manual"
+                  },
+                  {
+                    "const": "threshold"
+                  },
+                  {
+                    "const": "overflow"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "session_info_changed"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "thinking_level_changed"
+              },
+              "level": {
+                "$ref": "#/components/schemas/ThinkingLevel"
+              }
+            },
+            "required": [
+              "type",
+              "level"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "compaction_end"
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "const": "manual"
+                  },
+                  {
+                    "const": "threshold"
+                  },
+                  {
+                    "const": "overflow"
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/CompactionResultunknown"
+              },
+              "aborted": {
+                "type": "boolean"
+              },
+              "willRetry": {
+                "type": "boolean"
+              },
+              "errorMessage": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "reason",
+              "aborted",
+              "willRetry"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "auto_retry_start"
+              },
+              "attempt": {
+                "type": "number"
+              },
+              "maxAttempts": {
+                "type": "number"
+              },
+              "delayMs": {
+                "type": "number"
+              },
+              "errorMessage": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "attempt",
+              "maxAttempts",
+              "delayMs",
+              "errorMessage"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "auto_retry_end"
+              },
+              "success": {
+                "type": "boolean"
+              },
+              "attempt": {
+                "type": "number"
+              },
+              "finalError": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "success",
+              "attempt"
+            ]
+          }
+        ],
+        "description": "Every JSON event agent-server forwards on `GET …/sessions/{id}/events`."
+      },
+      "ExtensionErrorEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "extension_error"
+          },
+          "extensionPath": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string",
+            "description": "The pi lifecycle event during which the error occurred (e.g. \"session_start\")."
+          },
+          "error": {
+            "type": "string"
+          },
+          "stack": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "extensionPath",
+          "error"
+        ],
+        "description": "Emitted when a pi extension handler throws; surfaced to the UI for visibility."
+      },
+      "AgentMessage": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/UserMessage"
+          },
+          {
+            "$ref": "#/components/schemas/AssistantMessage"
+          },
+          {
+            "$ref": "#/components/schemas/ToolResultMessageany"
+          },
+          {
+            "$ref": "#/components/schemas/BashExecutionMessage"
+          },
+          {
+            "$ref": "#/components/schemas/CustomMessageunknown"
+          },
+          {
+            "$ref": "#/components/schemas/BranchSummaryMessage"
+          },
+          {
+            "$ref": "#/components/schemas/CompactionSummaryMessage"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "role",
+          "mapping": {
+            "user": "#/components/schemas/UserMessage",
+            "assistant": "#/components/schemas/AssistantMessage",
+            "toolResult": "#/components/schemas/ToolResultMessageany",
+            "bashExecution": "#/components/schemas/BashExecutionMessage",
+            "custom": "#/components/schemas/CustomMessageunknown",
+            "branchSummary": "#/components/schemas/BranchSummaryMessage",
+            "compactionSummary": "#/components/schemas/CompactionSummaryMessage"
+          }
+        },
+        "description": "AgentMessage: Union of LLM messages + custom messages.\nThis abstraction allows apps to add custom message types while maintaining\ntype safety and compatibility with the base LLM messages."
+      },
+      "UserMessage": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "user"
+          },
+          "content": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TextContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageContent"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "text": "#/components/schemas/TextContent",
+                      "image": "#/components/schemas/ImageContent"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "content",
+          "timestamp"
+        ]
+      },
+      "TextContent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "text"
+          },
+          "text": {
+            "type": "string"
+          },
+          "textSignature": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ]
+      },
+      "ImageContent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "image"
+          },
+          "data": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "data",
+          "mimeType"
+        ]
+      },
+      "AssistantMessage": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "assistant"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextContent"
+                },
+                {
+                  "$ref": "#/components/schemas/ThinkingContent"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolCall"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "text": "#/components/schemas/TextContent",
+                  "thinking": "#/components/schemas/ThinkingContent",
+                  "toolCall": "#/components/schemas/ToolCall"
+                }
+              }
+            }
+          },
+          "api": {
+            "$ref": "#/components/schemas/Api"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "responseModel": {
+            "type": "string"
+          },
+          "responseId": {
+            "type": "string"
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantMessageDiagnostic"
+            }
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          },
+          "stopReason": {
+            "$ref": "#/components/schemas/StopReason"
+          },
+          "errorMessage": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "content",
+          "api",
+          "provider",
+          "model",
+          "usage",
+          "stopReason",
+          "timestamp"
+        ]
+      },
+      "ThinkingContent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "thinking"
+          },
+          "thinking": {
+            "type": "string"
+          },
+          "thinkingSignature": {
+            "type": "string"
+          },
+          "redacted": {
+            "type": "boolean",
+            "description": "When true, the thinking content was redacted by safety filters. The opaque\nencrypted payload is stored in `thinkingSignature` so it can be passed back\nto the API for multi-turn continuity."
+          }
+        },
+        "required": [
+          "type",
+          "thinking"
+        ]
+      },
+      "ToolCall": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "toolCall"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "arguments": {
+            "$ref": "#/components/schemas/Recordstringany"
+          },
+          "thoughtSignature": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "name",
+          "arguments"
+        ]
+      },
+      "Recordstringany": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "description": "Construct a type with a set of properties K of type T",
+        "additionalProperties": {}
+      },
+      "Api": {
+        "type": "string"
+      },
+      "AssistantMessageDiagnostic": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          },
+          "error": {
+            "$ref": "#/components/schemas/DiagnosticErrorInfo"
+          },
+          "details": {
+            "$ref": "#/components/schemas/Recordstringunknown"
+          }
+        },
+        "required": [
+          "type",
+          "timestamp"
+        ]
+      },
+      "DiagnosticErrorInfo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "stack": {
+            "type": "string"
+          },
+          "code": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "Recordstringunknown": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "description": "Construct a type with a set of properties K of type T",
+        "additionalProperties": {}
+      },
+      "Usage": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "number"
+          },
+          "output": {
+            "type": "number"
+          },
+          "cacheRead": {
+            "type": "number"
+          },
+          "cacheWrite": {
+            "type": "number"
+          },
+          "totalTokens": {
+            "type": "number"
+          },
+          "cost": {
+            "type": "object",
+            "properties": {
+              "input": {
+                "type": "number"
+              },
+              "output": {
+                "type": "number"
+              },
+              "cacheRead": {
+                "type": "number"
+              },
+              "cacheWrite": {
+                "type": "number"
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "input",
+              "output",
+              "cacheRead",
+              "cacheWrite",
+              "total"
+            ]
+          }
+        },
+        "required": [
+          "input",
+          "output",
+          "cacheRead",
+          "cacheWrite",
+          "totalTokens",
+          "cost"
+        ]
+      },
+      "StopReason": {
+        "oneOf": [
+          {
+            "const": "error"
+          },
+          {
+            "const": "stop"
+          },
+          {
+            "const": "length"
+          },
+          {
+            "const": "toolUse"
+          },
+          {
+            "const": "aborted"
+          }
+        ]
+      },
+      "ToolResultMessageany": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "toolResult"
+          },
+          "toolCallId": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextContent"
+                },
+                {
+                  "$ref": "#/components/schemas/ImageContent"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "text": "#/components/schemas/TextContent",
+                  "image": "#/components/schemas/ImageContent"
+                }
+              }
+            }
+          },
+          "details": {},
+          "isError": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "toolCallId",
+          "toolName",
+          "content",
+          "isError",
+          "timestamp"
+        ]
+      },
+      "BashExecutionMessage": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "bashExecution"
+          },
+          "command": {
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          },
+          "exitCode": {
+            "type": "number"
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "fullOutputPath": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          },
+          "excludeFromContext": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "role",
+          "command",
+          "output",
+          "cancelled",
+          "truncated",
+          "timestamp"
+        ]
+      },
+      "CustomMessageunknown": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "custom"
+          },
+          "customType": {
+            "type": "string"
+          },
+          "content": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TextContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageContent"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "text": "#/components/schemas/TextContent",
+                      "image": "#/components/schemas/ImageContent"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "display": {
+            "type": "boolean"
+          },
+          "details": {},
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "customType",
+          "content",
+          "display",
+          "timestamp"
+        ]
+      },
+      "BranchSummaryMessage": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "branchSummary"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "fromId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "summary",
+          "fromId",
+          "timestamp"
+        ]
+      },
+      "CompactionSummaryMessage": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "compactionSummary"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tokensBefore": {
+            "type": "number"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "summary",
+          "tokensBefore",
+          "timestamp"
+        ]
+      },
+      "ToolResultMessageany_o1": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "toolResult"
+          },
+          "toolCallId": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextContent"
+                },
+                {
+                  "$ref": "#/components/schemas/ImageContent"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "text": "#/components/schemas/TextContent",
+                  "image": "#/components/schemas/ImageContent"
+                }
+              }
+            }
+          },
+          "details": {},
+          "isError": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "toolCallId",
+          "toolName",
+          "content",
+          "isError",
+          "timestamp"
+        ]
+      },
+      "AssistantMessageEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "start"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "text_start"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "text_delta"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "delta": {
+                "type": "string"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "delta",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "text_end"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "content": {
+                "type": "string"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "content",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "thinking_start"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "thinking_delta"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "delta": {
+                "type": "string"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "delta",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "thinking_end"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "content": {
+                "type": "string"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "content",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "toolcall_start"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "toolcall_delta"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "delta": {
+                "type": "string"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "delta",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "toolcall_end"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "toolCall": {
+                "$ref": "#/components/schemas/ToolCall"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "toolCall",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "done"
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "const": "stop"
+                  },
+                  {
+                    "const": "length"
+                  },
+                  {
+                    "const": "toolUse"
+                  }
+                ]
+              },
+              "message": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "reason",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "error"
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "const": "error"
+                  },
+                  {
+                    "const": "aborted"
+                  }
+                ]
+              },
+              "error": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "reason",
+              "error"
+            ]
+          }
+        ],
+        "description": "Event protocol for AssistantMessageEventStream.\n\nStreams should emit `start` before partial updates, then terminate with either:\n- `done` carrying the final successful AssistantMessage, or\n- `error` carrying the final AssistantMessage with stopReason \"error\" or \"aborted\"\n  and errorMessage."
+      },
+      "ThinkingLevel": {
+        "oneOf": [
+          {
+            "const": "off"
+          },
+          {
+            "const": "minimal"
+          },
+          {
+            "const": "low"
+          },
+          {
+            "const": "medium"
+          },
+          {
+            "const": "high"
+          },
+          {
+            "const": "xhigh"
+          }
+        ],
+        "description": "Thinking/reasoning level for models that support it.\nNote: \"xhigh\" is only supported by selected model families. Use model thinking-level metadata\nfrom"
+      },
+      "CompactionResultunknown": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "firstKeptEntryId": {
+            "type": "string"
+          },
+          "tokensBefore": {
+            "type": "number"
+          },
+          "details": {
+            "description": "Extension-specific data (e.g., ArtifactIndex, version markers for structured compaction)"
+          }
+        },
+        "required": [
+          "summary",
+          "firstKeptEntryId",
+          "tokensBefore"
+        ],
+        "description": "Result from compact() - SessionManager adds uuid/parentUuid when saving"
+      }
+    }
+  },
+  "schemas": [
+    {
+      "$ref": "#/components/schemas/WireEvent"
+    }
+  ]
+}

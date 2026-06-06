@@ -39,6 +39,7 @@ import type {
 import type { AgentCredentialsService, AgentModelRow } from "../credentials/credentialsService.js";
 import type { ExtensionUiRequest, ExtensionUiResponse } from "../shared/extensionUi.js";
 import { publish } from "../http/sseBroker.js";
+import { validateAgentSessionEvent } from "../http/eventValidation.js";
 import {
 	type ThinkingLevel,
 	supportedThinkingLevelsForModel,
@@ -100,9 +101,10 @@ export class ProjectSession {
 		this.boundAt = new Date().toISOString();
 
 		// Per-session SSE bridge. The broker routes events by sessionId so
-		// concurrent sessions in the same project don't cross-talk.
+		// concurrent sessions in the same project don't cross-talk. Every event
+		// is validated against the published wire contract on the way out.
 		this.unsubscribeEvents = session.subscribe((event: AgentSessionEvent) => {
-			publish(this.sessionId, event);
+			this.publishEvent(event);
 		});
 
 		// Bind extensions with a session-scoped UI context. We keep the promise
@@ -112,7 +114,7 @@ export class ProjectSession {
 				uiContext: this.createExtensionUiContext(),
 				commandContextActions: this.commandActions(),
 				onError: (err) => {
-					publish(this.sessionId, {
+					this.publishEvent({
 						type: "extension_error",
 						extensionPath: err.extensionPath,
 						event: err.event,
@@ -126,7 +128,7 @@ export class ProjectSession {
 			})
 			.catch((err) => {
 				const message = err instanceof Error ? err.message : String(err);
-				publish(this.sessionId, {
+				this.publishEvent({
 					type: "extension_error",
 					extensionPath: "<bindExtensions>",
 					event: "session_start",
@@ -469,6 +471,29 @@ export class ProjectSession {
 	}
 
 	private publishRequest(request: ExtensionUiRequest): void {
-		publish(this.sessionId, request);
+		this.publishEvent(request);
+	}
+
+	/**
+	 * Validate an outgoing event against the published SSE wire contract, then
+	 * forward it to the broker regardless of the outcome.
+	 *
+	 * Validation is observe-only — the SSE stream must stay robust, so we never
+	 * drop an event. A known type with a broken shape is a real contract
+	 * violation (logged loudly); an unrecognised type means pi added an event we
+	 * don't model yet (logged softly) and is forward-compatible by design.
+	 */
+	private publishEvent(event: unknown): void {
+		const validation = validateAgentSessionEvent(event);
+		if (validation.status === "invalid") {
+			this.deps.logger.error(
+				`[agent] SSE event failed wire-schema validation (session=${this.sessionId}): ${validation.issues}`,
+			);
+		} else if (validation.status === "unknown-type") {
+			this.deps.logger.log(
+				`[agent] forwarding unmodeled SSE event type='${validation.type}' (session=${this.sessionId}); wire contract may be stale`,
+			);
+		}
+		publish(this.sessionId, event);
 	}
 }

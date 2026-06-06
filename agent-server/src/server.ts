@@ -30,6 +30,7 @@ import {
 import { createSessionsApp } from "./http/sessionsRoutes.js";
 import { createCredentialsApp } from "./http/credentialsRoutes.js";
 import { createProjectsApp } from "./http/projectsRoutes.js";
+import { mergeEventSchema } from "./http/openapiEventSchema.js";
 import { ProjectRegistry } from "./runtime/projectRegistry.js";
 import type { ProjectRuntime } from "./runtime/projectRuntime.js";
 
@@ -136,19 +137,30 @@ root.route(
 );
 
 // OpenAPI document + Swagger UI. Doc lives at /openapi.json so consumers
-// (eventx-backend) can fetch it for codegen at build time.
-root.doc("/openapi.json", {
-  openapi: "3.1.0",
-  info: {
-    title: "Appx Agent Server",
-    version: "0.1.0",
-    description:
-      "Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes.",
-  },
-  servers: [
-    { url: `http://${config.host}:${config.port}`, description: "local" },
-  ],
-});
+// (eventx-backend) can fetch it for codegen at build time. We build it via a
+// custom handler (rather than root.doc(...)) so the generated SSE wire-event
+// schema can be merged in. Computed once and cached.
+let openApiDocCache: unknown;
+const buildOpenApiDoc = () => {
+  if (!openApiDocCache) {
+    openApiDocCache = mergeEventSchema(
+      root.getOpenAPI31Document({
+        openapi: "3.1.0",
+        info: {
+          title: "Appx Agent Server",
+          version: "0.1.0",
+          description:
+            "Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes.",
+        },
+        servers: [
+          { url: `http://${config.host}:${config.port}`, description: "local" },
+        ],
+      }),
+    );
+  }
+  return openApiDocCache;
+};
+root.get("/openapi.json", (c) => c.json(buildOpenApiDoc() as object));
 
 root.get("/docs", swaggerUI({ url: "/openapi.json" }));
 

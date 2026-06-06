@@ -412,13 +412,24 @@ export function createSessionsApp(
     tags: ["sessions"],
     summary:
       "Server-Sent Events stream of pi AgentSessionEvents for the session.",
+    description:
+      "Long-lived `text/event-stream`. Each `data:` line carries one JSON " +
+      "`AgentSessionEvent` (see the `AgentSessionEvent` schema). Non-JSON " +
+      "lines occur too: an initial `connected to <id>` line and periodic " +
+      "`heartbeat` keepalive events, both of which consumers ignore. The " +
+      "event payload is validated against this contract server-side before " +
+      "being forwarded.",
     request: { params: SessionIdParamSchema },
     responses: {
       200: {
         description:
-          "SSE stream. Each event is `data: <json>` carrying a pi AgentSessionEvent.",
+          "SSE stream. Each `data:` line is a JSON-encoded AgentSessionEvent.",
         content: {
-          "text/event-stream": { schema: { type: "string" } as never },
+          // Resolves to the generated wire-event schema; the component is
+          // merged into the document by mergeEventSchema() (openapiEventSchema.ts).
+          "text/event-stream": {
+            schema: { $ref: "#/components/schemas/WireEvent" } as never,
+          },
         },
       },
       404: {
