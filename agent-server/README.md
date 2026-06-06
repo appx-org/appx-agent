@@ -217,7 +217,7 @@ pi's TypeScript types via typia rather than hand-authored.
 
 ```bash
 # only needed after a pi upgrade or a change to WireEvent — regenerates
-# src/http/eventSchema.generated.json (the committed event schema).
+# src/contract/eventSchema.generated.json (the committed event schema).
 npm run gen:event-schema
 
 # always: rebuild and dump the merged contract to ./openapi.json

@@ -6,20 +6,21 @@
  *
  * Usage: `npm run openapi` (writes ./openapi.json).
  *
- * This script must mirror server.ts's mounting structure so the doc
- * matches what the live server publishes. Keep them in sync.
+ * The document is built by the shared `buildOpenApiDocument` so it can't drift
+ * from what the live server publishes at `/openapi.json`; the only difference is
+ * that this host-agnostic dump omits the `servers` block.
  */
 import { writeFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { ProjectRegistry } from "./runtime/projectRegistry.js";
-import { createSessionsApp } from "./http/sessionsRoutes.js";
-import { createCredentialsApp } from "./http/credentialsRoutes.js";
-import { createProjectsApp } from "./http/projectsRoutes.js";
-import { mergeEventSchema } from "./http/openapiEventSchema.js";
-import type { ProjectRuntime } from "./runtime/projectRuntime.js";
+import { ProjectRegistry } from "../runtime/projectRegistry.js";
+import { createSessionsApp } from "../http/sessionsRoutes.js";
+import { createCredentialsApp } from "../http/credentialsRoutes.js";
+import { createProjectsApp } from "../http/projectsRoutes.js";
+import { buildOpenApiDocument } from "./openapiEventSchema.js";
+import type { ProjectRuntime } from "../runtime/projectRuntime.js";
 
 // We need a registry to construct the route apps, but we never actually call
 // any methods during doc generation — the routes just reference handler
@@ -39,17 +40,7 @@ root.route("/v1", createCredentialsApp(registry.credentials));
 root.route("/v1", createProjectsApp(registry));
 root.route("/v1/projects/:projectId", createSessionsApp(stubResolver));
 
-const doc = mergeEventSchema(
-  root.getOpenAPI31Document({
-    openapi: "3.1.0",
-    info: {
-      title: "Appx Agent Server",
-      version: "0.1.0",
-      description:
-        "Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes.",
-    },
-  }),
-);
+const doc = buildOpenApiDocument(root);
 
 const outPath = resolve(process.cwd(), "openapi.json");
 writeFileSync(outPath, `${JSON.stringify(doc, null, 2)}\n`);

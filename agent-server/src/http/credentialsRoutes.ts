@@ -37,7 +37,7 @@ import {
   ProviderParamSchema,
   SetProviderApiKeyRequestSchema,
   UpsertCustomProviderRequestSchema,
-} from "./schemas.js";
+} from "../contract/schemas.js";
 import { channelStats } from "./sseBroker.js";
 
 export type AgentCredentialsResolver = (

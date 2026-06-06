@@ -10,5 +10,5 @@
     "outDir": ".gen",
     "plugins": [{ "transform": "typia/lib/transform" }]
   },
-  "include": ["scripts/genEventSchema.ts", "src/http/wireEvents.ts", "src/shared/extensionUi.ts"]
+  "include": ["scripts/genEventSchema.ts", "src/contract/wireEvents.ts", "src/shared/extensionUi.ts"]
 }

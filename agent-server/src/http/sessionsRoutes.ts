@@ -42,7 +42,7 @@ import {
   SessionIdParamSchema,
   SessionMessagesResponseSchema,
   SessionModelSettingsResponseSchema,
-} from "./schemas.js";
+} from "../contract/schemas.js";
 import { subscribe } from "./sseBroker.js";
 
 /** Heartbeat cadence for SSE keepalive. Keeps proxies / LBs from closing idle streams. */

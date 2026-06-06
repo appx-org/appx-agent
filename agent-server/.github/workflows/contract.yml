@@ -55,7 +55,7 @@ jobs:
 
       - name: Verify committed artifacts are up to date
         run: |
-          if ! git diff --exit-code -- openapi.json src/http/eventSchema.generated.json; then
+          if ! git diff --exit-code -- openapi.json src/contract/eventSchema.generated.json; then
             echo "::error::Contract artifacts are stale. Run 'npm run gen:event-schema && npm run openapi' and commit the result."
             exit 1
           fi

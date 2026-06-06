@@ -39,7 +39,7 @@ import type {
 import type { AgentCredentialsService, AgentModelRow } from "../credentials/credentialsService.js";
 import type { ExtensionUiRequest, ExtensionUiResponse } from "../shared/extensionUi.js";
 import { publish } from "../http/sseBroker.js";
-import { validateAgentSessionEvent } from "../http/eventValidation.js";
+import { validateAgentSessionEvent } from "../contract/eventValidation.js";
 import {
 	type ThinkingLevel,
 	supportedThinkingLevelsForModel,

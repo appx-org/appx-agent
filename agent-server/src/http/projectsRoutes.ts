@@ -25,7 +25,7 @@ import {
   OkResponseSchema,
   ProjectIdParamSchema,
   ProjectInfoSchema,
-} from "./schemas.js";
+} from "../contract/schemas.js";
 
 /**
  * Build the Hono app exposing project lifecycle routes. Versioning/prefixing is
