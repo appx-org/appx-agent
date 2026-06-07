@@ -7,7 +7,9 @@ dist/
 .DS_Store
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 
 # Docs
 docs/misc/

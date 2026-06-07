@@ -1,0 +1,23 @@
+{
+	"window.title": "Agent-Server",
+
+	// Biome formats with real tab characters; these control how wide a tab
+	// renders so the editor matches biome.json's indentWidth (3).
+	"editor.tabSize": 4,
+	"editor.detectIndentation": false,
+
+	// Use Biome (see biome.json) as the single formatter on save so the editor
+	// matches the pre-commit hook (`biome check --write`) and avoids churn.
+	"editor.formatOnSave": true,
+	"editor.defaultFormatter": "biomejs.biome",
+	"[typescript]": { "editor.defaultFormatter": "biomejs.biome" },
+	"[typescriptreact]": { "editor.defaultFormatter": "biomejs.biome" },
+	"[javascript]": { "editor.defaultFormatter": "biomejs.biome" },
+	"[javascriptreact]": { "editor.defaultFormatter": "biomejs.biome" },
+	"[json]": { "editor.defaultFormatter": "biomejs.biome" },
+	"[jsonc]": { "editor.defaultFormatter": "biomejs.biome" },
+	"editor.codeActionsOnSave": {
+		"source.organizeImports.biome": "explicit",
+		"quickfix.biome": "explicit"
+	}
+}
