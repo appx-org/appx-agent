@@ -1,0 +1,57 @@
+{
+  "name": "@appx-org/agent-chat-ui",
+  "version": "0.1.0",
+  "description": "Customizable React UI for the appx agent-server (chat, sessions, tool calls, model/thinking controls). Transport-agnostic and themeable.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/appx-org/agent-chat.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./styles.css": "./src/styles.css"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "gen:api": "openapi-typescript openapi/agent-server.json -o src/core/agent-server.generated.ts"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "dependencies": {
+    "dompurify": "^3.3.3",
+    "marked": "^18.0.0",
+    "openapi-fetch": "^0.17.0",
+    "react-virtuoso": "^4.18.7"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "jsdom": "^25.0.1",
+    "openapi-typescript": "^7.13.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "typescript": "~5.9.3",
+    "vitest": "^2.1.9"
+  }
+}
