@@ -219,6 +219,94 @@ describe("sessionReducer — finalisation", () => {
   });
 });
 
+describe("sessionReducer — run errors", () => {
+  it("surfaces a provider error from a finalized assistant message (message_end)", () => {
+    let state = emit(initialSessionState, {
+      type: "message_start",
+      message: { role: "assistant", content: [], timestamp: "t0" },
+    });
+    state = emit(state, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: "401 incorrect API key",
+        timestamp: "t1",
+      },
+    });
+
+    expect(state.error).toBe("401 incorrect API key");
+    expect(state.messages[0]!.streaming).toBe(false);
+  });
+
+  it("surfaces an error from agent_end even if message_end was missed", () => {
+    let state = emit(initialSessionState, {
+      type: "message_start",
+      message: { role: "assistant", content: [], timestamp: "t0" },
+    });
+    state = emit(state, {
+      type: "agent_end",
+      willRetry: false,
+      messages: [
+        { role: "user", content: "hi", timestamp: "t0" },
+        { role: "assistant", content: [], stopReason: "error", errorMessage: "model not found", timestamp: "t1" },
+      ],
+    });
+
+    expect(state.status).toBe("idle");
+    expect(state.error).toBe("model not found");
+  });
+
+  it("does not surface a transient error while a retry is pending (willRetry)", () => {
+    let state = emit(initialSessionState, {
+      type: "message_start",
+      message: { role: "assistant", content: [], timestamp: "t0" },
+    });
+    state = emit(state, {
+      type: "agent_end",
+      willRetry: true,
+      messages: [
+        { role: "assistant", content: [], stopReason: "error", errorMessage: "429 rate limited", timestamp: "t1" },
+      ],
+    });
+
+    expect(state.error).toBeNull();
+  });
+
+  it("clears a prior error when a fresh assistant message starts (successful retry)", () => {
+    let state = emit(initialSessionState, {
+      type: "message_start",
+      message: { role: "assistant", content: [], timestamp: "t0" },
+    });
+    state = emit(state, {
+      type: "message_end",
+      message: { role: "assistant", content: [], stopReason: "error", errorMessage: "boom", timestamp: "t1" },
+    });
+    expect(state.error).toBe("boom");
+
+    // A retry begins a new assistant message — the stale error must clear.
+    state = emit(state, {
+      type: "message_start",
+      message: { role: "assistant", content: [], timestamp: "t2" },
+    });
+    expect(state.error).toBeNull();
+  });
+
+  it("does not treat a user-initiated abort as an error", () => {
+    let state = emit(initialSessionState, {
+      type: "message_start",
+      message: { role: "assistant", content: [], timestamp: "t0" },
+    });
+    state = emit(state, {
+      type: "message_end",
+      message: { role: "assistant", content: [], stopReason: "aborted", timestamp: "t1" },
+    });
+
+    expect(state.error).toBeNull();
+  });
+});
+
 describe("sessionReducer — history load", () => {
   it("rebuilds messages and applies tool results from a transcript", () => {
     const history: AgentMessage[] = [

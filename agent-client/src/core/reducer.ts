@@ -91,6 +91,22 @@ const isToolResultMessage = (m: AgentMessage): m is ToolResultMessage =>
   (m as { role?: string }).role === "toolResult";
 
 /**
+ * Extract a provider/run error from a finalized assistant message, if any.
+ *
+ * pi reports LLM/provider failures as a *normal* run that ends with an assistant
+ * message whose `stopReason` is `"error"` (carrying `errorMessage`) — it does not
+ * throw, so the prompt promise resolves and nothing logs server-side. This is
+ * therefore the only place the failure reason is carried; the reducer surfaces
+ * it into `state.error` so the UI can show it instead of an empty bubble.
+ * `"aborted"` is a user-initiated stop, not an error, so it is ignored.
+ */
+function assistantErrorMessage(message: AgentMessage): string | null {
+  if (message.role !== "assistant") return null;
+  if (message.stopReason !== "error") return null;
+  return message.errorMessage || "The model returned an error.";
+}
+
+/**
  * Pull the text + originating tool-call id out of a tool-result message. pi's
  * `ToolResultMessage` carries a canonical `toolCallId` plus a `content` array of
  * text/image blocks, so both are read directly.
@@ -486,6 +502,10 @@ function reduceEvent(state: SessionState, event: AgentEvent): SessionState {
       };
       return {
         ...state,
+        // A fresh assistant message clears any error from a previous turn or a
+        // since-retried attempt, so an auto-retry that ultimately succeeds
+        // doesn't leave a stale error banner.
+        error: event.message.role === "assistant" ? null : state.error,
         status: event.message.role === "assistant" ? "streaming" : state.status,
         messageSeq: state.messageSeq + 1,
         messages: [...state.messages, newMsg],
@@ -533,7 +553,10 @@ function reduceEvent(state: SessionState, event: AgentEvent): SessionState {
           streaming: false,
         };
       });
-      return { ...state, messages };
+      // pi delivers provider/run failures as the finalized assistant message's
+      // stopReason/errorMessage (empty content), so surface it here.
+      const runError = assistantErrorMessage(event.message);
+      return { ...state, messages, ...(runError ? { error: runError } : {}) };
     }
     case "tool_execution_start":
       return {
@@ -564,12 +587,21 @@ function reduceEvent(state: SessionState, event: AgentEvent): SessionState {
           isError: event.isError,
         }),
       };
-    case "agent_end":
+    case "agent_end": {
+      // Belt-and-suspenders: agent_end always carries the terminal messages plus
+      // `willRetry`, so on a non-retrying end we surface any error the final
+      // assistant message reported even if message_end was missed. While a retry
+      // is pending we leave the (cleared-on-next-message_start) state alone.
+      const lastAssistant = [...event.messages].reverse().find((m) => m.role === "assistant");
+      const runError =
+        !event.willRetry && lastAssistant ? assistantErrorMessage(lastAssistant) : null;
       return {
         ...state,
         status: "idle",
+        error: runError ?? state.error,
         messages: state.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
       };
+    }
     default:
       return state;
   }
