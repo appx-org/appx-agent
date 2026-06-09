@@ -102,6 +102,7 @@ export class ProjectSession {
 		// is validated against the published wire contract on the way out.
 		this.unsubscribeEvents = session.subscribe((event: AgentSessionEvent) => {
 			this.publishEvent(event);
+			this.logRunError(event);
 		});
 
 		// Bind extensions with a session-scoped UI context. We keep the promise
@@ -479,5 +480,23 @@ export class ProjectSession {
 			);
 		}
 		publish(this.sessionId, event);
+	}
+
+	/**
+	 * Log a provider/run failure to the server console. Pi surfaces an LLM error
+	 * as a *normal* run that ends with an assistant message whose `stopReason` is
+	 * `"error"` (carrying `errorMessage`) — it does not throw, so `sendPrompt()`
+	 * resolves and the failure would otherwise be invisible server-side. We log it
+	 * once, when the run ends and is not going to auto-retry, so a silent failure
+	 * leaves a trace in the logs (the error is also forwarded over SSE for the UI).
+	 */
+	private logRunError(event: AgentSessionEvent): void {
+		if (event.type !== "agent_end" || event.willRetry) return;
+		const lastAssistant = [...event.messages].reverse().find((m) => m.role === "assistant");
+		if (lastAssistant?.role === "assistant" && lastAssistant.stopReason === "error") {
+			this.deps.logger.error(
+				`[agent] run error (session=${this.sessionId}): ${lastAssistant.errorMessage ?? "unknown error"}`,
+			);
+		}
 	}
 }

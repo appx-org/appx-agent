@@ -201,6 +201,51 @@ describe("ProjectSession — event subscription", () => {
 		}
 	});
 
+	test("logs a run error when a run ends with stopReason 'error'", async () => {
+		const sessionId = "ev-run-error";
+		const { session, dispatch } = makeFakeSession({ sessionId });
+		const deps = makeFakeDeps();
+		const errors: string[] = [];
+		deps.logger.error = (...args: unknown[]) => {
+			errors.push(args.map(String).join(" "));
+		};
+		const ps = new ProjectSession(session, deps);
+		await ps.extensionsReady;
+
+		dispatch({
+			type: "agent_end",
+			willRetry: false,
+			messages: [
+				{ role: "user", content: [{ type: "text", text: "hi" }] },
+				{ role: "assistant", content: [], stopReason: "error", errorMessage: "401 bad key" },
+			],
+		});
+
+		assert.equal(errors.length, 1);
+		assert.match(errors[0]!, /run error/);
+		assert.match(errors[0]!, /401 bad key/);
+	});
+
+	test("does not log a run error while an auto-retry is pending (willRetry)", async () => {
+		const sessionId = "ev-run-error-retry";
+		const { session, dispatch } = makeFakeSession({ sessionId });
+		const deps = makeFakeDeps();
+		const errors: string[] = [];
+		deps.logger.error = (...args: unknown[]) => {
+			errors.push(args.map(String).join(" "));
+		};
+		const ps = new ProjectSession(session, deps);
+		await ps.extensionsReady;
+
+		dispatch({
+			type: "agent_end",
+			willRetry: true,
+			messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "429 rate limited" }],
+		});
+
+		assert.equal(errors.length, 0);
+	});
+
 	test("publishes extension_error when bindExtensions rejects", async () => {
 		const sessionId = "ev-bind-fail";
 		const { session } = makeFakeSession({ sessionId, bindExtensionsBehavior: "reject" });
