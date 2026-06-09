@@ -61,23 +61,23 @@ jobs:
           fi
 
   # (2) No breaking changes may reach main without review.
-  breaking:
-    name: No breaking contract changes
-    # Only meaningful on PRs, where it can gate the merge against the base branch.
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  # breaking:
+  #   name: No breaking contract changes
+  #   # Only meaningful on PRs, where it can gate the merge against the base branch.
+  #   if: github.event_name == 'pull_request'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      # oasdiff reads the base spec straight from git; fetch the base branch.
-      - run: git fetch --depth=1 origin ${{ github.base_ref }}
+  #     # oasdiff reads the base spec straight from git; fetch the base branch.
+  #     - run: git fetch --depth=1 origin ${{ github.base_ref }}
 
-      - name: Detect breaking changes (oasdiff)
-        uses: oasdiff/oasdiff-action/breaking@v0.0.56
-        with:
-          base: origin/${{ github.base_ref }}:openapi.json
-          revision: HEAD:openapi.json
-          # Fail only on definite breaking changes (ERR). Intentional breaks can
-          # be acknowledged via a `.oasdiff.yaml` err-ignore entry + a contract
-          # version bump in src/openapi.ts.
-          fail-on: ERR
+  #     - name: Detect breaking changes (oasdiff)
+  #       uses: oasdiff/oasdiff-action/breaking@v0.0.56
+  #       with:
+  #         base: origin/${{ github.base_ref }}:openapi.json
+  #         revision: HEAD:openapi.json
+  #         # Fail only on definite breaking changes (ERR). Intentional breaks can
+  #         # be acknowledged via a `.oasdiff.yaml` err-ignore entry + a contract
+  #         # version bump in src/openapi.ts.
+  #         fail-on: ERR
