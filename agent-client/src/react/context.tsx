@@ -99,6 +99,6 @@ export function AgentChatProvider({ client, config, classNames, labels, children
 /** Reads the agent-chat context; throws if used outside an `AgentChatProvider`. */
 export function useAgentChatContext(): AgentChatContextValue {
   const ctx = useContext(AgentChatContext);
-  if (!ctx) throw new Error('agent-chat-ui components must be used within <AgentChatProvider>');
+  if (!ctx) throw new Error('agent-client components must be used within <AgentChatProvider>');
   return ctx;
 }

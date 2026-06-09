@@ -1,12 +1,12 @@
 {
-  "name": "@appx-org/agent-chat-ui",
+  "name": "@appx-org/agent-client",
   "version": "0.1.0",
   "description": "Customizable React UI for the appx agent-server (chat, sessions, tool calls, model/thinking controls). Transport-agnostic and themeable.",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/appx-org/agent-chat.git"
+    "url": "git+https://github.com/appx-org/agent-client.git"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

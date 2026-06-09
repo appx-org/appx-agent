@@ -110,7 +110,7 @@ export function ChatPanel({
     try {
       await sendPrompt(text);
     } catch (err) {
-      console.error("[agent-chat-ui] failed to send prompt:", err);
+      console.error("[agent-client] failed to send prompt:", err);
     } finally {
       setSending(false);
     }

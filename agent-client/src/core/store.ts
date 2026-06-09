@@ -144,7 +144,7 @@ export class SessionStore {
         const parsed = JSON.parse(e.data) as AgentEvent;
         this.dispatch(entryKey, { type: "agent_event", event: parsed });
       } catch (err) {
-        console.error("[agent-chat-ui] bad SSE event:", err, e.data);
+        console.error("[agent-client] bad SSE event:", err, e.data);
       }
     };
 

@@ -1,10 +1,10 @@
 /**
- * agent-chat-ui — a customizable React UI for the appx agent-server.
+ * agent-client — a customizable React UI for the appx agent-server.
  *
  * Quick start:
  * ```tsx
- * import { AgentChatProvider, AgentChat } from 'agent-chat-ui';
- * import 'agent-chat-ui/styles.css';
+ * import { AgentChatProvider, AgentChat } from 'agent-client';
+ * import 'agent-client/styles.css';
  *
  * <AgentChatProvider config={{ baseUrl: '/agent' }}>
  *   <AgentChat projectId="my-game" />

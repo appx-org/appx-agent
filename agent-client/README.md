@@ -1,4 +1,4 @@
-# @appx-org/agent-chat-ui
+# @appx-org/agent-client
 
 A customizable React UI for the [appx **agent-server**](../agent-server)
 — streaming chat, session management, tool-call cards, extension-UI prompts, and
@@ -19,7 +19,7 @@ registry mapping (`.npmrc`):
 @appx-org:registry=https://npm.pkg.github.com
 ```
 
-then `npm i @appx-org/agent-chat-ui`. Peer deps: `react >=18`, `react-dom >=18`.
+then `npm i @appx-org/agent-client`. Peer deps: `react >=18`, `react-dom >=18`.
 
 ## Local development across repos
 
@@ -30,7 +30,7 @@ Vite/bundler app compiles it directly. To edit it live from a sibling app
 
 ```jsonc
 // consumer app package.json (path relative to that package.json)
-"@appx-org/agent-chat-ui": "file:../../../../appx-dir/agent-chat"
+"@appx-org/agent-client": "file:../../../../appx-dir/agent-client"
 ```
 
 Because `react`/`react-dom` are **peer** deps, the consumer must dedupe React so
@@ -47,8 +47,8 @@ range (`^0.1.0`).
 ## Quick start
 
 ```tsx
-import { AgentChatProvider, AgentChat } from 'agent-chat-ui';
-import 'agent-chat-ui/styles.css';
+import { AgentChatProvider, AgentChat } from 'agent-client';
+import 'agent-client/styles.css';
 
 export function App() {
   return (
@@ -110,7 +110,7 @@ stable, human-readable names.
 1. **CSS variables** — every value resolves to an `--ac-*` custom property.
    Re-theme by redefining them on a wrapper:
    ```css
-   .agent-chat-root { --ac-accent: #c084fc; --ac-bg: #1a1226; }
+   .agent-client-root { --ac-accent: #c084fc; --ac-bg: #1a1226; }
    ```
 2. **`classNames` / `labels`** — pass per-slot class names and string overrides
    to `AgentChatProvider`.

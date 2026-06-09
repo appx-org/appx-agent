@@ -40,7 +40,7 @@ export function AgentChat({
 
   return (
     <div
-      className={["agent-chat-root", "agent-chat-layout", classNames.root, className]
+      className={["agent-client-root", "agent-chat-layout", classNames.root, className]
         .filter(Boolean)
         .join(" ")}
     >

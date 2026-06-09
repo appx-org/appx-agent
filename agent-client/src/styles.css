@@ -1,16 +1,16 @@
 /*
- * agent-chat-ui default theme.
+ * agent-client default theme.
  *
  * All visual values resolve to CSS custom properties prefixed `--ac-*`, defined
  * here on every top-level component so the components work standalone *and*
  * inside <AgentChat>. To re-theme, redefine any `--ac-*` variable on a wrapping
- * element (e.g. `.agent-chat-root { --ac-accent: #c084fc; }`) or override the
+ * element (e.g. `.agent-client-root { --ac-accent: #c084fc; }`) or override the
  * exposed `agent-chat-*` class names directly.
  *
  * The default palette is a dark "terminal" look; override for light themes.
  */
 
-.agent-chat-root,
+.agent-client-root,
 .agent-chat-chat-panel,
 .agent-chat-session-list {
   --ac-bg: #0f1115;
@@ -35,7 +35,7 @@
   box-sizing: border-box;
 }
 
-.agent-chat-root *,
+.agent-client-root *,
 .agent-chat-chat-panel *,
 .agent-chat-session-list * {
   box-sizing: border-box;
