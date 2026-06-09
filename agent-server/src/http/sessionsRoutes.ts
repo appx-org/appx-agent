@@ -6,6 +6,7 @@
  *   GET    /sessions                list sessions (disk + in-memory)
  *   POST   /sessions                create new session
  *   GET    /sessions/{id}           persisted message history
+ *   DELETE /sessions/{id}           delete a session + its history
  *   GET    /sessions/{id}/settings  current model/thinking settings
  *   PATCH  /sessions/{id}/settings  switch model/thinking while idle
  *   GET    /sessions/{id}/events    SSE stream of pi AgentSessionEvents
@@ -245,6 +246,35 @@ export function createSessionsApp(runtime: ProjectRuntime | ProjectRuntimeResolv
 			const session = await runtime.getSession(id);
 			if (!session) return c.json({ error: "session not found" }, 404);
 			return c.json({ id, messages: session.getMessages() }, 200);
+		},
+	);
+
+	// ── DELETE /sessions/{id} ──────────────────────────────
+	app.openapi(
+		createRoute({
+			method: "delete",
+			path: "/sessions/{id}",
+			operationId: "deleteSession",
+			tags: ["sessions"],
+			summary: "Permanently delete a session and its persisted history.",
+			request: { params: SessionIdParamSchema },
+			responses: {
+				200: {
+					description: "Session deleted.",
+					content: { "application/json": { schema: OkResponseSchema } },
+				},
+				404: {
+					description: "Unknown session id.",
+					content: { "application/json": { schema: ErrorResponseSchema } },
+				},
+			},
+		}),
+		async (c) => {
+			const runtime = await getRuntime(c);
+			const { id } = c.req.valid("param");
+			const deleted = await runtime.deleteSession(id);
+			if (!deleted) return c.json({ error: "session not found" }, 404);
+			return c.json({ ok: true } as const, 200);
 		},
 	);
 

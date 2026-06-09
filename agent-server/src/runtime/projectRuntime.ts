@@ -34,6 +34,7 @@
  * each get their own runtime with isolated state.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import {
 	type AgentSession,
@@ -416,6 +417,41 @@ export class ProjectRuntime {
 		}
 
 		return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+	}
+
+	/**
+	 * Permanently delete a session: abort any in-flight run, tear down the
+	 * in-memory ProjectSession (SSE listeners, pending extension UI), and
+	 * remove its persisted JSONL file from disk.
+	 *
+	 * Returns true if a session existed (in memory or on disk) and was
+	 * removed, false if no session with that id was found — letting the
+	 * route map a miss to 404 while keeping the operation idempotent.
+	 *
+	 * Deletion is irreversible: session transcripts are volatile per-developer
+	 * state (never committed to git), so there's no soft-delete tier here. The
+	 * file removal uses `force: true` so a session that was created in memory
+	 * but never flushed to disk doesn't surface a spurious ENOENT.
+	 */
+	async deleteSession(id: string): Promise<boolean> {
+		const inMemory = this.sessions.get(id);
+		if (inMemory) {
+			// Stop any running agent turn before discarding the session so we
+			// don't leave an orphaned LLM/tool run writing to a deleted file.
+			await inMemory.abort();
+			await inMemory.dispose();
+			this.sessions.delete(id);
+		}
+
+		const list: SessionInfo[] = await SessionManager.list(this.projectDir, this.sessionsDir);
+		const info = list.find((s) => s.id === id);
+		if (info) {
+			await rm(info.path, { force: true });
+			return true;
+		}
+
+		// No file on disk — it existed only if we had it live in memory.
+		return inMemory !== undefined;
 	}
 
 	// ── Resource refresh + diagnostics ───────────────────────────────

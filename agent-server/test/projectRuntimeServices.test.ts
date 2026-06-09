@@ -115,6 +115,39 @@ describe("ProjectRuntime — AgentSessionServices integration", () => {
 		}
 	});
 
+	test("deleteSession() removes a session and is idempotent / 404-aware", async () => {
+		const project = makeProject();
+		const agentDir = resolve(project.dir, ".pi-agent");
+		const { authStorage, modelRegistry, credentials } = makeCredentials(agentDir);
+		try {
+			const runtime = await ProjectRuntime.create({
+				projectDir: project.dir,
+				agentDir,
+				credentials,
+				authStorage,
+				modelRegistry,
+				logger: silentLogger,
+			});
+
+			const session = await runtime.createNewSession();
+			assert.ok((await runtime.listSessions()).some((row) => row.id === session.sessionId));
+
+			// Existing (in-memory, not yet flushed) session is removed.
+			assert.equal(await runtime.deleteSession(session.sessionId), true);
+			assert.equal(
+				(await runtime.listSessions()).some((row) => row.id === session.sessionId),
+				false,
+			);
+			assert.equal(await runtime.getSession(session.sessionId), null);
+
+			// Deleting again (or an unknown id) reports "not found" so routes 404.
+			assert.equal(await runtime.deleteSession(session.sessionId), false);
+			assert.equal(await runtime.deleteSession("does-not-exist"), false);
+		} finally {
+			project.cleanup();
+		}
+	});
+
 	test("diagnostics() returns the live services array (identity, not copy)", async () => {
 		const project = makeProject();
 		const agentDir = resolve(project.dir, ".pi-agent");

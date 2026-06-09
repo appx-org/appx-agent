@@ -15,6 +15,9 @@
 
 type Listener = (event: unknown) => void;
 
+// one set of listener callbacks per channel (per session)
+// each tab/device that opens /sessions/{id}/events adds its own listener callback to the Set
+// three tabs watching the same session = three callbacks in that set
 const channels = new Map<string, Set<Listener>>();
 
 // FIXME: Should we create a SSEBroker class or rename functions to sseSubscribe? Currently too generic name
