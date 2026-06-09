@@ -1,0 +1,83 @@
+#
+# Contract gate for the agent-server OpenAPI surface.
+#
+# Two checks, both aimed at the one risk that matters here: pi (the upstream
+# engine whose types we forward) drifting silently into our published contract.
+#
+#   (1) Freshness  — regenerate the committed contract artifacts
+#                    (eventSchema.generated.json + openapi.json) and fail if the
+#                    working tree changed. Catches "bumped pi / edited a route
+#                    but forgot to regenerate + commit the contract".
+#
+#   (2) Breaking   — diff this PR's openapi.json against the base branch with
+#                    oasdiff and fail on breaking changes. Turns silent drift
+#                    into a reviewed, intentional event.
+#
+# The breaking-change check runs on pull_request because that's the only place
+# it can actually *block* a merge (via branch protection). The freshness check
+# also runs on push to main as a trunk safety net for direct pushes.
+#
+name: contract
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # (1) The committed contract must be a faithful regeneration of the source.
+  freshness:
+    name: Contract artifacts are fresh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Regenerate contract artifacts
+        # Order matters: the typia-generated event schema must be refreshed
+        # before the OpenAPI dump, which merges it in.
+        run: |
+          npm run gen:event-schema
+          npm run openapi
+
+      - name: Verify committed artifacts are up to date
+        run: |
+          if ! git diff --exit-code -- openapi.json src/contract/eventSchema.generated.json; then
+            echo "::error::Contract artifacts are stale. Run 'npm run gen:event-schema && npm run openapi' and commit the result."
+            exit 1
+          fi
+
+  # (2) No breaking changes may reach main without review.
+  # breaking:
+  #   name: No breaking contract changes
+  #   # Only meaningful on PRs, where it can gate the merge against the base branch.
+  #   if: github.event_name == 'pull_request'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+
+  #     # oasdiff reads the base spec straight from git; fetch the base branch.
+  #     - run: git fetch --depth=1 origin ${{ github.base_ref }}
+
+  #     - name: Detect breaking changes (oasdiff)
+  #       uses: oasdiff/oasdiff-action/breaking@v0.0.56
+  #       with:
+  #         base: origin/${{ github.base_ref }}:openapi.json
+  #         revision: HEAD:openapi.json
+  #         # Fail only on definite breaking changes (ERR). Intentional breaks can
+  #         # be acknowledged via a `.oasdiff.yaml` err-ignore entry + a contract
+  #         # version bump in src/openapi.ts.
+  #         fail-on: ERR

@@ -2,7 +2,7 @@
   "name": "@appx/agent-server",
   "private": true,
   "version": "0.1.0",
-  "description": "Pi-SDK-based agent orchestration server. Runs as a standalone HTTP/SSE service per Appx app.",
+  "description": "Pi-SDK-based agent orchestration server for standalone and project-scoped sessions.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -16,14 +16,19 @@
     "agent-server": "dist/server.js"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
-    "openapi": "tsx src/openapi.ts",
+    "build": "tsc && node -e \"require('fs').cpSync('src/contract/eventSchema.generated.json','dist/contract/eventSchema.generated.json')\"",
+    "typecheck": "tsc --noEmit",
+    "check": "biome check --write --error-on-warnings .",
+    "prepare": "husky",
+    "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
+    "start": "node --env-file-if-exists=.env dist/server.js",
+    "openapi": "tsx --env-file-if-exists=.env src/contract/openapi.ts",
+    "gen:event-schema": "tspc -p tsconfig.gen.json && node .gen/scripts/genEventSchema.js && rm -rf .gen",
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "0.75.4",
+    "@earendil-works/pi-coding-agent": "0.75.4",
     "@hono/node-server": "^1.13.7",
     "@hono/swagger-ui": "^0.5.1",
     "@hono/zod-openapi": "^0.19.2",
@@ -31,8 +36,13 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.3.5",
     "@types/node": "^22.0.0",
+    "ajv": "^8.20.0",
+    "husky": "^9.1.7",
+    "ts-patch": "^3.3.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "typia": "^12.1.1"
   }
 }

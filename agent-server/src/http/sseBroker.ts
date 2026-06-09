@@ -15,7 +15,12 @@
 
 type Listener = (event: unknown) => void;
 
+// one set of listener callbacks per channel (per session)
+// each tab/device that opens /sessions/{id}/events adds its own listener callback to the Set
+// three tabs watching the same session = three callbacks in that set
 const channels = new Map<string, Set<Listener>>();
+
+// FIXME: Should we create a SSEBroker class or rename functions to sseSubscribe? Currently too generic name
 
 /**
  * Register a listener on the given channel. Returns an unsubscribe
@@ -24,16 +29,16 @@ const channels = new Map<string, Set<Listener>>();
  * tear down the rest.
  */
 export function subscribe(channel: string, listener: Listener): () => void {
-  let listeners = channels.get(channel);
-  if (!listeners) {
-    listeners = new Set();
-    channels.set(channel, listeners);
-  }
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-    if (listeners.size === 0) channels.delete(channel);
-  };
+	let listeners = channels.get(channel);
+	if (!listeners) {
+		listeners = new Set();
+		channels.set(channel, listeners);
+	}
+	listeners.add(listener);
+	return () => {
+		listeners.delete(listener);
+		if (listeners.size === 0) channels.delete(channel);
+	};
 }
 
 /**
@@ -42,24 +47,24 @@ export function subscribe(channel: string, listener: Listener): () => void {
  * connecting).
  */
 export function publish(channel: string, event: unknown): void {
-  const listeners = channels.get(channel);
-  if (!listeners || listeners.size === 0) return;
-  for (const l of listeners) {
-    try {
-      l(event);
-    } catch (err) {
-      // Don't tear down the broker — other subscribers on this
-      // channel are still viable. But a thrown listener is a real
-      // bug surface (e.g. JSON.stringify on a non-serialisable
-      // event, or future listener code), so log loudly.
-      console.error(`[sse] listener on channel '${channel}' threw:`, err);
-    }
-  }
+	const listeners = channels.get(channel);
+	if (!listeners || listeners.size === 0) return;
+	for (const l of listeners) {
+		try {
+			l(event);
+		} catch (err) {
+			// Don't tear down the broker — other subscribers on this
+			// channel are still viable. But a thrown listener is a real
+			// bug surface (e.g. JSON.stringify on a non-serialisable
+			// event, or future listener code), so log loudly.
+			console.error(`[sse] listener on channel '${channel}' threw:`, err);
+		}
+	}
 }
 
 /** Diagnostic: subscriber count per channel. */
 export function channelStats(): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const [k, v] of channels) out[k] = v.size;
-  return out;
+	const out: Record<string, number> = {};
+	for (const [k, v] of channels) out[k] = v.size;
+	return out;
 }
