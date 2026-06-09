@@ -3,62 +3,32 @@
   "info": {
     "title": "Appx Agent Server",
     "version": "0.1.0",
-    "description": "Pi-SDK-based agent orchestration for standalone app sessions."
+    "description": "Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes."
   },
   "components": {
     "schemas": {
-      "SessionRow": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "01J9Z..."
-          },
-          "createdAt": {
-            "type": "string",
-            "description": "ISO-8601 UTC timestamp",
-            "example": "2026-05-17T10:00:00.000Z"
-          },
-          "firstMessage": {
-            "type": "string",
-            "description": "First user message; empty for never-prompted sessions."
-          },
-          "messageCount": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "id",
-          "createdAt",
-          "firstMessage",
-          "messageCount"
-        ]
-      },
-      "ListSessionsResponse": {
-        "type": "object",
-        "properties": {
-          "sessions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SessionRow"
-            }
-          }
-        },
-        "required": [
-          "sessions"
-        ]
-      },
       "ThinkingLevel": {
-        "type": "string",
-        "enum": [
-          "off",
-          "minimal",
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
+        "oneOf": [
+          {
+            "const": "off"
+          },
+          {
+            "const": "minimal"
+          },
+          {
+            "const": "low"
+          },
+          {
+            "const": "medium"
+          },
+          {
+            "const": "high"
+          },
+          {
+            "const": "xhigh"
+          }
+        ],
+        "description": "Thinking/reasoning level for models that support it.\nNote: \"xhigh\" is only supported by selected model families. Use model thinking-level metadata\nfrom"
       },
       "AgentModelRow": {
         "type": "object",
@@ -478,6 +448,139 @@
           "models"
         ]
       },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "service": {
+            "type": "string",
+            "enum": [
+              "agent-server"
+            ]
+          },
+          "time": {
+            "type": "string"
+          },
+          "channels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Map of SSE channel name → current subscriber count."
+          }
+        },
+        "required": [
+          "ok",
+          "service",
+          "time",
+          "channels"
+        ]
+      },
+      "ProjectInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Immutable slug; registry key, route param, and directory name.",
+            "example": "my-cool-app"
+          },
+          "name": {
+            "type": "string",
+            "example": "My Cool App"
+          },
+          "projectDir": {
+            "type": "string",
+            "description": "Absolute working directory under WORKSPACE_DIR.",
+            "example": "/workspace/my-cool-app"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-06-03T10:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "projectDir",
+          "createdAt"
+        ]
+      },
+      "CreateProjectRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-facing project name. Slugified into the immutable id and directory name.",
+            "example": "My Cool App"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "ListProjectsResponse": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectInfo"
+            }
+          }
+        },
+        "required": [
+          "projects"
+        ]
+      },
+      "SessionRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "01J9Z..."
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-05-17T10:00:00.000Z"
+          },
+          "firstMessage": {
+            "type": "string",
+            "description": "First user message; empty for never-prompted sessions."
+          },
+          "messageCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "firstMessage",
+          "messageCount"
+        ]
+      },
+      "ListSessionsResponse": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionRow"
+            }
+          }
+        },
+        "required": [
+          "sessions"
+        ]
+      },
       "CreateSessionResponse": {
         "type": "object",
         "properties": {
@@ -497,15 +600,15 @@
         "type": "object",
         "properties": {
           "model": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/AgentModelRow"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -557,8 +660,10 @@
           },
           "messages": {
             "type": "array",
-            "items": {},
-            "description": "Pi-shaped message objects (role + content array). Opaque here."
+            "items": {
+              "$ref": "#/components/schemas/AgentMessage"
+            },
+            "description": "Pi-shaped message objects. Forwarded as-is at runtime; published as AgentMessage[] in the contract."
           }
         },
         "required": [
@@ -571,8 +676,10 @@
         "properties": {
           "requests": {
             "type": "array",
-            "items": {},
-            "description": "Pending extension UI request events. Shape follows Pi RPC extension_ui_request events."
+            "items": {
+              "$ref": "#/components/schemas/ExtensionUiRequest"
+            },
+            "description": "Pending extension UI request events. Forwarded as-is at runtime; published as ExtensionUiRequest[] in the contract."
           }
         },
         "required": [
@@ -632,83 +739,1842 @@
           "text"
         ]
       },
-      "HealthResponse": {
+      "WireEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "select"
+              },
+              "title": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title",
+              "options"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "confirm"
+              },
+              "title": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "input"
+              },
+              "title": {
+                "type": "string"
+              },
+              "placeholder": {
+                "type": "string"
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "editor"
+              },
+              "title": {
+                "type": "string"
+              },
+              "prefill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "notify"
+              },
+              "message": {
+                "type": "string"
+              },
+              "notifyType": {
+                "oneOf": [
+                  {
+                    "const": "info"
+                  },
+                  {
+                    "const": "warning"
+                  },
+                  {
+                    "const": "error"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setStatus"
+              },
+              "statusKey": {
+                "type": "string"
+              },
+              "statusText": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "statusKey"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setWidget"
+              },
+              "widgetKey": {
+                "type": "string"
+              },
+              "widgetLines": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "widgetPlacement": {
+                "oneOf": [
+                  {
+                    "const": "aboveEditor"
+                  },
+                  {
+                    "const": "belowEditor"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "widgetKey"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setTitle"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "set_editor_text"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "text"
+            ]
+          },
+          {
+            "$ref": "#/components/schemas/ExtensionErrorEvent"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "agent_start"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "turn_start"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "turn_end"
+              },
+              "message": {
+                "$ref": "#/components/schemas/AgentMessage"
+              },
+              "toolResults": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ToolResultMessageany_o1"
+                }
+              }
+            },
+            "required": [
+              "type",
+              "message",
+              "toolResults"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "message_start"
+              },
+              "message": {
+                "$ref": "#/components/schemas/AgentMessage"
+              }
+            },
+            "required": [
+              "type",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "message_update"
+              },
+              "message": {
+                "$ref": "#/components/schemas/AgentMessage"
+              },
+              "assistantMessageEvent": {
+                "$ref": "#/components/schemas/AssistantMessageEvent"
+              }
+            },
+            "required": [
+              "type",
+              "message",
+              "assistantMessageEvent"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "message_end"
+              },
+              "message": {
+                "$ref": "#/components/schemas/AgentMessage"
+              }
+            },
+            "required": [
+              "type",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "tool_execution_start"
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "args": {}
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "toolName",
+              "args"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "tool_execution_update"
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "args": {},
+              "partialResult": {}
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "toolName",
+              "args",
+              "partialResult"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "tool_execution_end"
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "result": {},
+              "isError": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "toolName",
+              "result",
+              "isError"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "agent_end"
+              },
+              "messages": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AgentMessage"
+                }
+              },
+              "willRetry": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "messages",
+              "willRetry"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "queue_update"
+              },
+              "steering": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "followUp": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "type",
+              "steering",
+              "followUp"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "compaction_start"
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "const": "manual"
+                  },
+                  {
+                    "const": "threshold"
+                  },
+                  {
+                    "const": "overflow"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "session_info_changed"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "thinking_level_changed"
+              },
+              "level": {
+                "$ref": "#/components/schemas/ThinkingLevel"
+              }
+            },
+            "required": [
+              "type",
+              "level"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "compaction_end"
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "const": "manual"
+                  },
+                  {
+                    "const": "threshold"
+                  },
+                  {
+                    "const": "overflow"
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/CompactionResultunknown"
+              },
+              "aborted": {
+                "type": "boolean"
+              },
+              "willRetry": {
+                "type": "boolean"
+              },
+              "errorMessage": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "reason",
+              "aborted",
+              "willRetry"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "auto_retry_start"
+              },
+              "attempt": {
+                "type": "number"
+              },
+              "maxAttempts": {
+                "type": "number"
+              },
+              "delayMs": {
+                "type": "number"
+              },
+              "errorMessage": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "attempt",
+              "maxAttempts",
+              "delayMs",
+              "errorMessage"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "auto_retry_end"
+              },
+              "success": {
+                "type": "boolean"
+              },
+              "attempt": {
+                "type": "number"
+              },
+              "finalError": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "success",
+              "attempt"
+            ]
+          }
+        ],
+        "description": "Every JSON event agent-server forwards on `GET …/sessions/{id}/events`."
+      },
+      "ExtensionErrorEvent": {
         "type": "object",
         "properties": {
-          "ok": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
+          "type": {
+            "const": "extension_error"
           },
-          "service": {
-            "type": "string",
-            "enum": [
-              "agent-server"
-            ]
-          },
-          "time": {
+          "extensionPath": {
             "type": "string"
           },
-          "channels": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "number"
-            },
-            "description": "Map of SSE channel name → current subscriber count."
+          "event": {
+            "type": "string",
+            "description": "The pi lifecycle event during which the error occurred (e.g. \"session_start\")."
+          },
+          "error": {
+            "type": "string"
+          },
+          "stack": {
+            "type": "string"
           }
         },
         "required": [
-          "ok",
-          "service",
-          "time",
-          "channels"
+          "type",
+          "extensionPath",
+          "error"
+        ],
+        "description": "Emitted when a pi extension handler throws; surfaced to the UI for visibility."
+      },
+      "AgentMessage": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/UserMessage"
+          },
+          {
+            "$ref": "#/components/schemas/AssistantMessage"
+          },
+          {
+            "$ref": "#/components/schemas/ToolResultMessageany"
+          },
+          {
+            "$ref": "#/components/schemas/BashExecutionMessage"
+          },
+          {
+            "$ref": "#/components/schemas/CustomMessageunknown"
+          },
+          {
+            "$ref": "#/components/schemas/BranchSummaryMessage"
+          },
+          {
+            "$ref": "#/components/schemas/CompactionSummaryMessage"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "role",
+          "mapping": {
+            "user": "#/components/schemas/UserMessage",
+            "assistant": "#/components/schemas/AssistantMessage",
+            "toolResult": "#/components/schemas/ToolResultMessageany",
+            "bashExecution": "#/components/schemas/BashExecutionMessage",
+            "custom": "#/components/schemas/CustomMessageunknown",
+            "branchSummary": "#/components/schemas/BranchSummaryMessage",
+            "compactionSummary": "#/components/schemas/CompactionSummaryMessage"
+          }
+        },
+        "description": "AgentMessage: Union of LLM messages + custom messages.\nThis abstraction allows apps to add custom message types while maintaining\ntype safety and compatibility with the base LLM messages."
+      },
+      "UserMessage": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "user"
+          },
+          "content": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TextContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageContent"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "text": "#/components/schemas/TextContent",
+                      "image": "#/components/schemas/ImageContent"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "content",
+          "timestamp"
+        ]
+      },
+      "TextContent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "text"
+          },
+          "text": {
+            "type": "string"
+          },
+          "textSignature": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ]
+      },
+      "ImageContent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "image"
+          },
+          "data": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "data",
+          "mimeType"
+        ]
+      },
+      "AssistantMessage": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "assistant"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextContent"
+                },
+                {
+                  "$ref": "#/components/schemas/ThinkingContent"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolCall"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "text": "#/components/schemas/TextContent",
+                  "thinking": "#/components/schemas/ThinkingContent",
+                  "toolCall": "#/components/schemas/ToolCall"
+                }
+              }
+            }
+          },
+          "api": {
+            "$ref": "#/components/schemas/Api"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "responseModel": {
+            "type": "string"
+          },
+          "responseId": {
+            "type": "string"
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantMessageDiagnostic"
+            }
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          },
+          "stopReason": {
+            "$ref": "#/components/schemas/StopReason"
+          },
+          "errorMessage": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "content",
+          "api",
+          "provider",
+          "model",
+          "usage",
+          "stopReason",
+          "timestamp"
+        ]
+      },
+      "ThinkingContent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "thinking"
+          },
+          "thinking": {
+            "type": "string"
+          },
+          "thinkingSignature": {
+            "type": "string"
+          },
+          "redacted": {
+            "type": "boolean",
+            "description": "When true, the thinking content was redacted by safety filters. The opaque\nencrypted payload is stored in `thinkingSignature` so it can be passed back\nto the API for multi-turn continuity."
+          }
+        },
+        "required": [
+          "type",
+          "thinking"
+        ]
+      },
+      "ToolCall": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "toolCall"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "arguments": {
+            "$ref": "#/components/schemas/Recordstringany"
+          },
+          "thoughtSignature": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "name",
+          "arguments"
+        ]
+      },
+      "Recordstringany": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "description": "Construct a type with a set of properties K of type T",
+        "additionalProperties": {}
+      },
+      "Api": {
+        "type": "string"
+      },
+      "AssistantMessageDiagnostic": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          },
+          "error": {
+            "$ref": "#/components/schemas/DiagnosticErrorInfo"
+          },
+          "details": {
+            "$ref": "#/components/schemas/Recordstringunknown"
+          }
+        },
+        "required": [
+          "type",
+          "timestamp"
+        ]
+      },
+      "DiagnosticErrorInfo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "stack": {
+            "type": "string"
+          },
+          "code": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "Recordstringunknown": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "description": "Construct a type with a set of properties K of type T",
+        "additionalProperties": {}
+      },
+      "Usage": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "number"
+          },
+          "output": {
+            "type": "number"
+          },
+          "cacheRead": {
+            "type": "number"
+          },
+          "cacheWrite": {
+            "type": "number"
+          },
+          "totalTokens": {
+            "type": "number"
+          },
+          "cost": {
+            "type": "object",
+            "properties": {
+              "input": {
+                "type": "number"
+              },
+              "output": {
+                "type": "number"
+              },
+              "cacheRead": {
+                "type": "number"
+              },
+              "cacheWrite": {
+                "type": "number"
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "input",
+              "output",
+              "cacheRead",
+              "cacheWrite",
+              "total"
+            ]
+          }
+        },
+        "required": [
+          "input",
+          "output",
+          "cacheRead",
+          "cacheWrite",
+          "totalTokens",
+          "cost"
+        ]
+      },
+      "StopReason": {
+        "oneOf": [
+          {
+            "const": "error"
+          },
+          {
+            "const": "stop"
+          },
+          {
+            "const": "length"
+          },
+          {
+            "const": "toolUse"
+          },
+          {
+            "const": "aborted"
+          }
+        ]
+      },
+      "ToolResultMessageany": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "toolResult"
+          },
+          "toolCallId": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextContent"
+                },
+                {
+                  "$ref": "#/components/schemas/ImageContent"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "text": "#/components/schemas/TextContent",
+                  "image": "#/components/schemas/ImageContent"
+                }
+              }
+            }
+          },
+          "details": {},
+          "isError": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "toolCallId",
+          "toolName",
+          "content",
+          "isError",
+          "timestamp"
+        ]
+      },
+      "BashExecutionMessage": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "bashExecution"
+          },
+          "command": {
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          },
+          "exitCode": {
+            "type": "number"
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "fullOutputPath": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          },
+          "excludeFromContext": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "role",
+          "command",
+          "output",
+          "cancelled",
+          "truncated",
+          "timestamp"
+        ]
+      },
+      "CustomMessageunknown": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "custom"
+          },
+          "customType": {
+            "type": "string"
+          },
+          "content": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TextContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageContent"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "text": "#/components/schemas/TextContent",
+                      "image": "#/components/schemas/ImageContent"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "display": {
+            "type": "boolean"
+          },
+          "details": {},
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "customType",
+          "content",
+          "display",
+          "timestamp"
+        ]
+      },
+      "BranchSummaryMessage": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "branchSummary"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "fromId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "summary",
+          "fromId",
+          "timestamp"
+        ]
+      },
+      "CompactionSummaryMessage": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "compactionSummary"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tokensBefore": {
+            "type": "number"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "summary",
+          "tokensBefore",
+          "timestamp"
+        ]
+      },
+      "ToolResultMessageany_o1": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "toolResult"
+          },
+          "toolCallId": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextContent"
+                },
+                {
+                  "$ref": "#/components/schemas/ImageContent"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "text": "#/components/schemas/TextContent",
+                  "image": "#/components/schemas/ImageContent"
+                }
+              }
+            }
+          },
+          "details": {},
+          "isError": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "toolCallId",
+          "toolName",
+          "content",
+          "isError",
+          "timestamp"
+        ]
+      },
+      "AssistantMessageEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "start"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "text_start"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "text_delta"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "delta": {
+                "type": "string"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "delta",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "text_end"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "content": {
+                "type": "string"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "content",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "thinking_start"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "thinking_delta"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "delta": {
+                "type": "string"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "delta",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "thinking_end"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "content": {
+                "type": "string"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "content",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "toolcall_start"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "toolcall_delta"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "delta": {
+                "type": "string"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "delta",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "toolcall_end"
+              },
+              "contentIndex": {
+                "type": "number"
+              },
+              "toolCall": {
+                "$ref": "#/components/schemas/ToolCall"
+              },
+              "partial": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "contentIndex",
+              "toolCall",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "done"
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "const": "stop"
+                  },
+                  {
+                    "const": "length"
+                  },
+                  {
+                    "const": "toolUse"
+                  }
+                ]
+              },
+              "message": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "reason",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "error"
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "const": "error"
+                  },
+                  {
+                    "const": "aborted"
+                  }
+                ]
+              },
+              "error": {
+                "$ref": "#/components/schemas/AssistantMessage"
+              }
+            },
+            "required": [
+              "type",
+              "reason",
+              "error"
+            ]
+          }
+        ],
+        "description": "Event protocol for AssistantMessageEventStream.\n\nStreams should emit `start` before partial updates, then terminate with either:\n- `done` carrying the final successful AssistantMessage, or\n- `error` carrying the final AssistantMessage with stopReason \"error\" or \"aborted\"\n  and errorMessage."
+      },
+      "CompactionResultunknown": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "firstKeptEntryId": {
+            "type": "string"
+          },
+          "tokensBefore": {
+            "type": "number"
+          },
+          "details": {
+            "description": "Extension-specific data (e.g., ArtifactIndex, version markers for structured compaction)"
+          }
+        },
+        "required": [
+          "summary",
+          "firstKeptEntryId",
+          "tokensBefore"
+        ],
+        "description": "Result from compact() - SessionManager adds uuid/parentUuid when saving"
+      },
+      "ExtensionUiRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "select"
+              },
+              "title": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title",
+              "options"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "confirm"
+              },
+              "title": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "input"
+              },
+              "title": {
+                "type": "string"
+              },
+              "placeholder": {
+                "type": "string"
+              },
+              "timeout": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "editor"
+              },
+              "title": {
+                "type": "string"
+              },
+              "prefill": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "notify"
+              },
+              "message": {
+                "type": "string"
+              },
+              "notifyType": {
+                "oneOf": [
+                  {
+                    "const": "info"
+                  },
+                  {
+                    "const": "warning"
+                  },
+                  {
+                    "const": "error"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setStatus"
+              },
+              "statusKey": {
+                "type": "string"
+              },
+              "statusText": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "statusKey"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setWidget"
+              },
+              "widgetKey": {
+                "type": "string"
+              },
+              "widgetLines": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "widgetPlacement": {
+                "oneOf": [
+                  {
+                    "const": "aboveEditor"
+                  },
+                  {
+                    "const": "belowEditor"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "widgetKey"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "setTitle"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "extension_ui_request"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "set_editor_text"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "method",
+              "text"
+            ]
+          }
         ]
       }
     },
     "parameters": {}
   },
   "paths": {
-    "/v1/sessions": {
-      "get": {
-        "tags": [
-          "sessions"
-        ],
-        "summary": "List sessions (persisted + in-memory not yet flushed).",
-        "responses": {
-          "200": {
-            "description": "Sessions, newest first.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ListSessionsResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "sessions"
-        ],
-        "summary": "Create a new session.",
-        "responses": {
-          "200": {
-            "description": "Newly created session metadata.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateSessionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/sessions/models": {
       "get": {
+        "operationId": "listModels",
         "tags": [
           "models"
         ],
@@ -729,6 +2595,7 @@
     },
     "/v1/auth/providers": {
       "get": {
+        "operationId": "listAuthProviders",
         "tags": [
           "auth"
         ],
@@ -749,6 +2616,7 @@
     },
     "/v1/auth/providers/{provider}/api-key": {
       "put": {
+        "operationId": "setProviderApiKey",
         "tags": [
           "auth"
         ],
@@ -801,6 +2669,7 @@
     },
     "/v1/auth/providers/{provider}": {
       "delete": {
+        "operationId": "removeProviderCredential",
         "tags": [
           "auth"
         ],
@@ -843,6 +2712,7 @@
     },
     "/v1/auth/providers/{provider}/subscription/start": {
       "post": {
+        "operationId": "startProviderSubscriptionLogin",
         "tags": [
           "auth"
         ],
@@ -885,6 +2755,7 @@
     },
     "/v1/auth/subscription/{flowId}": {
       "get": {
+        "operationId": "getProviderSubscriptionLogin",
         "tags": [
           "auth"
         ],
@@ -924,6 +2795,7 @@
         }
       },
       "delete": {
+        "operationId": "cancelProviderSubscriptionLogin",
         "tags": [
           "auth"
         ],
@@ -965,6 +2837,7 @@
     },
     "/v1/auth/subscription/{flowId}/continue": {
       "post": {
+        "operationId": "continueProviderSubscriptionLogin",
         "tags": [
           "auth"
         ],
@@ -1026,6 +2899,7 @@
     },
     "/v1/custom/providers": {
       "get": {
+        "operationId": "listCustomProviders",
         "tags": [
           "models"
         ],
@@ -1044,6 +2918,7 @@
         }
       },
       "put": {
+        "operationId": "upsertCustomProvider",
         "tags": [
           "models"
         ],
@@ -1084,6 +2959,7 @@
     },
     "/v1/custom/providers/{provider}": {
       "delete": {
+        "operationId": "removeCustomProvider",
         "tags": [
           "models"
         ],
@@ -1124,13 +3000,248 @@
         }
       }
     },
-    "/v1/sessions/{id}/settings": {
+    "/v1/healthz": {
       "get": {
+        "operationId": "healthCheck",
+        "tags": [
+          "meta"
+        ],
+        "summary": "Liveness + diagnostic counters.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects": {
+      "post": {
+        "operationId": "createProject",
+        "tags": [
+          "projects"
+        ],
+        "summary": "Create a project, or return the existing one (idempotent on name).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created or already-existing project.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Name does not yield a valid project id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listProjects",
+        "tags": [
+          "projects"
+        ],
+        "summary": "List registered projects, newest first.",
+        "responses": {
+          "200": {
+            "description": "Registered projects.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListProjectsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{id}": {
+      "get": {
+        "operationId": "getProject",
+        "tags": [
+          "projects"
+        ],
+        "summary": "Get a single project's metadata.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteProject",
+        "tags": [
+          "projects"
+        ],
+        "summary": "Remove a project: evict runtime, drop metadata, delete working dir + transcripts.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project removed if it existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{projectId}/sessions": {
+      "get": {
+        "operationId": "listSessions",
+        "tags": [
+          "sessions"
+        ],
+        "summary": "List sessions (persisted + in-memory not yet flushed).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sessions, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListSessionsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createSession",
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Create a new session.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newly created session metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{projectId}/sessions/{id}/settings": {
+      "get": {
+        "operationId": "getSessionSettings",
         "tags": [
           "models"
         ],
         "summary": "Return the active model/thinking settings for a session.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -1165,11 +3276,21 @@
         }
       },
       "patch": {
+        "operationId": "updateSessionSettings",
         "tags": [
           "models"
         ],
         "summary": "Switch model and/or thinking level while a session is idle.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -1244,13 +3365,23 @@
         }
       }
     },
-    "/v1/sessions/{id}": {
+    "/v1/projects/{projectId}/sessions/{id}": {
       "get": {
+        "operationId": "getSessionMessages",
         "tags": [
           "sessions"
         ],
         "summary": "Persisted message history for a session.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -1283,15 +3414,74 @@
             }
           }
         }
+      },
+      "delete": {
+        "operationId": "deleteSession",
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Permanently delete a session and its persisted history.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown session id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
-    "/v1/sessions/{id}/extension-ui": {
+    "/v1/projects/{projectId}/sessions/{id}/extension-ui": {
       "get": {
+        "operationId": "listExtensionUiRequests",
         "tags": [
           "extensions"
         ],
         "summary": "List pending extension UI requests for a session.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -1326,13 +3516,23 @@
         }
       }
     },
-    "/v1/sessions/{id}/extension-ui/{requestId}/response": {
+    "/v1/projects/{projectId}/sessions/{id}/extension-ui/{requestId}/response": {
       "post": {
+        "operationId": "respondExtensionUiRequest",
         "tags": [
           "extensions"
         ],
         "summary": "Resolve a pending extension UI request.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -1386,13 +3586,23 @@
         }
       }
     },
-    "/v1/sessions/{id}/prompt": {
+    "/v1/projects/{projectId}/sessions/{id}/prompt": {
       "post": {
+        "operationId": "sendPrompt",
         "tags": [
           "sessions"
         ],
         "summary": "Send a user prompt. Events flow over the SSE stream.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -1437,13 +3647,23 @@
         }
       }
     },
-    "/v1/sessions/{id}/abort": {
+    "/v1/projects/{projectId}/sessions/{id}/abort": {
       "post": {
+        "operationId": "abortSession",
         "tags": [
           "sessions"
         ],
         "summary": "Abort the in-flight run on a session. No-op if idle.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -1478,33 +3698,24 @@
         }
       }
     },
-    "/v1/healthz": {
+    "/v1/projects/{projectId}/sessions/{id}/events": {
       "get": {
-        "tags": [
-          "meta"
-        ],
-        "summary": "Liveness + diagnostic counters.",
-        "responses": {
-          "200": {
-            "description": "OK.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/sessions/{id}/events": {
-      "get": {
+        "operationId": "streamSessionEvents",
         "tags": [
           "sessions"
         ],
         "summary": "Server-Sent Events stream of pi AgentSessionEvents for the session.",
+        "description": "Long-lived `text/event-stream`. Each `data:` line carries one JSON `AgentSessionEvent` (see the `AgentSessionEvent` schema). Non-JSON lines occur too: an initial `connected to <id>` line and periodic `heartbeat` keepalive events, both of which consumers ignore. The event payload is validated against this contract server-side before being forwarded.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
           {
             "schema": {
               "type": "string",
@@ -1517,11 +3728,11 @@
         ],
         "responses": {
           "200": {
-            "description": "SSE stream. Each event is `data: <json>` carrying a pi AgentSessionEvent.",
+            "description": "SSE stream. Each `data:` line is a JSON-encoded AgentSessionEvent.",
             "content": {
               "text/event-stream": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/WireEvent"
                 }
               }
             }

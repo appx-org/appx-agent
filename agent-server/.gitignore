@@ -1,6 +1,18 @@
 node_modules/
 dist/
+.gen/
 .env
 .env.local
 *.log
 .DS_Store
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Docs
+docs/misc/
+
+# Agents
+.pi/todos/

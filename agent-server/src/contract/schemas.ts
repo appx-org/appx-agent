@@ -7,11 +7,12 @@
  *   - generated TypeScript types for consumers (eventx-backend uses
  *     `openapi-typescript` against the published openapi.json)
  *
- * The pi-shaped AgentSessionEvent on the SSE stream is intentionally not
- * fully modeled here. Pi owns that contract; locking it down in two places
- * would drift. The SSE endpoint is documented in OpenAPI but typed loosely
- * (string content under `text/event-stream`); consumers parse `data:` JSON
- * payloads using their own knowledge of pi's event shape.
+ * The SSE `AgentSessionEvent` wire contract is NOT authored here. It is
+ * generated from pi's TypeScript types via typia (`scripts/genEventSchema.ts`
+ * → `eventSchema.generated.json`) and merged into the OpenAPI document by
+ * `openapiEventSchema.ts`, so consumers codegen the event/message types from
+ * the same `openapi.json` as the REST surface. pi stays the source of truth for
+ * its shapes; agent-server owns and versions the published contract.
  */
 import { z } from "@hono/zod-openapi";
 
@@ -118,7 +119,10 @@ export const ContinueOAuthFlowRequestSchema = z
 	.openapi("ContinueOAuthFlowRequest");
 
 export const OAuthFlowIdParamSchema = z.object({
-	flowId: z.string().min(1).openapi({ param: { name: "flowId", in: "path" } }),
+	flowId: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "flowId", in: "path" } }),
 });
 
 export const CustomProviderModelSchema = z
@@ -155,7 +159,10 @@ export const ListCustomProvidersResponseSchema = z
 
 export const UpsertCustomProviderRequestSchema = z
 	.object({
-		provider: z.string().min(1).regex(/^[a-zA-Z0-9_.:-]+$/),
+		provider: z
+			.string()
+			.min(1)
+			.regex(/^[a-zA-Z0-9_.:-]+$/),
 		name: z.string().optional(),
 		baseUrl: z.string().url(),
 		api: z.enum(["openai-completions", "openai-responses", "anthropic-messages"]),
@@ -166,7 +173,11 @@ export const UpsertCustomProviderRequestSchema = z
 
 export const SessionModelSettingsResponseSchema = z
 	.object({
-		model: AgentModelRowSchema.nullable(),
+		// Use a union (not `.nullable()`) so the OpenAPI emits
+		// `anyOf: [$ref, null]` → a clean `AgentModelRow | null` for consumers,
+		// rather than the `allOf: [$ref, {type:[object,null]}]` form that
+		// openapi-typescript renders as a broken `AgentModelRow & Record<string, never>`.
+		model: z.union([AgentModelRowSchema, z.null()]),
 		thinkingLevel: ThinkingLevelSchema,
 		availableThinkingLevels: z.array(ThinkingLevelSchema),
 		supportsThinking: z.boolean(),
@@ -190,16 +201,22 @@ export const CreateSessionResponseSchema = z
 	.openapi("CreateSessionResponse");
 
 /**
- * Pi message shape is rich (roles toolCall / toolResult, content parts,
- * tool ids, etc.). We forward whatever pi has persisted; the consumer
- * frontend interprets it. Documented as opaque objects to keep this
- * server's contract decoupled from pi's internal evolution.
+ * Pi message shapes are rich (roles toolCall / toolResult, content parts, tool
+ * ids, etc.) and owned by pi, not this server. At **runtime** we forward
+ * whatever pi has persisted without re-validating it (`z.array(z.unknown())`),
+ * so a new pi message field never makes this endpoint 500.
+ *
+ * In the **published contract**, though, the array items are rewritten to
+ * `$ref` the canonical `AgentMessage` component (see `openapiEventSchema.ts`),
+ * so SDK consumers get the real message union instead of `unknown[]` — the
+ * client has to parse these, so the type is the whole point.
  */
 export const SessionMessagesResponseSchema = z
 	.object({
 		id: z.string(),
 		messages: z.array(z.unknown()).openapi({
-			description: "Pi-shaped message objects (role + content array). Opaque here.",
+			description:
+				"Pi-shaped message objects. Forwarded as-is at runtime; published as AgentMessage[] in the contract.",
 		}),
 	})
 	.openapi("SessionMessagesResponse");
@@ -217,7 +234,10 @@ export const OkResponseSchema = z
 	.openapi("OkResponse");
 
 export const ExtensionUiRequestIdParamSchema = z.object({
-	requestId: z.string().min(1).openapi({ param: { name: "requestId", in: "path" } }),
+	requestId: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "requestId", in: "path" } }),
 });
 
 export const ExtensionUiResponseRequestSchema = z
@@ -230,8 +250,11 @@ export const ExtensionUiResponseRequestSchema = z
 
 export const PendingExtensionUiRequestsResponseSchema = z
 	.object({
+		// Runtime-permissive (forwarded pi RPC events); published as ExtensionUiRequest[]
+		// in the contract via $ref rewrite in openapiEventSchema.ts.
 		requests: z.array(z.unknown()).openapi({
-			description: "Pending extension UI request events. Shape follows Pi RPC extension_ui_request events.",
+			description:
+				"Pending extension UI request events. Forwarded as-is at runtime; published as ExtensionUiRequest[] in the contract.",
 		}),
 	})
 	.openapi("PendingExtensionUiRequestsResponse");
@@ -254,8 +277,71 @@ export const HealthResponseSchema = z
 	.openapi("HealthResponse");
 
 export const SessionIdParamSchema = z.object({
-	id: z.string().min(1).openapi({ param: { name: "id", in: "path" } }),
+	projectId: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "projectId", in: "path" } }),
+	id: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "id", in: "path" } }),
 });
+
+/**
+ * Path params for project-scoped session collection routes (`/sessions`,
+ * `/sessions` POST) that don't carry a session `{id}`. The `{projectId}` is
+ * supplied by the mount prefix (`/v1/projects/{projectId}`); declaring it here
+ * keeps the published contract complete so generated clients can substitute it.
+ */
+export const ProjectScopeParamSchema = z.object({
+	projectId: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "projectId", in: "path" } }),
+});
+
+/** Path param for project lifecycle routes (`/v1/projects/{id}`). */
+export const ProjectIdParamSchema = z.object({
+	id: z
+		.string()
+		.min(1)
+		.openapi({ param: { name: "id", in: "path" } }),
+});
+
+/** Body for `POST /v1/projects`. Name-only — the id/dir are derived server-side. */
+export const CreateProjectRequestSchema = z
+	.object({
+		name: z.string().min(1).openapi({
+			example: "My Cool App",
+			description: "Human-facing project name. Slugified into the immutable id and directory name.",
+		}),
+	})
+	.openapi("CreateProjectRequest");
+
+/** Public view of a project returned by the lifecycle routes. */
+export const ProjectInfoSchema = z
+	.object({
+		id: z.string().openapi({
+			example: "my-cool-app",
+			description: "Immutable slug; registry key, route param, and directory name.",
+		}),
+		name: z.string().openapi({ example: "My Cool App" }),
+		projectDir: z.string().openapi({
+			example: "/workspace/my-cool-app",
+			description: "Absolute working directory under WORKSPACE_DIR.",
+		}),
+		createdAt: z.string().openapi({
+			example: "2026-06-03T10:00:00.000Z",
+			description: "ISO-8601 UTC timestamp",
+		}),
+	})
+	.openapi("ProjectInfo");
+
+export const ListProjectsResponseSchema = z
+	.object({
+		projects: z.array(ProjectInfoSchema),
+	})
+	.openapi("ListProjectsResponse");
 
 export const ProviderParamSchema = z.object({
 	provider: z
