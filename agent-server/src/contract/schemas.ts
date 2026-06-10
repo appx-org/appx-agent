@@ -104,6 +104,13 @@ export const OAuthFlowStateSchema = z
 				message: z.string(),
 				placeholder: z.string().optional(),
 				allowEmpty: z.boolean().optional(),
+				options: z
+					.array(z.object({ id: z.string(), label: z.string() }))
+					.optional()
+					.openapi({
+						description:
+							"When present, the flow expects `continue` to be called with one of these option ids as the value.",
+					}),
 			})
 			.optional(),
 		progress: z.array(z.string()),

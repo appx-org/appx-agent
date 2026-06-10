@@ -249,6 +249,25 @@
               },
               "allowEmpty": {
                 "type": "boolean"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label"
+                  ]
+                },
+                "description": "When present, the flow expects `continue` to be called with one of these option ids as the value."
               }
             },
             "required": [
@@ -2566,7 +2585,8 @@
               "text"
             ]
           }
-        ]
+        ],
+        "description": "Emitted when an extension needs user input"
       }
     },
     "parameters": {}

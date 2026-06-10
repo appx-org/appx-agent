@@ -120,7 +120,7 @@ type WireEvent = components["schemas"]["WireEvent"]; // SSE events (EventSource)
 type AgentMessage = components["schemas"]["AgentMessage"];
 ```
 
-> **Reference implementation:** `lanquest`'s `agent-chat-ui` package does exactly
+> **Reference implementation:** `lanquest`'s `agent-client` package does exactly
 > this — `npm run gen:api` regenerates the types, `core/types.ts` re-exports clean
 > aliases over `components['schemas']`, and `core/client.ts` wraps `openapi-fetch`.
 > Every route carries an `operationId`, so the generated `operations` map and any

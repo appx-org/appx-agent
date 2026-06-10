@@ -1852,7 +1852,8 @@
               "text"
             ]
           }
-        ]
+        ],
+        "description": "Emitted when an extension needs user input"
       }
     }
   },

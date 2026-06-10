@@ -43,10 +43,17 @@ export type AgentAuthProviderRow = {
 	availableModelCount: number;
 };
 
+export type AgentAuthSelectOption = {
+	id: string;
+	label: string;
+};
+
 export type AgentAuthPrompt = {
 	message: string;
 	placeholder?: string;
 	allowEmpty?: boolean;
+	/** Present when the flow expects the caller to choose one of these options by id. */
+	options?: AgentAuthSelectOption[];
 };
 
 export type AgentCustomProviderModel = {
@@ -100,6 +107,7 @@ type PendingOAuthFlow = AgentOAuthFlowState & {
 	promptReject?: (error: Error) => void;
 	manualResolve?: (value: string) => void;
 	manualReject?: (error: Error) => void;
+	selectResolve?: (value: string | undefined) => void;
 	waiters: Array<(state: AgentOAuthFlowState) => void>;
 	cleanupTimer?: ReturnType<typeof setTimeout>;
 };
@@ -359,6 +367,18 @@ export class AgentCredentialsService {
 					prompt: undefined,
 				});
 			},
+			onDeviceCode: (info) => {
+				const expiryNote = info.expiresInSeconds
+					? ` (expires in ${Math.round(info.expiresInSeconds / 60)} min)`
+					: "";
+				this.updateOAuthFlow(flow, {
+					status: "auth",
+					authUrl: info.verificationUri,
+					instructions: `Enter code ${info.userCode} at ${info.verificationUri}${expiryNote}.`,
+					prompt: undefined,
+					progress: [...flow.progress, `Device code: ${info.userCode}`],
+				});
+			},
 			onPrompt: (prompt) =>
 				new Promise<string>((resolve, reject) => {
 					flow.promptResolve = resolve;
@@ -375,6 +395,17 @@ export class AgentCredentialsService {
 			onProgress: (message) => {
 				this.updateOAuthFlow(flow, { progress: [...flow.progress, message] });
 			},
+			onSelect: (prompt) =>
+				new Promise<string | undefined>((resolve) => {
+					flow.selectResolve = resolve;
+					this.updateOAuthFlow(flow, {
+						status: "prompt",
+						prompt: {
+							message: prompt.message,
+							options: prompt.options.map((option) => ({ id: option.id, label: option.label })),
+						},
+					});
+				}),
 			onManualCodeInput: () =>
 				new Promise<string>((resolve, reject) => {
 					flow.manualResolve = resolve;
@@ -410,6 +441,19 @@ export class AgentCredentialsService {
 		const flow = this.pendingOAuthFlows.get(id);
 		if (!flow) throw new Error("subscription auth flow not found");
 		const trimmed = value.trim();
+
+		if (flow.selectResolve) {
+			if (!trimmed) throw new Error("a selection is required");
+			if (flow.prompt?.options && !flow.prompt.options.some((option) => option.id === trimmed)) {
+				throw new Error("selection is not one of the offered options");
+			}
+			const resolve = flow.selectResolve;
+			flow.selectResolve = undefined;
+			this.updateOAuthFlow(flow, { status: "waiting", prompt: undefined });
+			const waitVersion = flow.version;
+			resolve(trimmed);
+			return this.waitForOAuthFlowUpdate(flow, waitVersion);
+		}
 
 		if (flow.promptResolve) {
 			if (!trimmed && !flow.prompt?.allowEmpty) throw new Error("value is required");
@@ -447,6 +491,8 @@ export class AgentCredentialsService {
 		flow.abortController.abort();
 		flow.promptReject?.(new Error("Login cancelled"));
 		flow.manualReject?.(new Error("Login cancelled"));
+		flow.selectResolve?.(undefined);
+		flow.selectResolve = undefined;
 		this.updateOAuthFlow(flow, { status: "cancelled", error: "Login cancelled" });
 		this.scheduleOAuthFlowCleanup(flow, 60_000);
 		return this.oauthFlowState(flow);

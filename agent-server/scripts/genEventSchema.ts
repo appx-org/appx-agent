@@ -34,6 +34,16 @@ function safeName(name: string): string {
 }
 
 /**
+ * Stable published contract names for components typia names after their
+ * upstream pi type. Keeps our SSE contract decoupled from pi's internal type
+ * names (an Anti-Corruption Layer concern) so a pi rename can't churn the
+ * published schema or break downstream codegen.
+ */
+const CONTRACT_RENAMES: Readonly<Record<string, string>> = {
+	RpcExtensionUIRequest: "ExtensionUiRequest",
+};
+
+/**
  * Rename component schemas with unsafe characters and rewrite every `$ref` to
  * match. Longer names are replaced first so a renamed name that is a prefix of
  * another (e.g. `Foo` vs `Foo.o1`) can't partially clobber it.
@@ -41,7 +51,8 @@ function safeName(name: string): string {
 function sanitize(collection: JsonSchemaCollection): JsonSchemaCollection {
 	const rename = new Map<string, string>();
 	for (const key of Object.keys(collection.components.schemas)) {
-		const safe = safeName(key);
+		const contractName = CONTRACT_RENAMES[key];
+		const safe = safeName(contractName ?? key);
 		if (safe !== key) rename.set(key, safe);
 	}
 
