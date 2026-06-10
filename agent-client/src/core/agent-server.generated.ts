@@ -418,6 +418,11 @@ export interface components {
                 message: string;
                 placeholder?: string;
                 allowEmpty?: boolean;
+                /** @description When present, the flow expects `continue` to be called with one of these option ids as the value. */
+                options?: {
+                    id: string;
+                    label: string;
+                }[];
             };
             progress: string[];
             error?: string;
@@ -995,6 +1000,7 @@ export interface components {
             /** @description Extension-specific data (e.g., ArtifactIndex, version markers for structured compaction) */
             details?: unknown;
         };
+        /** @description Emitted when an extension needs user input */
         ExtensionUiRequest: {
             /** @constant */
             type: "extension_ui_request";
