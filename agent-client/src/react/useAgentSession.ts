@@ -44,6 +44,9 @@ export function useAgentSession(projectId: string, sessionId: string | null): Us
       () => (sessionId ? store.getSnapshot(projectId, sessionId) : initialSessionState),
       [store, projectId, sessionId],
     ),
+    // Server snapshot: SSR/hydration has no live store, so use the inert initial
+    // state. Required by React for server-rendered consumers (e.g. Next.js).
+    () => initialSessionState,
   );
 
   const sendPrompt = useCallback(
