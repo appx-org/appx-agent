@@ -30,6 +30,13 @@ adduser --disabled-password --gecos "" spike
 usermod -aG docker spike
 echo 'spike ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/spike && chmod 0440 /etc/sudoers.d/spike
 
+# SSH access for spike: the account has NO password (--disabled-password locks
+# it), so reuse the key Hetzner provisioned for root.
+mkdir -p /home/spike/.ssh
+cp /root/.ssh/authorized_keys /home/spike/.ssh/authorized_keys
+chown -R spike:spike /home/spike/.ssh
+chmod 700 /home/spike/.ssh && chmod 600 /home/spike/.ssh/authorized_keys
+
 # Swap (mandatory on a 4 GB box; harmless on bigger ones)
 fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
 echo '/swapfile none swap sw 0 0' >> /etc/fstab
@@ -129,6 +136,7 @@ You are NOT building agent-server integration, prompts, or anything product-shap
 ### T2 — Minimise and justify the flag set
 - [ ] Deletion-test every `docker run` security flag and every host-level change: remove one, re-run `smoke.sh`, record the exact error it causes (or remove it permanently if nothing breaks)
 - [ ] Try replacing `seccomp=unconfined` with a tailored profile (Podman ships one that allows `mount`; see hints). If it works, prefer it; if not, record why — `unconfined` is acceptable for now with a documented TODO
+- [ ] **Outer-runtime sub-question (informs appx Stage 3):** the host runtime can be docker *or* podman. Podman's default seccomp profile allows `mount(2)` where docker's blocks it, so a podman *outer* may not need `seccomp=unconfined` at all. If podman is available on the box, run the same nested test with `podman run` as the outer command and record which flags become unnecessary. This decides whether `system-setup.sh` should prefer podman-on-host for a smaller attack surface
 - [ ] Outcome: `run-outer.sh` contains only flags that each carry a one-line justification in findings
 
 ### T3 — Persistence and restart semantics
@@ -138,6 +146,7 @@ You are NOT building agent-server integration, prompts, or anything product-shap
 
 ### T4 — Storage driver determination
 - [ ] The draft pins `fuse-overlayfs`. Test native rootless overlayfs (kernel ≥ 5.13 supports it; this host is 6.8+): remove `mount_program` from `storage.conf`, reset podman storage, re-run smoke. Record which works and which is faster; pin the winner
+- [ ] Last-resort fallback if both overlay variants fail: `driver = "vfs"` — needs no FUSE device and no overlay nesting at all, at the cost of full-copy layers (slow, disk-hungry). If only VFS works, that's a major finding: record it and flag before Stage 2 builds on it
 
 ### T5 — Findings
 - [ ] `container/SPIKE-FINDINGS.md` fully filled in (template provided). The Stage 2 image and appx's Stage 3 container-supervisor transcribe your flag set verbatim — incomplete findings = repeated debugging later
@@ -156,7 +165,9 @@ These are researched, not guessed — check them in this order when something EP
 5. **`XDG_RUNTIME_DIR`** must exist and be writable (no systemd-logind to create `/run/user/1000`). Draft uses `/tmp/runtime-builder` via entrypoint.
 6. **Use fully-qualified image names** (`docker.io/library/nginx:alpine`) — Ubuntu's podman has no unqualified-search registries configured and will error or prompt.
 7. **`--userns=keep-id` is a podman flag, not docker.** The reference doc's draft run command mixes them up; ignore it. With docker, "unprivileged" = `USER builder` in the image + no added caps.
-8. **Sanity-check trick:** `quay.io/podman/stable` is the upstream podman-in-container reference image. If our image fails mysteriously, run the same nested command in `podman/stable` with the same docker flags — if that also fails, the problem is host/flags; if it passes, the problem is our Dockerfile.
+8. **Sanity-check trick:** `quay.io/podman/stable` is the upstream podman-in-container reference image. If our image fails mysteriously, run the same nested command in `podman/stable` with the same docker flags — if that also fails, the problem is host/flags; if it passes, the problem is our Dockerfile. Note the image only solves the *in-image* half (packages, subuid, conf); the docker-run flags and host prereqs are required with it too.
+9. **Sanctioned fallback:** if our Ubuntu-based Dockerfile fights you past ~2 hours of in-image issues, switching the base to `quay.io/podman/stable` (adding the `builder` uid-1000 user on top) is an acceptable T1 outcome — record the trade-off (Fedora base, unpinned podman version) in findings and keep the rest of the constraints unchanged. Host-side flag minimisation (T2) is unaffected by the base choice. There is field evidence this matters: in-image config differences alone have made the difference between needing `--privileged` and not (stackoverflow.com/q/75244579).
+10. **Canonical reference:** Dan Walsh's "How to use Podman inside of a container" (redhat.com/en/blog/podman-inside-container) is the authoritative walkthrough of every rootful/rootless nesting combination; our candidate flag set matches its non-privileged rootless-in-docker recipe. Consult it before inventing anything novel.
 
 ## 6. Method
 
