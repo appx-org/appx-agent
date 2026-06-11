@@ -19,7 +19,7 @@ mkdir -p "${XDG_RUNTIME_DIR:-/tmp/runtime-$(id -un)}"
 # semantics; persistent state (images/containers metadata) lives in the
 # ~/.local/share/containers named volume and is untouched.
 rm -rf "${XDG_RUNTIME_DIR:?}/libpod" "${XDG_RUNTIME_DIR:?}/containers" \
-       "${XDG_RUNTIME_DIR:?}/netns" 2>/dev/null || true
+       "${XDG_RUNTIME_DIR:?}/netns" "${XDG_RUNTIME_DIR:?}/crun" 2>/dev/null || true
 
 echo "[entrypoint] podman warmup starting ($(date -Is))"
 if time podman info > /tmp/podman-info.log 2>&1; then
