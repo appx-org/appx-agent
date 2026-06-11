@@ -45,11 +45,13 @@ RUN echo 'builder:100000:65536' > /etc/subuid \
 # Podman config for a systemd-less nested environment:
 #   cgroup_manager=cgroupfs  → no systemd inside this container
 #   events_logger=file       → no journald inside this container
-#   storage: overlay via fuse-overlayfs (T4: test native overlay, pin winner)
+#   storage: NATIVE rootless overlay (T4 winner: ~2.2x faster than
+#   fuse-overlayfs on this kernel 7.0 host, and needs no /dev/fuse device).
+#   fuse-overlayfs is left installed as a documented fallback only.
 RUN mkdir -p /home/builder/.config/containers \
  && printf '[containers]\ndefault_sysctls = []\n\n[engine]\ncgroup_manager = "cgroupfs"\nevents_logger = "file"\n' \
       > /home/builder/.config/containers/containers.conf \
- && printf '[storage]\ndriver = "overlay"\n\n[storage.options.overlay]\nmount_program = "/usr/bin/fuse-overlayfs"\n' \
+ && printf '[storage]\ndriver = "overlay"\n' \
       > /home/builder/.config/containers/storage.conf \
  && chown -R builder:builder /home/builder/.config
 
