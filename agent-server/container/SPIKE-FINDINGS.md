@@ -1,15 +1,21 @@
 # Stage 0 Spike Findings
 
-**Status:** NOT STARTED — fill in as you iterate, not at the end.
+**Status:** IN PROGRESS
 **Brief:** `docs/plans/stage0-spike-brief.md`
 
 ## Host
 
-- Provider / instance type:
-- Distro + kernel (`lsb_release -ds`, `uname -rm`):
-- Arch:
-- Docker version (`docker --version`):
-- Podman version inside outer (`podman --version`):
+- Provider / instance type: Hetzner KVM VM ("appx"), 4 vCPU, 7.6 GiB RAM, 75 GiB disk, 4 GiB swap
+- Distro + kernel (`lsb_release -ds`, `uname -rm`): **Ubuntu 26.04 LTS** (brief assumed 24.04 — see note), kernel `7.0.0-15-generic x86_64`
+- Arch: x86_64
+- Docker version (`docker --version`): Docker version 29.5.3, build d1c06ef (security options: apparmor, seccomp profile=builtin, cgroupns)
+- Podman version inside outer (`podman --version`): TBD
+
+**Note on distro:** the box is Ubuntu 26.04, not the 24.04 the brief targets. The
+relevant hardening is the same or stricter: `kernel.apparmor_restrict_unprivileged_userns = 1`
+(the 24.04 default that blocks nested userns) is active here too, and AppArmor is enabled
+(`/sys/module/apparmor/parameters/enabled = Y`). Findings should transfer to 24.04, but the
+operator should re-verify on a real 24.04 host before production.
 
 ## Result summary
 
