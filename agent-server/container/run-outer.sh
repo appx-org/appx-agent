@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Build and (re)start the outer builder container — Stage 0 spike.
 #
-# The flag set below is the CANDIDATE set. Stage 0's job (task T2 in
-# docs/plans/stage0-spike-brief.md) is to shrink it to the minimal proven set;
-# every surviving flag must have a one-line justification in SPIKE-FINDINGS.md.
+# The flag set below is the FINAL PROVEN minimal set (task T2 complete): each
+# flag was deletion-tested and carries a one-line justification below and in
+# SPIKE-FINDINGS.md. `./smoke.sh` exits 0 with exactly these flags.
 #
-# Hard constraints: no --privileged, no --cap-add SYS_ADMIN, non-root user.
+# Hard constraints honoured: no --privileged, no --cap-add SYS_ADMIN, non-root
+# user (outer main process is uid 1000 'builder').
 set -euo pipefail
 cd "$(dirname "$0")"
 
