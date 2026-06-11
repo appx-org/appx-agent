@@ -47,7 +47,7 @@ RUN echo 'builder:100000:65536' > /etc/subuid \
 #   events_logger=file       → no journald inside this container
 #   storage: overlay via fuse-overlayfs (T4: test native overlay, pin winner)
 RUN mkdir -p /home/builder/.config/containers \
- && printf '[engine]\ncgroup_manager = "cgroupfs"\nevents_logger = "file"\n' \
+ && printf '[containers]\ndefault_sysctls = []\n\n[engine]\ncgroup_manager = "cgroupfs"\nevents_logger = "file"\n' \
       > /home/builder/.config/containers/containers.conf \
  && printf '[storage]\ndriver = "overlay"\n\n[storage.options.overlay]\nmount_program = "/usr/bin/fuse-overlayfs"\n' \
       > /home/builder/.config/containers/storage.conf \

@@ -9,6 +9,18 @@ set -euo pipefail
 
 mkdir -p "${XDG_RUNTIME_DIR:-/tmp/runtime-$(id -un)}"
 
+# XDG_RUNTIME_DIR is supposed to be ephemeral (tmpfs, wiped on boot). Here it
+# lives in the container filesystem, so it SURVIVES `docker restart` — but the
+# rootless-podman pause process it points at does NOT. The stale pause-pid then
+# makes every podman call fail with:
+#   "invalid internal status, try resetting the pause process with
+#    'podman system migrate': could not find any running process"
+# Wiping the transient runtime state on each boot restores clean-start
+# semantics; persistent state (images/containers metadata) lives in the
+# ~/.local/share/containers named volume and is untouched.
+rm -rf "${XDG_RUNTIME_DIR:?}/libpod" "${XDG_RUNTIME_DIR:?}/containers" \
+       "${XDG_RUNTIME_DIR:?}/netns" 2>/dev/null || true
+
 echo "[entrypoint] podman warmup starting ($(date -Is))"
 if time podman info > /tmp/podman-info.log 2>&1; then
 	echo "[entrypoint] podman warmup OK"

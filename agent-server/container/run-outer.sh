@@ -17,8 +17,10 @@ docker rm -f "$NAME" 2>/dev/null || true
 
 docker run -d --name "$NAME" \
 	--device /dev/fuse \
+	--device /dev/net/tun \
 	--security-opt seccomp=unconfined \
 	--security-opt apparmor=unconfined \
+	--security-opt systempaths=unconfined \
 	-v builder-workspace:/workspace \
 	-v builder-podman-storage:/home/builder/.local/share/containers \
 	-p 127.0.0.1:10000-10009:10000-10009 \
