@@ -26,6 +26,10 @@ import type {
   AgentSessionInfo,
   AgentSessionModelSettings,
   AgentMessage,
+  AgentAuthProvider,
+  AgentOAuthFlowState,
+  AgentCustomProvider,
+  UpsertCustomProviderRequest,
   ExtensionUiRequest,
   ExtensionUiResponse,
   ThinkingLevel,
@@ -163,6 +167,90 @@ export class AgentClient {
 
   async listModels(): Promise<{ models: AgentModel[] }> {
     return this.unwrap(await this.http.GET("/v1/sessions/models"));
+  }
+
+  // --- Provider auth ------------------------------------------------------
+
+  /** Lists provider auth status (no secret values are returned). */
+  async listAuthProviders(): Promise<{ providers: AgentAuthProvider[] }> {
+    return this.unwrap(await this.http.GET("/v1/auth/providers"));
+  }
+
+  /** Stores an API key for a provider in the runtime's auth storage. */
+  async setProviderApiKey(provider: string, key: string): Promise<{ ok: true }> {
+    return this.unwrap(
+      await this.http.PUT("/v1/auth/providers/{provider}/api-key", {
+        params: { path: { provider } },
+        body: { key },
+      }),
+    );
+  }
+
+  /** Removes a stored provider credential from the runtime's auth storage. */
+  async deleteProviderCredential(provider: string): Promise<{ ok: true }> {
+    return this.unwrap(
+      await this.http.DELETE("/v1/auth/providers/{provider}", {
+        params: { path: { provider } },
+      }),
+    );
+  }
+
+  /** Starts a subscription (OAuth) login flow for a provider. */
+  async startProviderSubscription(provider: string): Promise<AgentOAuthFlowState> {
+    return this.unwrap(
+      await this.http.POST("/v1/auth/providers/{provider}/subscription/start", {
+        params: { path: { provider } },
+      }),
+    );
+  }
+
+  /** Reads the current state of a pending subscription login flow. */
+  async getSubscriptionFlow(flowId: string): Promise<AgentOAuthFlowState> {
+    return this.unwrap(
+      await this.http.GET("/v1/auth/subscription/{flowId}", {
+        params: { path: { flowId } },
+      }),
+    );
+  }
+
+  /** Continues a pending subscription flow with prompt input or a pasted redirect/code. */
+  async continueSubscriptionFlow(flowId: string, value: string): Promise<AgentOAuthFlowState> {
+    return this.unwrap(
+      await this.http.POST("/v1/auth/subscription/{flowId}/continue", {
+        params: { path: { flowId } },
+        body: { value },
+      }),
+    );
+  }
+
+  /** Cancels a pending subscription login flow. */
+  async cancelSubscriptionFlow(flowId: string): Promise<AgentOAuthFlowState> {
+    return this.unwrap(
+      await this.http.DELETE("/v1/auth/subscription/{flowId}", {
+        params: { path: { flowId } },
+      }),
+    );
+  }
+
+  // --- Custom providers ---------------------------------------------------
+
+  /** Lists custom (models.json) providers without secret values. */
+  async listCustomProviders(): Promise<{ providers: AgentCustomProvider[] }> {
+    return this.unwrap(await this.http.GET("/v1/custom/providers"));
+  }
+
+  /** Creates or updates a custom provider (e.g. a LiteLLM-compatible endpoint). */
+  async upsertCustomProvider(body: UpsertCustomProviderRequest): Promise<AgentCustomProvider> {
+    return this.unwrap(await this.http.PUT("/v1/custom/providers", { body }));
+  }
+
+  /** Removes a custom provider from models.json. */
+  async deleteCustomProvider(provider: string): Promise<{ ok: true }> {
+    return this.unwrap(
+      await this.http.DELETE("/v1/custom/providers/{provider}", {
+        params: { path: { provider } },
+      }),
+    );
   }
 
   // --- Sessions -----------------------------------------------------------

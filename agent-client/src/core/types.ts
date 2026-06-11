@@ -35,6 +35,23 @@ export type AgentSessionModelSettings = Schemas["SessionModelSettingsResponse"];
 export type ExtensionUiResponse = Schemas["ExtensionUiResponseRequest"];
 
 // ---------------------------------------------------------------------------
+// Credential / provider-auth DTOs (generated from the /v1/auth + /v1/custom contract)
+// ---------------------------------------------------------------------------
+
+/** Non-secret provider auth status from `GET /v1/auth/providers`. */
+export type AgentAuthProvider = Schemas["AuthProviderRow"];
+/** State of a subscription (OAuth) login flow. */
+export type AgentOAuthFlowState = Schemas["OAuthFlowState"];
+/** The wire API style a custom provider's model speaks. */
+export type AgentCustomProviderApi = NonNullable<Schemas["CustomProviderModel"]["api"]>;
+/** A single model definition within a custom provider. */
+export type AgentCustomProviderModel = Schemas["CustomProviderModel"];
+/** A custom (models.json) provider as returned by `GET /v1/custom/providers`. */
+export type AgentCustomProvider = Schemas["CustomProviderRow"];
+/** Body accepted by `PUT /v1/custom/providers`. */
+export type UpsertCustomProviderRequest = Schemas["UpsertCustomProviderRequest"];
+
+// ---------------------------------------------------------------------------
 // Transcript messages + content blocks (generated; canonical pi shapes)
 // ---------------------------------------------------------------------------
 

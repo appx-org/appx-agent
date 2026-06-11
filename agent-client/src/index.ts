@@ -29,6 +29,12 @@ export type {
   AgentModel,
   AgentSessionModelSettings,
   ExtensionUiResponse,
+  AgentAuthProvider,
+  AgentOAuthFlowState,
+  AgentCustomProvider,
+  AgentCustomProviderModel,
+  AgentCustomProviderApi,
+  UpsertCustomProviderRequest,
   Role,
   AgentMessage,
   MessageContent,
@@ -69,3 +75,5 @@ export { Markdown } from './react/Markdown';
 export type { MarkdownProps } from './react/Markdown';
 export { ExtensionRequestPanel, isBlockingRequest } from './react/ExtensionRequestPanel';
 export type { ExtensionRequestPanelProps, BlockingExtensionUiRequest } from './react/ExtensionRequestPanel';
+export { AgentSettings } from './react/AgentSettings';
+export type { AgentSettingsProps } from './react/AgentSettings';
