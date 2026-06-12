@@ -500,6 +500,35 @@
           "channels"
         ]
       },
+      "DeploymentTarget": {
+        "type": "object",
+        "properties": {
+          "port": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65535,
+            "description": "Reserved host port (non-privileged, 1024–65535).",
+            "example": 10007
+          },
+          "url": {
+            "type": "string",
+            "description": "Public URL appx exposes for this environment.",
+            "example": "https://eventx.example.com"
+          }
+        }
+      },
+      "Deployment": {
+        "type": "object",
+        "properties": {
+          "dev": {
+            "$ref": "#/components/schemas/DeploymentTarget"
+          },
+          "prod": {
+            "$ref": "#/components/schemas/DeploymentTarget"
+          }
+        },
+        "description": "Control-plane deployment metadata, if registered."
+      },
       "ProjectInfo": {
         "type": "object",
         "properties": {
@@ -521,6 +550,9 @@
             "type": "string",
             "description": "ISO-8601 UTC timestamp",
             "example": "2026-06-03T10:00:00.000Z"
+          },
+          "deployment": {
+            "$ref": "#/components/schemas/Deployment"
           }
         },
         "required": [
@@ -538,6 +570,16 @@
             "minLength": 1,
             "description": "Human-facing project name. Slugified into the immutable id and directory name.",
             "example": "My Cool App"
+          },
+          "deployment": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Deployment"
+              },
+              {
+                "description": "Optional control-plane deployment metadata (dev + prod ports/URLs). Idempotent re-POST updates it."
+              }
+            ]
           }
         },
         "required": [

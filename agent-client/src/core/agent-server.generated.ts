@@ -481,6 +481,23 @@ export interface components {
                 [key: string]: number;
             };
         };
+        DeploymentTarget: {
+            /**
+             * @description Reserved host port (non-privileged, 1024–65535).
+             * @example 10007
+             */
+            port?: number;
+            /**
+             * @description Public URL appx exposes for this environment.
+             * @example https://eventx.example.com
+             */
+            url?: string;
+        };
+        /** @description Control-plane deployment metadata, if registered. */
+        Deployment: {
+            dev?: components["schemas"]["DeploymentTarget"];
+            prod?: components["schemas"]["DeploymentTarget"];
+        };
         ProjectInfo: {
             /**
              * @description Immutable slug; registry key, route param, and directory name.
@@ -499,6 +516,7 @@ export interface components {
              * @example 2026-06-03T10:00:00.000Z
              */
             createdAt: string;
+            deployment?: components["schemas"]["Deployment"];
         };
         CreateProjectRequest: {
             /**
@@ -506,6 +524,7 @@ export interface components {
              * @example My Cool App
              */
             name: string;
+            deployment?: components["schemas"]["Deployment"] & unknown;
         };
         ListProjectsResponse: {
             projects: components["schemas"]["ProjectInfo"][];
