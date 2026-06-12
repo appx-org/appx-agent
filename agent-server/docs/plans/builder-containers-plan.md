@@ -1,7 +1,7 @@
 # Plan: Containerised Apps — agent-server Side
 
-**Date:** 2026-06-11
-**Status:** Draft
+**Date:** 2026-06-11 (updated 2026-06-12 with Stage 1 results)
+**Status:** Stage 0 ✅ done · Stage 1 ✅ code-complete + unit-tested (manual e2e pending) · Stages 2–4 pending
 **Scope:** Deployment metadata contract (dev + prod), app template seeding, two-container (dev/prod) deploy model, builder deploy skill/prompt, outer container image (nested rootless podman), smoke tests
 **Canonical architecture:** `docs/architecture/important/builder-container-architecture.md`
 **Sibling plan:** appx repo, `docs/plans/phase_9_plan.md` (control plane: port allocation, container supervision, subdomain routing)
@@ -27,7 +27,12 @@ Implement agent-server's half of the containerised apps architecture:
 
 agent-server stays appx-agnostic: it receives a generic `deployment` object (dev + prod `{port, url}` pairs) on project create and makes it available to the agent. It never knows how appx mints ports or subdomains — only that two pairs were handed to it.
 
-> **appx-side implication (track in `phase_9_plan.md`):** appx must allocate a **pair** of ports per project and route **two** subdomains (prod `…<domain>`, dev e.g. `…-dev.<domain>`). The 100-port publish cap therefore means ~50 projects, not 100 — revisit the cap there.
+> **appx-side implication (track in `phase_9_plan.md`):** appx must allocate a
+> **pair** of ports per project and route **two** subdomains (prod `…<domain>`,
+> dev e.g. `…-dev.<domain>`). **Resolved (2026-06-12):** the published/allocated
+> range was set to `10000–10199` (200 ports) so the pair model still supports
+> **100 projects**. The outer-container publish range (Stage 2/3 `run-outer.sh`)
+> and `phase_9_plan.md` D1 must match `10000-10199`.
 
 ---
 
@@ -143,13 +148,13 @@ Each project deploys as two inner containers built from the **same Dockerfile**
 
 ## Staging (shared with appx plan)
 
-| Stage | What | Repo focus |
-|---|---|---|
-| 0 | Nested rootless podman spike (timeboxed ~1 day) | agent-server |
-| 1 | Full user flow with agent-server **on host** ("podman without outer container") | both |
-| 2 | agent-server inside the outer container, started manually | agent-server |
-| 3 | appx creates/supervises the outer container at startup | appx |
-| 4 | Hardening (restarts, key stripping, resource limits) | both |
+| Stage | What | Repo focus | Status |
+|---|---|---|---|
+| 0 | Nested rootless podman spike (timeboxed ~1 day) | agent-server | ✅ done |
+| 1 | Full user flow with agent-server **on host** ("podman without outer container") | both | ✅ code + unit tests; manual e2e pending |
+| 2 | agent-server inside the outer container, started manually | agent-server | ⏭ next (Linux VM) |
+| 3 | appx creates/supervises the outer container at startup | appx | pending |
+| 4 | Hardening (restarts, key stripping, resource limits) | both | pending |
 
 Rationale: the user-visible flow (Stage 1) is ~80% of the value and is independent of the outer container; the outer container is packaging. The Stage 0 spike de-risks the one thing that could invalidate Stage 1 decisions — nested podman flag fragility ("works on host, breaks nested").
 
@@ -173,45 +178,96 @@ hardened host defaults intact.
 
 ---
 
-## Stage 1 — Deployment metadata + deploy skill (agent-server on host)
+## Stage 1 — Deployment metadata + deploy skill (agent-server on host) ✅ CODE COMPLETE
 
-### Contract & registry
+**Status (2026-06-12):** all code + unit tests landed in both repos; checks green
+(agent-server `typecheck`/`test` 116 pass/`check`; appx `task test`). The
+cross-repo **manual LLM e2e is the one remaining item** (needs a Linux box with
+a container runtime + an LLM key — see *Stage 1 e2e environment* below).
 
-- [ ] `src/contract`: add `deployment` (optional `{ dev?: {port?, url?}; prod?: {port?, url?} }`) to the create-project request and the `ProjectInfo` response schemas; regenerate `openapi.json`
-- [ ] `src/runtime/projectStore.ts`: `ProjectRecord` gains optional `deployment`; loader tolerates records without it (backward compatible)
-- [ ] `src/runtime/projectRegistry.ts`:
-  - `createProject({ name, deployment })` persists metadata; **same-name re-POST updates `deployment`** and rewrites the materialised file
-  - materialise `<projectDir>/.pi/deployment.json` (pretty-printed, stable key order) on create/update
-  - **template seeding (D5):** when the project dir is created fresh and `APPX_TEMPLATE_DIR` is set, recursively copy it in (skip `node_modules`/`.next`/`dist`/caches); leave existing dirs untouched. Lift orchestrator's `cpSync` + filter implementation
-- [ ] `src/http/projectsRoutes.ts`: accept/return the new field; validation: each present port must be an integer in 1024–65535 (reject privileged/garbage values at the boundary — fail fast)
-- [ ] `src/config.ts`: add `APPX_TEMPLATE_DIR` (optional; absent ⇒ no seeding)
+### What landed
 
-### Runtime / prompt
+**agent-server (this repo):**
+- [x] `src/contract/schemas.ts` + `openapi.json`: optional `deployment
+  { dev?, prod?: { port?, url? } }` on the create request and `ProjectInfo`;
+  port validated as an integer **1024–65535** → fail-fast **400** at the boundary.
+- [x] `src/runtime/projectStore.ts`: `ProjectRecord.deployment?` (loader tolerates
+  its absence — backward compatible) + `setDeployment`.
+- [x] `src/runtime/projectRegistry.ts`: `createProject({ name, deployment })`
+  persists metadata; **same-name re-POST updates it**; materialises
+  `.pi/deployment.json` (stable key order `dev→prod`, `port→url`; absent ⇒ no
+  file); **template seeding** via `cpSync` + skip-filter into fresh dirs only.
+- [x] `src/runtime/deployment.ts` (new): pure `buildDeploymentPromptSection()` +
+  `buildDeploymentJson()` — unit-tested without a runtime.
+- [x] `src/runtime/projectRuntime.ts`: appends the Deployment section **after**
+  `.pi/AGENTS.md` (`composeSystemPrompt`, never replacing it).
+- [x] `src/config.ts`: `APPX_TEMPLATE_DIR` (optional, existence-checked) +
+  `APP_CONTAINER_RUNTIME` (default `podman`).
+- [x] `builder-agent/skills/deploy-app/SKILL.md` (D6 conventions; references
+  `$APP_CONTAINER_RUNTIME`; never passes `*_API_KEY`).
+- [x] `builder-agent/templates/vite-spa/` (new): provisional Vite SPA — lean
+  multi-stage Dockerfile, single nginx runtime target, `USER nginx`, `listen
+  8080`, FQ image refs.
+- [x] Tests: `test/projectLifecycle.test.ts` (metadata round-trip, re-POST
+  update, file written/rewritten, absent ⇒ no file, seeding fresh-vs-existing) +
+  `test/deploymentPrompt.test.ts`.
+- [x] Local-dev wiring documented (`.env.example`, README): `APPX_TEMPLATE_DIR`,
+  `APP_CONTAINER_RUNTIME`, `PI_SKILL_PATHS` → `builder-agent/...`.
 
-- [ ] `src/config.ts`: add `APP_CONTAINER_RUNTIME` (default `"podman"`), validated non-empty string
-- [ ] `src/runtime/projectRuntime.ts`: extend `resolveSystemPrompt` (or a sibling helper) to append the generated Deployment section when the project has metadata. Keep generation in one pure function (`buildDeploymentPromptSection(deployment, containerRuntime)`) so it is unit-testable without a runtime
+**appx (sibling repo):**
+- [x] `internal/agentserver/client.go`: `EnsureProject(ctx, name, dep)` marshals
+  the nested `deployment` object, omitting empty environments/fields.
+- [x] `internal/project/store.go` + migration `000006_project_dev_port`:
+  atomic **DEV+PROD pair allocation**, capped at `PublishedPortRangeEnd =
+  10199` (**100 projects**); `assigned_port` kept as PROD, new `dev_port` column.
+- [x] `internal/project/project.go`: `Deployment`/`EnvTarget` types,
+  `ValidateName` rejects the reserved `-dev` suffix.
+- [x] `internal/project/manager.go`: `appURL()` builds prod/dev public URLs from
+  appx's external scheme/host/listen-port; payload sent on create + reconcile.
+- [x] `internal/server/router.go`: subdomain dispatcher selects DEV vs PROD port
+  from the `-dev` label; both stay behind auth; session cookie stripped to apps;
+  WebSocket upgrade passthrough verified by test.
 
-### Deploy skill
+**agent-client (consumer):**
+- [x] Re-synced `openapi/agent-server.json` + regenerated
+  `src/core/agent-server.generated.ts`; `AgentProject` (= `ProjectInfo`) gains an
+  optional `deployment?`. Additive, typecheck clean, 65 tests pass.
 
-- [ ] `builder-agent/skills/deploy-app/SKILL.md` with the conventions (DEV + PROD, per D6 — same build, two instances):
-  - read `.pi/deployment.json` for the dev/prod ports and URLs
-  - DEV (refine): `$APP_CONTAINER_RUNTIME build -t <project>-app:dev .` → `run -d --name <project>-app-dev -p <devPort>:<containerPort> <project>-app:dev`
-  - PROD (promote): `$APP_CONTAINER_RUNTIME build -t <project>-app:prod .` → `run -d --name <project>-app-prod -p <prodPort>:<containerPort> <project>-app:prod`
-  - no `--target`: the template's Dockerfile has one final (lean, non-root) image; DEV and PROD differ only by tag/instance/port
-  - redeploy: `stop && rm && build && run` under the same `--name` (idempotent; never accumulate containers); refinements rebuild **DEV only**, promote rebuilds PROD
-  - `<containerPort>` is a template detail (e.g. 8080); always map `-p <reserved host port>:<containerPort>`, never assume they're equal
-  - multi-container apps (db etc.): suffix names `<project>-db`, only the app publishes the reserved port(s); inter-container traffic via a `<project>` podman network
-  - health check before declaring success: `curl -fsS 127.0.0.1:<port>` with retries; report the relevant public URL to the user
-  - **never** pass `*_API_KEY` env vars into app containers
-- [ ] Wire the skill into local dev runs via `PI_SKILL_PATHS` (document in README); the outer image bakes it in at Stage 2
+### Deviations / notes from the original checklist
 
-### Tests (Stage 1)
+- **Cap raised to 100 projects** (`10000–10199`) per follow-up decision — the
+  original "~50 projects" note is superseded (see the blockquote above).
+- **Repo reorg:** the deploy skill + template moved under `builder-agent/`
+  (`builder-agent/skills/deploy-app`, `builder-agent/templates/vite-spa`); all
+  docs/paths updated. Stage 2 must bake from these paths.
+- **Deferred security hardening** (tracked in Stage 4): validate `deployment.url`
+  as a bounded URL in the zod schema (defence-in-depth against prompt injection
+  if the metadata source ever becomes less trusted — today the only producer is
+  appx, which builds it from a slug-validated name); add `.pi` to the template
+  `.dockerignore` (hygiene — keeps builder metadata out of the build context).
 
-- [ ] `test/projectLifecycle.test.ts`: deployment metadata (dev+prod) round-trips create → get → list; re-POST same name updates it; `.pi/deployment.json` written and rewritten; absent metadata ⇒ no file, no prompt section; **template seeding** copies into a fresh dir and skips an existing one
-- [ ] New `test/deploymentPrompt.test.ts`: `buildDeploymentPromptSection` output for dev-only / prod-only / both / absent metadata
-- [ ] Manual e2e (with appx running locally — see appx plan): create project in UI (seeded template runs immediately) → prompt a small change → DEV URL updates → promote → PROD URL reflects it. This is where skill iteration happens.
+### Tests (Stage 1) — done
 
-**Acceptance:** the full create → deploy → view → refine → redeploy loop works locally with agent-server run via `npm run dev` and Docker Desktop/podman as `APP_CONTAINER_RUNTIME`.
+- [x] `test/projectLifecycle.test.ts` (see above)
+- [x] `test/deploymentPrompt.test.ts` (dev-only / prod-only / both / absent)
+- [ ] **Manual e2e** (with appx running): create project in UI (seeded template
+  runs immediately) → prompt a small change → DEV URL updates → promote → PROD
+  URL reflects it. This is where skill iteration happens. **Pending — run on a
+  Linux box (see below).**
+
+### Stage 1 e2e environment
+
+The code path is host-mode (no outer container yet), so it can run anywhere with
+a container runtime + an LLM key. Two viable setups:
+- **macOS local** with Docker Desktop (`APP_CONTAINER_RUNTIME=docker`) — fastest
+  feedback loop for **prompt/skill iteration** (Risk #3), which is the real
+  purpose of the manual e2e. Recommended for the skill-quality pass.
+- **Linux box** (`podman`) — closer to the eventual nested target; do this once
+  to confirm the skill's literal commands behave the same under podman.
+
+**Acceptance:** the full create → deploy → view → refine → redeploy loop works
+locally with agent-server via `npm run dev` and Docker Desktop/podman as
+`APP_CONTAINER_RUNTIME`. *(Code + unit tests done; manual loop pending.)*
 
 ---
 
@@ -232,9 +288,39 @@ alive for exec" to "runs agent-server". Keep the proven flag set and the
   - keep the stale-runtime-state wipe + `podman info` warmup
   - replace `sleep infinity` with agent-server (env: `WORKSPACE_DIR=/workspace`, `ANTHROPIC_API_KEY`, `AGENT_SERVER_TOKEN`, `APP_CONTAINER_RUNTIME=podman`, `APPX_TEMPLATE_DIR=...`, `AGENT_SERVER_HOST=0.0.0.0` — the container boundary takes over loopback's role; the **publish** stays loopback-only on the host side)
 - [ ] `container/run-outer.sh` — extend the spike script:
-  - add `-p 127.0.0.1:4001:4001` (API) alongside the existing app-port range publish (now a **pair-aware** range; see appx plan for the revised cap given two ports/project)
+  - add `-p 127.0.0.1:4001:4001` (API) alongside the app-port range publish,
+    now `-p 127.0.0.1:10000-10199:10000-10199` (200 ports = 100 projects × a
+    DEV+PROD pair; must match appx's `PublishedPortRangeEnd = 10199`)
   - keep volumes (workspace + named podman-storage volume) and the proven security flags
 - [ ] Run the **same Stage 1 manual e2e** with host-run appx pointed at the container via `APPX_AGENT_SERVER_URL=http://127.0.0.1:4001` — zero appx code changes expected
+
+### Stage 2 environment — run on Linux, not macOS, and not the live prod box
+
+**Recommendation: do Stage 2 on a dedicated, disposable Ubuntu 24.04 Linux VM
+(a Hetzner box is ideal), separate from the production server.**
+
+Why:
+- **macOS cannot run the nested setup natively.** The proven recipe (file-cap
+  `newuidmap`, native rootless overlay, tailored seccomp) targets a real Linux
+  kernel's user namespaces. Nested rootless podman inside a container inside
+  Docker Desktop's VM is exactly the fragile "works on host, breaks nested"
+  territory the staging split exists to avoid. Keep macOS for Stage 1 flow/prompt
+  dev (host mode) only.
+- **A fresh Ubuntu 24.04 VM also retires the one open Stage 0 caveat** — the
+  spike box was 26.04 / kernel 7.0, and the in-image target is 24.04. Stage 2 on
+  24.04 doubles as that re-verification.
+- **Not the live production server:** Stage 2 installs docker, builds images, and
+  runs experimental nested containers — don't do that next to live appx + real
+  user apps. A separate cheap VM matching the prod OS gives "Linux truth" without
+  risking production. (When Stage 3 lands, the *production* box runs the
+  appx-supervised container; Stage 2 is the manual dress rehearsal for it.)
+- **Appx stays in host mode** for Stage 2: run appx on the same VM in `--http`
+  mode pointed at `APPX_AGENT_SERVER_URL=http://127.0.0.1:4001` — no appx code
+  changes, so this isolates "nested environment breaks the flow" from "appx
+  manages containers correctly" (that's Stage 3).
+- **CI parallel:** the deterministic `container-smoke.sh` (below) runs on GitHub
+  ubuntu runners (full VMs), so the infra chain is guarded on every relevant PR
+  independently of whichever VM you iterate on manually.
 
 ### Tests (Stage 2)
 
@@ -252,6 +338,17 @@ alive for exec" to "runs agent-server". Keep the proven flag set and the
 
 - [ ] Entrypoint resurrects inner apps after an outer restart: **wipe stale `XDG_RUNTIME_DIR` runtime state first**, then `podman start --all` (the spike proved bare `podman start --all` fails without the wipe; `entrypoint.sh` already does this — confirm it covers both DEV and PROD containers). Architecture doc limitation #6
 - [ ] Bash tool `spawnHook` strips `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `*_API_KEY` from child process env — defence in depth so keys can't leak into `podman run -e`-style invocations even by accident (OWASP secrets-management alignment; keys live in the process heap, not child envs)
+- [ ] **Validate `deployment.url`** in the create-project zod schema as a bounded
+  URL (`z.string().url().max(2048).optional()`) — defence-in-depth against prompt
+  injection via the URL that is interpolated into the agent's system prompt.
+  Today the only producer is appx (URL built from a slug-validated name + operator
+  base domain), so it is not attacker-controlled; this makes that a guarantee
+  rather than a property of the current caller. Requires an `openapi.json` regen +
+  agent-client snapshot re-sync.
+- [ ] **Add `.pi` to the app template `.dockerignore`** — hygiene so a generated
+  app never copies `.pi/deployment.json` / `.pi/AGENTS.md` into its build context
+  (no secrets there, and the final image already excludes it, but keep builder
+  metadata out of build layers).
 - [ ] Optional golden-prompt LLM smoke (manual, pre-release): "build a single-page todo app and deploy it" → assert HTTP 200 on the reserved port within N minutes. Catches prompt/skill regressions; not CI
 
 ---
@@ -300,7 +397,10 @@ rebuild-redeploy latency (a few seconds) proves to be real friction.
 2. **"Works on host, breaks nested"** — mitigated by D3 (`APP_CONTAINER_RUNTIME`) + skill conventions written against `deployment.json`, not host assumptions.
 3. **Skill quality** — the only part needing real-LLM iteration; isolated in Stage 1 where the feedback loop is fastest (no containers in the way).
 4. **Outer restart kills inner apps** — addressed in Stage 4 (stale-state wipe + `podman start --all`); appx UI already shows honest per-port health.
-5. **Two ports/project halves project density** under appx's published-port cap and doubles subdomains — tracked in `phase_9_plan.md`; revisit the cap.
+5. **Two ports/project** doubles subdomains and halves density per published
+   port — **resolved (2026-06-12):** allocation range set to `10000–10199` (200
+   ports = 100 projects). The outer-container publish range and `phase_9_plan.md`
+   D1 must be kept in lock-step with `PublishedPortRangeEnd = 10199`.
 6. **Refinement latency** — dev=prod means every refinement is a rebuild + redeploy (~seconds, not instant). Accepted for v1; hot-reload (see *Potential improvements*) is the escape hatch and needs no appx change.
 
 (Realistic multi-stage builds under nesting — once a risk — are now **validated** by `container/INNER-APP-SPIKE.md`: dev+prod instances on two ports, redeploy with layer cache, and a Python app all worked unprivileged; Stage 2 smoke guards against regression.)
