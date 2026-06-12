@@ -38,7 +38,7 @@ appx sends `{name, deployment: {port: 10007, url: "https://eventx.example.com"}}
 A `containerruntime` package with an interface (matching the existing `AgentRegistrar` fake-based testing pattern), implemented by exec-ing `docker` with `--format json`. Rationale: one container's lifecycle (ensure image, create, start, inspect, health-wait) doesn't justify the Docker SDK's dependency tree, and CLI-compat means the host runtime can be docker *or* podman for free. Industry practice is split here; for this scope CLI wins on simplicity and testability.
 
 **D4 — Builder agent's container runtime is config, not hardcoded.**
-In dev on macOS you'll run agent-server on the host where the "podman" might be podman-machine or Docker Desktop. Make the deploy skill reference `$CONTAINER_RUNTIME` (default `podman`) so stage-1 dev work transfers untouched to the nested setup.
+In dev on macOS you'll run agent-server on the host where the "podman" might be podman-machine or Docker Desktop. Make the deploy skill reference `$APP_CONTAINER_RUNTIME` (default `podman`) so stage-1 dev work transfers untouched to the nested setup.
 
 ## Staging: yes — podman-first, outer container later, plus one early de-risking spike
 
@@ -55,7 +55,7 @@ The whole loop from your list (create project → agent builds app → container
 
 - **agent-server:** `deployment` metadata on project create (contract + `ProjectStore` record + `deployment.json` materialization + system-prompt injection). All unit-testable with the existing `node:test` suites — extend `projectLifecycle.test.ts`.
 - **appx:** `agentserver.Client.EnsureProject` gains the deployment payload (port from the store record, URL from `BaseDomain`); `Manager.Create` threads it through. Unit-test with the existing fake-registrar pattern.
-- **Builder deploy skill/prompt:** conventions — read `.pi/deployment.json`, `$CONTAINER_RUNTIME build -t <project>-app .`, run with `-p <port>:<appPort>`, named containers, redeploy = `stop && rm && run`, health-check with curl before declaring success. This is where iteration time goes.
+- **Builder deploy skill/prompt:** conventions — read `.pi/deployment.json`, `$APP_CONTAINER_RUNTIME build -t <project>-app .`, run with `-p <port>:<appPort>`, named containers, redeploy = `stop && rm && run`, health-check with curl before declaring success. This is where iteration time goes.
 - **Dev environment:** `task local` on macOS + Docker Desktop/podman-machine as the agent's runtime. The appx health checker (`AppRunning` TCP dial) already gives the UI deploy status for free.
 
 **Acceptance:** your steps 2–6 work end-to-end on `*.127.0.0.1.sslip.io` locally, including the refinement/redeploy cycle.
