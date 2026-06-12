@@ -14,9 +14,9 @@ Implement agent-server's half of the containerised apps architecture:
 
 1. appx starts ONE outer container at boot (agent-server + rootless podman inside).
 2. User creates a project in the appx UI; appx allocates **two ports** (a DEV and a PROD port) and registers the project here **with deployment metadata** (both ports + their public URLs).
-3. New projects are **seeded from a baked-in app template**, so they start as a runnable app with a multi-stage Dockerfile (dev/prod targets).
-4. The builder agent knows its DEV/PROD ports + URLs and deploys the app as **two inner podman containers** — a DEV container (fast iteration) and a PROD container (stable/shared) — each publishing its reserved port.
-5. The user iterates against the DEV URL; refinements redeploy the DEV container. When happy, the agent promotes to PROD. Both are real `https://…<domain>` URLs exposed by appx.
+3. New projects are **seeded from a baked-in app template**, so they start as a runnable, containerised app (a lean multi-stage Dockerfile — no framework dev-server).
+4. The builder agent builds **one image** and runs it as **two inner podman containers** — DEV (iterate) and PROD (stable/shared) — each publishing its reserved port. DEV and PROD are the **same build** ("what you see is what ships").
+5. The user iterates against the DEV URL; refinements rebuild + redeploy DEV. When happy, the agent **promotes** (rebuilds PROD from current source). Both are real `https://…<domain>` URLs exposed by appx.
 
 ## Division of labour
 
@@ -64,11 +64,12 @@ Two mechanisms, both generated from the same record:
 
 ```
 ## Deployment
-This project runs as TWO containers built from one codebase:
-- DEV  (iterate here):   port 10006 → https://eventx-dev.example.com   (build --target dev,  container <project>-app-dev)
-- PROD (stable, shared): port 10007 → https://eventx.example.com       (build --target prod, container <project>-app-prod)
-Each app MUST listen on 127.0.0.1:<its port>. Container runtime: podman.
-See the deploy-app skill for build/run/redeploy/promote conventions.
+This project runs as TWO containers from the SAME build (two instances, not two builds):
+- DEV  (iterate here):   host port 10006 → https://eventx-dev.example.com   (container <project>-app-dev)
+- PROD (stable, shared): host port 10007 → https://eventx.example.com       (container <project>-app-prod)
+Refinements rebuild + redeploy DEV; PROD changes only when you "promote".
+The app listens on its container port; map it with -p <reserved host port>:<container port>.
+Container runtime: podman. See the deploy-app skill for build/run/redeploy/promote conventions.
 Machine-readable copy: .pi/deployment.json
 ```
 
@@ -87,7 +88,7 @@ Ship a `deploy-app` skill in this repo (`skills/deploy-app/SKILL.md`), loaded vi
 `POST /v1/projects` copies a configured template dir into a freshly-created
 `WORKSPACE_DIR/{id}/` (only when the dir did not already exist; existing projects
 are untouched). A seeded, runnable starting point means the deploy skill's
-`build --target dev|prod` commands work from the very first prompt instead of
+`build` + `run` commands work from the very first prompt instead of
 relying on the LLM to scaffold a correct app + Dockerfile from scratch. The
 **seeding mechanism** (a `templateDir` + recursive copy with a skip filter for
 `node_modules`/build output) is lifted from appx-orchestrator (comparison §1).
@@ -104,29 +105,39 @@ framework, or several selectable templates are all on the table). Consequences:
   while the core loop is proven. Treat it as a throwaway placeholder, not a commitment.
 - **No framework assumptions leak outward.** agent-server, the deployment metadata,
   and the deploy skill stay stack-agnostic — the only contract is "a Dockerfile
-  with `dev`/`prod` targets that publishes on the given port(s)." Swapping the
+  that builds a lean image serving on a port." Swapping the
   template, or supporting several, must require zero changes outside `APPX_TEMPLATE_DIR`.
 - **We author the template's Dockerfile; we don't copy orchestrator's.**
-  Orchestrator's is a useful *structural* reference for the dev/prod multi-stage
-  shape, but its prod stage ships the whole build tree (dev deps + source) and
-  runs as root — not optimal. Ours should have a lean prod stage and a non-root
-  user, and must be **validated building under nested rootless podman + native
-  overlay** (the spike only exercised trivial images — see Stage 2 and
-  `container/INNER-APP-SPIKE.md`).
+  Orchestrator's is a useful *structural* reference for the multi-stage shape
+  (deps → build → lean runtime), but its final stage ships the whole build tree
+  (dev deps + source) and runs as root — not optimal. Ours has a lean runtime
+  stage and a non-root user. The inner-app spike (`container/INNER-APP-SPIKE.md`)
+  **proved this builds and serves under nested rootless podman + native overlay**
+  (a 64 MB non-root Vite image; a Python app worked identically).
 
-### D6 — Two containers per app: DEV and PROD
+### D6 — Two containers per app: DEV and PROD (same build, two instances)
 
-Each project deploys as two inner containers from one codebase, on the two ports
-appx allocated (D1):
+Each project deploys as two inner containers built from the **same Dockerfile**
+(one build target — no dev/prod divergence), on the two ports appx allocated (D1):
 
-| Env | Container | Build target | Port | Purpose |
+| Env | Container | Image | Host port | Purpose |
 |---|---|---|---|---|
-| DEV  | `<project>-app-dev`  | `dev`  | dev port  | Fast iteration; what the user refines against. Runs the framework dev server. |
-| PROD | `<project>-app-prod` | `prod` | prod port | Optimised, stable build; the shared/public URL. Updated on **promote**, not every keystroke. |
+| DEV  | `<project>-app-dev`  | `<project>-app:dev`  | dev port  | What the user iterates against; rebuilt + redeployed on each refinement. |
+| PROD | `<project>-app-prod` | `<project>-app:prod` | prod port | The stable/shared URL; rebuilt only on **promote**. |
 
-- **Refinement loop (goal step 5)** redeploys only DEV — cheaper, and keeps the shared PROD URL stable while the user iterates.
-- **Promote** = rebuild/restart PROD from current source when the user is happy.
-- *Optional hot-reload (validate before relying on it):* run DEV with the project dir bind-mounted into the container (`-v <projectDir>:/app`) so the dev server hot-reloads on edits without a rebuild. Needs confirming that a workspace-path bind mount works from the outer into the inner rootless-podman container; until then, DEV redeploys via rebuild like PROD.
+- **DEV is built exactly like PROD** (real built image, real server) — no
+  framework dev-server, no hot-reload. "What you see in DEV is what ships," and
+  every stack is treated uniformly (build an image, run it). This deliberately
+  keeps app-specific dev-server quirks (Vite `allowedHosts`, HMR WebSockets) out
+  of the template, the skill, **and** appx. See *Potential improvements* for the
+  hot-reload escape hatch if rebuild latency ever bites.
+- **Refinement loop (goal step 5):** rebuild the image and redeploy **DEV only**
+  (~seconds; the spike measured ~0.7 s warm rebuild + a fast `rm`/`run`). PROD's
+  URL stays stable while the user iterates.
+- **Promote** = rebuild PROD from current source and restart its container, so
+  PROD matches what the user approved in DEV.
+- Two image tags (`:dev`/`:prod`) keep the instances independent snapshots even
+  though they come from one Dockerfile.
 
 ---
 
@@ -182,12 +193,13 @@ hardened host defaults intact.
 
 ### Deploy skill
 
-- [ ] `skills/deploy-app/SKILL.md` with the conventions (DEV + PROD, per D6):
+- [ ] `skills/deploy-app/SKILL.md` with the conventions (DEV + PROD, per D6 — same build, two instances):
   - read `.pi/deployment.json` for the dev/prod ports and URLs
-  - DEV: `$APP_CONTAINER_RUNTIME build --target dev -t <project>-app:dev .` → `run -d --name <project>-app-dev -p <devPort>:<containerPort> <project>-app:dev`
-  - PROD (promote): `$APP_CONTAINER_RUNTIME build --target prod -t <project>-app:prod .` → `run -d --name <project>-app-prod -p <prodPort>:<containerPort> <project>-app:prod`
+  - DEV (refine): `$APP_CONTAINER_RUNTIME build -t <project>-app:dev .` → `run -d --name <project>-app-dev -p <devPort>:<containerPort> <project>-app:dev`
+  - PROD (promote): `$APP_CONTAINER_RUNTIME build -t <project>-app:prod .` → `run -d --name <project>-app-prod -p <prodPort>:<containerPort> <project>-app:prod`
+  - no `--target`: the template's Dockerfile has one final (lean, non-root) image; DEV and PROD differ only by tag/instance/port
   - redeploy: `stop && rm && build && run` under the same `--name` (idempotent; never accumulate containers); refinements rebuild **DEV only**, promote rebuilds PROD
-  - the seeded template (D5) provides the `dev`/`prod` build targets, so these commands work from the first prompt
+  - `<containerPort>` is a template detail (e.g. 8080); always map `-p <reserved host port>:<containerPort>`, never assume they're equal
   - multi-container apps (db etc.): suffix names `<project>-db`, only the app publishes the reserved port(s); inter-container traffic via a `<project>` podman network
   - health check before declaring success: `curl -fsS 127.0.0.1:<port>` with retries; report the relevant public URL to the user
   - **never** pass `*_API_KEY` env vars into app containers
@@ -215,7 +227,7 @@ alive for exec" to "runs agent-server". Keep the proven flag set and the
   - **multi-stage build** (lift orchestrator's pattern): a Node build stage that compiles agent-server, then copy the pruned runtime into the spike's ubuntu:24.04 stage (e.g. `npm ci && build` then copy `dist/` + production deps; orchestrator uses `pnpm deploy --prod /app`)
   - keep the spike's rootless-podman setup (file-cap helpers, native-overlay `storage.conf`, `containers.conf`, subuid/subgid) unchanged
   - bake `skills/deploy-app` at a fixed path; set `PI_SKILL_PATHS`
-  - bake the **app template** (provisional: a minimal Vite SPA, see D5) at a fixed path; set `APPX_TEMPLATE_DIR`. Its Dockerfile must be **built under nested rootless podman in `container-smoke.sh`**, not assumed to work
+  - bake the **app template** (provisional: a minimal Vite SPA, see D5 — lean multi-stage, single runtime target, non-root) at a fixed path; set `APPX_TEMPLATE_DIR`. `container-smoke.sh` builds it under nested rootless podman (proven in the inner-app spike; the smoke guards against regression)
 - [ ] `container/entrypoint.sh` — extend the spike entrypoint:
   - keep the stale-runtime-state wipe + `podman info` warmup
   - replace `sleep infinity` with agent-server (env: `WORKSPACE_DIR=/workspace`, `ANTHROPIC_API_KEY`, `AGENT_SERVER_TOKEN`, `APP_CONTAINER_RUNTIME=podman`, `APPX_TEMPLATE_DIR=...`, `AGENT_SERVER_HOST=0.0.0.0` — the container boundary takes over loopback's role; the **publish** stays loopback-only on the host side)
@@ -226,7 +238,7 @@ alive for exec" to "runs agent-server". Keep the proven flag set and the
 
 ### Tests (Stage 2)
 
-- [ ] `scripts/container-smoke.sh` (Linux): build image → run → poll `GET /` until healthy → `POST /v1/projects` with deployment metadata → assert `deployment.json` inside the container → `docker exec` the skill's literal command sequence to build+run **the seeded template** (a realistic multi-stage `dev`/`prod` build under nested rootless podman — not just nginx) → `curl 127.0.0.1:<devPort>` and `<prodPort>` from the host → restart outer container → assert registry + workspace survived.
+- [ ] `scripts/container-smoke.sh` (Linux): build image → run → poll `GET /` until healthy → `POST /v1/projects` with deployment metadata → assert `deployment.json` inside the container → `docker exec` the skill's literal command sequence to build **the seeded template** once and run it as DEV + PROD instances on the two ports (a realistic multi-stage build under nested rootless podman — not just nginx) → `curl 127.0.0.1:<devPort>` and `<prodPort>` from the host → restart outer container → assert registry + workspace survived.
   This deliberately **bypasses the LLM**: the agent only ever runs bash commands, so executing the skill's exact commands validates all infrastructure (ports, volumes, nesting) deterministically.
 - [ ] CI: nightly/on-demand GitHub Actions job (ubuntu runners are full VMs; `--device /dev/fuse` works there) running `container-smoke.sh`
 
@@ -255,6 +267,33 @@ Every networking boundary is tested by a real connection at exactly one layer an
 | Cross-service smoke | appx ↔ agent-server ↔ subdomain chain | appx repo, `scripts/smoke-deploy.sh` |
 | LLM e2e | prompt/skill quality | manual golden-prompt checklist |
 
+## Potential improvements (deferred — not v1)
+
+Validated or low-risk upgrades we defer to keep v1 simple and uniform. None
+require app-specific logic in appx.
+
+### Hot-reload DEV (instant refinements)
+
+The inner-app spike (`container/INNER-APP-SPIKE.md`, T3) **proved** a faster
+refinement loop is feasible: bind-mount the project dir into the DEV container
+(`-v <projectDir>:/app` plus an anonymous `-v /app/node_modules` so the mount
+doesn't shadow installed deps) and run the framework's dev server. The agent then
+edits files in `/workspace` and the running DEV app **hot-reloads with no rebuild
+or redeploy** — HMR fired across the mount on native overlay, no polling needed.
+
+Deferred because it breaks v1's uniformity:
+- It's **framework-specific** (needs a dev server with HMR; a built static app or
+  a Python service has no equivalent), so it can't be the universal model.
+- It reintroduces dev-server quirks the template + skill must handle — Vite's
+  `server.allowedHosts` must include the project's dev subdomain (fed via env from
+  `.pi/deployment.json`), and the dev server's HMR WebSocket must traverse appx's
+  subdomain proxy.
+
+Safe to add later because it needs **no appx change specific to it**:
+`allowedHosts` lives in the template + skill; WebSocket forwarding is a generic
+proxy capability appx needs for user apps regardless. Adopt per-template if the
+rebuild-redeploy latency (a few seconds) proves to be real friction.
+
 ## Risks
 
 1. **Nested podman flags on target OS** — retired by Stage 0 (proven recipe committed); only residual is re-verifying on a genuine Ubuntu 24.04 host.
@@ -262,5 +301,6 @@ Every networking boundary is tested by a real connection at exactly one layer an
 3. **Skill quality** — the only part needing real-LLM iteration; isolated in Stage 1 where the feedback loop is fastest (no containers in the way).
 4. **Outer restart kills inner apps** — addressed in Stage 4 (stale-state wipe + `podman start --all`); appx UI already shows honest per-port health.
 5. **Two ports/project halves project density** under appx's published-port cap and doubles subdomains — tracked in `phase_9_plan.md`; revisit the cap.
-6. **Optional DEV bind-mount hot-reload** may not work from the outer into inner rootless podman — gated behind validation in D6; rebuild-redeploy is the fallback.
-7. **Realistic app builds under nesting are unproven** — the spike only built trivial images. A heavy multi-stage build (large `node_modules`, overlay-on-overlay) is validated early via a standalone spikebox task (`container/INNER-APP-SPIKE.md`), then again in Stage 2 smoke.
+6. **Refinement latency** — dev=prod means every refinement is a rebuild + redeploy (~seconds, not instant). Accepted for v1; hot-reload (see *Potential improvements*) is the escape hatch and needs no appx change.
+
+(Realistic multi-stage builds under nesting — once a risk — are now **validated** by `container/INNER-APP-SPIKE.md`: dev+prod instances on two ports, redeploy with layer cache, and a Python app all worked unprivileged; Stage 2 smoke guards against regression.)
