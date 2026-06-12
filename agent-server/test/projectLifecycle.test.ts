@@ -4,7 +4,7 @@
  * removal behaviour. No HTTP, no LLM calls.
  */
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, test } from "node:test";
@@ -218,6 +218,135 @@ describe("ProjectRegistry lifecycle", () => {
 			assert.equal(registryFile.includes("ephemeral"), false);
 		} finally {
 			ws.cleanup();
+		}
+	});
+});
+
+describe("ProjectRegistry deployment metadata", () => {
+	const deployment = {
+		dev: { port: 10006, url: "https://eventx-dev.example.com" },
+		prod: { port: 10007, url: "https://eventx.example.com" },
+	};
+
+	function deploymentFile(projectDir: string): string {
+		return join(projectDir, ".pi", "deployment.json");
+	}
+
+	test("dev+prod metadata round-trips create → get → list and writes deployment.json", async () => {
+		const ws = makeWorkspace();
+		try {
+			const registry = await ProjectRegistry.create({ workspaceDir: ws.dir, logger: silentLogger });
+			const created = registry.createProject({ name: "eventx", deployment });
+
+			assert.deepEqual(created.deployment, deployment);
+			assert.deepEqual(registry.getProject("eventx")?.deployment, deployment);
+			assert.deepEqual(registry.listProjects()[0]?.deployment, deployment);
+
+			const file = deploymentFile(created.projectDir);
+			assert.ok(existsSync(file), ".pi/deployment.json materialised");
+			// Pretty-printed, stable key order (dev before prod, port before url).
+			assert.equal(readFileSync(file, "utf8"), `${JSON.stringify(deployment, null, 2)}\n`);
+
+			// Survives a fresh registry (rehydrated from projects.json).
+			const reopened = await ProjectRegistry.create({ workspaceDir: ws.dir, logger: silentLogger });
+			assert.deepEqual(reopened.getProject("eventx")?.deployment, deployment);
+		} finally {
+			ws.cleanup();
+		}
+	});
+
+	test("same-name re-POST updates deployment and rewrites the file", async () => {
+		const ws = makeWorkspace();
+		try {
+			const registry = await ProjectRegistry.create({ workspaceDir: ws.dir, logger: silentLogger });
+			const first = registry.createProject({ name: "eventx", deployment });
+
+			const updatedDeployment = {
+				dev: { port: 10010, url: "https://eventx-dev.example.com" },
+				prod: { port: 10011, url: "https://eventx.example.com" },
+			};
+			const again = registry.createProject({ name: "eventx", deployment: updatedDeployment });
+
+			assert.equal(again.id, first.id);
+			assert.deepEqual(again.deployment, updatedDeployment);
+			assert.equal(registry.listProjects().length, 1);
+			assert.equal(
+				readFileSync(deploymentFile(again.projectDir), "utf8"),
+				`${JSON.stringify(updatedDeployment, null, 2)}\n`,
+			);
+		} finally {
+			ws.cleanup();
+		}
+	});
+
+	test("absent metadata writes no deployment.json", async () => {
+		const ws = makeWorkspace();
+		try {
+			const registry = await ProjectRegistry.create({ workspaceDir: ws.dir, logger: silentLogger });
+			const created = registry.createProject({ name: "plain" });
+			assert.equal(created.deployment, undefined);
+			assert.equal(existsSync(deploymentFile(created.projectDir)), false);
+		} finally {
+			ws.cleanup();
+		}
+	});
+});
+
+describe("ProjectRegistry template seeding", () => {
+	function makeTemplate(): string {
+		const dir = mkdtempSync(resolve(tmpdir(), "agent-server-template-"));
+		writeFileSync(join(dir, "Dockerfile"), "FROM scratch\n");
+		mkdirSync(join(dir, "src"), { recursive: true });
+		writeFileSync(join(dir, "src", "main.js"), "console.log('hi')\n");
+		// A build-cache dir that must be skipped during the copy.
+		mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
+		writeFileSync(join(dir, "node_modules", "left-pad", "index.js"), "// junk\n");
+		return dir;
+	}
+
+	test("copies template into a fresh project dir, skipping build caches", async () => {
+		const ws = makeWorkspace();
+		const templateDir = makeTemplate();
+		try {
+			const registry = await ProjectRegistry.create({
+				workspaceDir: ws.dir,
+				templateDir,
+				logger: silentLogger,
+			});
+			const project = registry.createProject({ name: "seeded" });
+			assert.ok(existsSync(join(project.projectDir, "Dockerfile")), "Dockerfile seeded");
+			assert.ok(existsSync(join(project.projectDir, "src", "main.js")), "src seeded");
+			assert.equal(existsSync(join(project.projectDir, "node_modules")), false, "node_modules skipped");
+		} finally {
+			ws.cleanup();
+			rmSync(templateDir, { recursive: true, force: true });
+		}
+	});
+
+	test("leaves an existing project dir untouched (no seeding)", async () => {
+		const ws = makeWorkspace();
+		const templateDir = makeTemplate();
+		try {
+			// Pre-create the project dir with existing content.
+			const existingDir = join(ws.dir, "seeded");
+			mkdirSync(existingDir, { recursive: true });
+			writeFileSync(join(existingDir, "keep.txt"), "mine");
+
+			const registry = await ProjectRegistry.create({
+				workspaceDir: ws.dir,
+				templateDir,
+				logger: silentLogger,
+			});
+			const project = registry.createProject({ name: "seeded" });
+			assert.ok(existsSync(join(project.projectDir, "keep.txt")), "existing content preserved");
+			assert.equal(
+				existsSync(join(project.projectDir, "Dockerfile")),
+				false,
+				"no template copied over existing dir",
+			);
+		} finally {
+			ws.cleanup();
+			rmSync(templateDir, { recursive: true, force: true });
 		}
 	});
 });

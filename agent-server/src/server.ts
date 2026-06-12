@@ -52,6 +52,8 @@ const projectRegistry = await ProjectRegistry.create({
 	noSkills: config.noSkills,
 	noPromptTemplates: config.noPromptTemplates,
 	noThemes: config.noThemes,
+	templateDir: config.templateDir,
+	appContainerRuntime: config.appContainerRuntime,
 	...litellmRuntimeConfig(),
 });
 

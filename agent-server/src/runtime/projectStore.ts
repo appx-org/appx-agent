@@ -20,6 +20,22 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+/** One deployment environment's address (control-plane-owned port + public URL). */
+export type DeploymentTarget = {
+	port?: number;
+	url?: string;
+};
+
+/**
+ * Deployment metadata for a project: DEV + PROD environments built from the
+ * same image. Authored by the control plane (appx), read by the agent. See
+ * docs/architecture/other/orchestrator-comparison.md §2.3.
+ */
+export type Deployment = {
+	dev?: DeploymentTarget;
+	prod?: DeploymentTarget;
+};
+
 /** Persisted, agent-server-owned metadata for one project. */
 export type ProjectRecord = {
 	/** Immutable slug; registry key, route param, and on-disk directory name. */
@@ -28,6 +44,12 @@ export type ProjectRecord = {
 	name: string;
 	/** ISO-8601 creation timestamp. */
 	createdAt: string;
+	/**
+	 * Optional control-plane deployment metadata (dev + prod ports/URLs).
+	 * Absent on records created before this feature — the loader tolerates its
+	 * absence so the registry stays backward compatible.
+	 */
+	deployment?: Deployment;
 };
 
 /** On-disk envelope. Versioned so the schema can evolve without ambiguity. */
@@ -107,6 +129,20 @@ export class ProjectStore {
 	/** Remove a record and persist. No-op if the id is unknown. */
 	remove(id: string): void {
 		if (this.records.delete(id)) this.persist();
+	}
+
+	/**
+	 * Replace an existing record's deployment metadata and persist. Returns the
+	 * updated record, or undefined if the id is unknown. Used for the idempotent
+	 * same-name re-POST path where appx heals deployment drift.
+	 */
+	setDeployment(id: string, deployment: Deployment | undefined): ProjectRecord | undefined {
+		const existing = this.records.get(id);
+		if (!existing) return undefined;
+		const updated: ProjectRecord = { ...existing, deployment };
+		this.records.set(id, updated);
+		this.persist();
+		return updated;
 	}
 
 	/** Atomically write the registry to disk (temp file + rename). */

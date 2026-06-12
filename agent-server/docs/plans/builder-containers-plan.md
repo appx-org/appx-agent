@@ -81,7 +81,7 @@ File-only would risk the agent never reading it; prompt-only would risk loss on 
 
 ### D4 — Deploy conventions live in a skill, not only in AGENTS.md
 
-Ship a `deploy-app` skill in this repo (`skills/deploy-app/SKILL.md`), loaded via `PI_SKILL_PATHS` in the outer image. Skills are versioned with agent-server, independent of any one project's `.pi/`, and the prompt section stays short (conventions load only when the agent deploys).
+Ship a `deploy-app` skill in this repo (`builder-agent/skills/deploy-app/SKILL.md`), loaded via `PI_SKILL_PATHS` in the outer image. Skills are versioned with agent-server, independent of any one project's `.pi/`, and the prompt section stays short (conventions load only when the agent deploys).
 
 ### D5 — New projects are seeded from a baked-in app template
 
@@ -193,7 +193,7 @@ hardened host defaults intact.
 
 ### Deploy skill
 
-- [ ] `skills/deploy-app/SKILL.md` with the conventions (DEV + PROD, per D6 — same build, two instances):
+- [ ] `builder-agent/skills/deploy-app/SKILL.md` with the conventions (DEV + PROD, per D6 — same build, two instances):
   - read `.pi/deployment.json` for the dev/prod ports and URLs
   - DEV (refine): `$APP_CONTAINER_RUNTIME build -t <project>-app:dev .` → `run -d --name <project>-app-dev -p <devPort>:<containerPort> <project>-app:dev`
   - PROD (promote): `$APP_CONTAINER_RUNTIME build -t <project>-app:prod .` → `run -d --name <project>-app-prod -p <prodPort>:<containerPort> <project>-app:prod`
@@ -226,7 +226,7 @@ alive for exec" to "runs agent-server". Keep the proven flag set and the
 - [ ] `container/Dockerfile` — extend the spike image:
   - **multi-stage build** (lift orchestrator's pattern): a Node build stage that compiles agent-server, then copy the pruned runtime into the spike's ubuntu:24.04 stage (e.g. `npm ci && build` then copy `dist/` + production deps; orchestrator uses `pnpm deploy --prod /app`)
   - keep the spike's rootless-podman setup (file-cap helpers, native-overlay `storage.conf`, `containers.conf`, subuid/subgid) unchanged
-  - bake `skills/deploy-app` at a fixed path; set `PI_SKILL_PATHS`
+  - bake `builder-agent/skills/deploy-app` at a fixed path; set `PI_SKILL_PATHS`
   - bake the **app template** (provisional: a minimal Vite SPA, see D5 — lean multi-stage, single runtime target, non-root) at a fixed path; set `APPX_TEMPLATE_DIR`. `container-smoke.sh` builds it under nested rootless podman (proven in the inner-app spike; the smoke guards against regression)
 - [ ] `container/entrypoint.sh` — extend the spike entrypoint:
   - keep the stale-runtime-state wipe + `podman info` warmup
