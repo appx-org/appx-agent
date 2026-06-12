@@ -75,6 +75,26 @@ Build a system where:
   • Inner containers: untrusted, run LLM-generated code, no creds
 ```
 
+## Decision: appx terminates and proxies app traffic
+
+The two early container rigs published ports differently — the Stage 0 spike
+(`container/`) bound `-p 127.0.0.1:10000-10009` (loopback only), while the
+production draft (`docker/builder/`) published ports directly to the host
+(`-p 4001`, `-p 3000-3010`). This is a real design decision, not an
+implementation detail, so it is recorded here as the single source of truth:
+
+**appx terminates app traffic and proxies it into the outer container.** The
+outer container publishes its ports on loopback only (`127.0.0.1:...`); appx is
+the edge that accepts external traffic and forwards it to those loopback ports.
+App ports are therefore **not** published directly to the host's external
+interfaces.
+
+Rationale: keeping the outer container loopback-only means a single trusted
+edge (appx) owns TLS termination, routing, and access control, and no
+agent-spawned inner app is ever directly reachable from outside the host. Run
+scripts and compose files should follow this contract; direct host publishing
+is only for local manual testing.
+
 ## Component Mapping
 
 | Concept                                     | What it maps to in code                                                                                                                                                  |
@@ -204,7 +224,7 @@ These aren't blockers for the stated case, just worth knowing:
 2. **All projects share the outer container's filesystem quota.** One project filling `/workspace` affects everyone. Disk quota or per-project mount points if it matters.
 3. **No process-level isolation between projects.** A bug in agent-server affects all projects. For single-admin, fine.
 4. **First-time podman storage init is slow.** Add `podman info` to the entrypoint to warm up.
-5. **Inner container ports must be allocated.** Either expose a port range (`-p 3000-3010:3000-3010`) and let the agent pick, or have a registry that hands out ports. The latter scales better.
+5. **Inner container ports must be allocated.** Either expose a port range (`-p 127.0.0.1:3000-3010:3000-3010`) and let the agent pick, or have a registry that hands out ports. The latter scales better. Per the decision above, the outer container binds these on loopback only and appx proxies external traffic in.
 6. **Outer container restart kills inner containers.** Inner Podman state lives in the outer container's filesystem. If you `docker restart builder`, all running apps die. Mount Podman storage as a volume if you want persistence: `-v podman-storage:/home/builder/.local/share/containers`.
 
 None of these are dealbreakers; just trade-offs to be aware of.
