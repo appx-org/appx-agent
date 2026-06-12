@@ -32,10 +32,6 @@ and `seccomp=unconfined` was further replaced by a strictly-tighter tailored pro
 Remarkably, **no host-level sysctl/apparmor change was required** — the hardened Ubuntu
 defaults (`apparmor_restrict_unprivileged_userns=1`) are left untouched.
 
-## Result summary
-
-<!-- One paragraph: does the unprivileged nested chain work on this host? -->
-
 ## Headline finding: setuid-root `newuidmap` breaks rootless podman in an unprivileged container
 
 The single biggest blocker. Symptom on first run:

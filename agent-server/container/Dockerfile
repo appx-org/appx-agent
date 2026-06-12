@@ -28,6 +28,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Fedora/quay.io/podman-stable instead ship them with file capabilities, so
 # euid stays 1000 (== owner of the nested userns) and the ownership shortcut
 # applies. Replicate that here:
+# WARNING: this file-capabilities approach is INCOMPATIBLE with running the
+# outer container under `--security-opt no-new-privileges`. Under no_new_privs,
+# execve() cannot add file capabilities to the permitted set, so newuidmap would
+# silently lose CAP_SETUID and rootless podman fails at namespace setup with the
+# same 'Operation not permitted' shown above. Do NOT add no-new-privileges as a
+# "hardening" flag without first switching these helpers back to another mapping
+# mechanism. (https://www.kernel.org/doc/html/latest/userspace-api/no_new_privs.html)
 RUN chmod u-s /usr/bin/newuidmap /usr/bin/newgidmap \
  && setcap cap_setuid+ep /usr/bin/newuidmap \
  && setcap cap_setgid+ep /usr/bin/newgidmap

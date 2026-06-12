@@ -30,6 +30,13 @@ for s in d['syscalls']:
     if s['action']=='SCMP_ACT_ALLOW' and inc.get('caps')==['CAP_SYS_ADMIN']:
         s['names']=[n for n in s['names'] if n in NEED]
         s.pop('includes',None)
+    # Podman's stock profile also ships a complementary SCMP_ACT_ERRNO (deny)
+    # rule gated on excludes.caps=[CAP_SYS_ADMIN] that ALSO names these three
+    # syscalls. If left in place the generated profile both ALLOWs and ERRNOs
+    # the same syscalls; which rule wins is libseccomp/runtime-version-defined.
+    # Strip the names from the deny rule so the ALLOW above is unambiguous.
+    if s['action']=='SCMP_ACT_ERRNO' and s.get('excludes',{}).get('caps')==['CAP_SYS_ADMIN']:
+        s['names']=[n for n in s['names'] if n not in NEED]
 json.dump(d,open('seccomp-builder.json','w'),indent=1)
 print("wrote seccomp-builder.json")
 PY
