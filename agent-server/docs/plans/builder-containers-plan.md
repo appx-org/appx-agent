@@ -1,7 +1,7 @@
 # Plan: Containerised Apps — agent-server Side
 
 **Date:** 2026-06-11 (updated 2026-06-12 with Stage 1 results)
-**Status:** Stage 0 ✅ done · Stage 1 ✅ code-complete + unit-tested (manual e2e pending) · Stages 2–4 pending
+**Status:** Stage 0 ✅ done · Stage 1 ✅ code-complete + unit-tested (manual e2e pending) · Stage 2 ✅ smoke-green (manual e2e pending) · Stages 3–4 pending
 **Scope:** Deployment metadata contract (dev + prod), app template seeding, two-container (dev/prod) deploy model, builder deploy skill/prompt, outer container image (nested rootless podman), smoke tests
 **Canonical architecture:** `docs/architecture/important/builder-container-architecture.md`
 **Sibling plan:** appx repo, `docs/plans/phase_9_plan.md` (control plane: port allocation, container supervision, subdomain routing)
@@ -152,7 +152,7 @@ Each project deploys as two inner containers built from the **same Dockerfile**
 |---|---|---|---|
 | 0 | Nested rootless podman spike (timeboxed ~1 day) | agent-server | ✅ done |
 | 1 | Full user flow with agent-server **on host** ("podman without outer container") | both | ✅ code + unit tests; manual e2e pending |
-| 2 | agent-server inside the outer container, started manually | agent-server | ⏭ next (Linux VM) |
+| 2 | agent-server inside the outer container, started manually | agent-server | ✅ smoke-green (manual e2e pending) |
 | 3 | appx creates/supervises the outer container at startup | appx | pending |
 | 4 | Hardening (restarts, key stripping, resource limits) | both | pending |
 
@@ -271,7 +271,17 @@ locally with agent-server via `npm run dev` and Docker Desktop/podman as
 
 ---
 
-## Stage 2 — Outer container image
+## Stage 2 — Outer container image ✅ DONE (smoke green; manual e2e pending)
+
+**Status (2026-06-12):** agent-server now runs **inside** the outer container.
+`scripts/container-smoke.sh` is **green (31/31)** on the Ubuntu 26.04 / kernel
+7.0 Hetzner VM (the Stage 0 box), and the Stage 0 `container/smoke.sh` still
+passes (11/11) — packaging didn't regress the nesting recipe. The security
+boundary is byte-for-byte the proven Stage 0 set: `docker inspect` confirms
+`Privileged=false`, `CapAdd=[]`, no `no-new-privileges`, no `/dev/fuse`, with
+only the `4001` + `10000-10199` publishes added. Full writeup:
+`container/SPIKE-FINDINGS.md` ("Stage 2 Findings"). **The cross-repo manual LLM
+e2e (host appx → container) is the one remaining item.**
 
 Promote the **committed Stage 0 artifacts** (`container/Dockerfile`,
 `run-outer.sh`, `entrypoint.sh`, `seccomp-builder.json`) from "keeps the container
@@ -279,20 +289,36 @@ alive for exec" to "runs agent-server". Keep the proven flag set and the
 `newuidmap` file-cap + native-overlay fixes **verbatim** — do not reintroduce
 `/dev/fuse`, `SYS_ADMIN`, or `seccomp=unconfined`.
 
-- [ ] `container/Dockerfile` — extend the spike image:
-  - **multi-stage build** (lift orchestrator's pattern): a Node build stage that compiles agent-server, then copy the pruned runtime into the spike's ubuntu:24.04 stage (e.g. `npm ci && build` then copy `dist/` + production deps; orchestrator uses `pnpm deploy --prod /app`)
-  - keep the spike's rootless-podman setup (file-cap helpers, native-overlay `storage.conf`, `containers.conf`, subuid/subgid) unchanged
-  - bake `builder-agent/skills/deploy-app` at a fixed path; set `PI_SKILL_PATHS`
-  - bake the **app template** (provisional: a minimal Vite SPA, see D5 — lean multi-stage, single runtime target, non-root) at a fixed path; set `APPX_TEMPLATE_DIR`. `container-smoke.sh` builds it under nested rootless podman (proven in the inner-app spike; the smoke guards against regression)
-- [ ] `container/entrypoint.sh` — extend the spike entrypoint:
-  - keep the stale-runtime-state wipe + `podman info` warmup
-  - replace `sleep infinity` with agent-server (env: `WORKSPACE_DIR=/workspace`, `ANTHROPIC_API_KEY`, `AGENT_SERVER_TOKEN`, `APP_CONTAINER_RUNTIME=podman`, `APPX_TEMPLATE_DIR=...`, `AGENT_SERVER_HOST=0.0.0.0` — the container boundary takes over loopback's role; the **publish** stays loopback-only on the host side)
-- [ ] `container/run-outer.sh` — extend the spike script:
-  - add `-p 127.0.0.1:4001:4001` (API) alongside the app-port range publish,
-    now `-p 127.0.0.1:10000-10199:10000-10199` (200 ports = 100 projects × a
-    DEV+PROD pair; must match appx's `PublishedPortRangeEnd = 10199`)
-  - keep volumes (workspace + named podman-storage volume) and the proven security flags
-- [ ] Run the **same Stage 1 manual e2e** with host-run appx pointed at the container via `APPX_AGENT_SERVER_URL=http://127.0.0.1:4001` — zero appx code changes expected
+- [x] `container/Dockerfile` — extended the spike image:
+  - **multi-stage build**: a Node 22 build stage (`node:22-bookworm-slim`,
+    `npm ci && npm run build && npm prune --omit=dev`) compiles agent-server;
+    the pruned runtime (`dist/` + production `node_modules` + `package.json`) is
+    copied into the unchanged ubuntu:24.04 podman stage. Built from the **repo
+    root** (`docker build -f container/Dockerfile ..`) + a root `.dockerignore`.
+  - kept the spike's rootless-podman setup (file-cap helpers, native-overlay
+    `storage.conf`, `containers.conf`, subuid/subgid, volume mountpoints) **verbatim**
+  - baked `builder-agent/skills/deploy-app` → `/opt/builder-agent/skills/deploy-app`;
+    set `PI_SKILL_PATHS`
+  - baked the Vite SPA template → `/opt/builder-agent/templates/vite-spa`; set
+    `APPX_TEMPLATE_DIR`. `container-smoke.sh` builds it nested (~13 s cold) and
+    runs DEV+PROD — guards against regression.
+  - **Node in the final stage: NodeSource `setup_22.x`** (industry-standard for a
+    pinned Node LTS on Ubuntu; keeps the proven ubuntu:24.04 base rather than a
+    `node:*` base). Image ~1.03 GB (node_modules 263 MB dominates), cold build ~55 s.
+- [x] `container/entrypoint.sh` — extended the spike entrypoint:
+  - kept the stale-runtime-state wipe + `podman info` warmup **verbatim**
+  - replaced `sleep infinity` with `node /opt/agent-server/dist/server.js`
+    (`exec`'d as PID 1). Env baked: `WORKSPACE_DIR=/workspace`,
+    `AGENT_SERVER_HOST=0.0.0.0`, `AGENT_SERVER_PORT=4001`,
+    `APP_CONTAINER_RUNTIME=podman`, `APPX_TEMPLATE_DIR`, `PI_SKILL_PATHS`.
+    Secrets (`ANTHROPIC_API_KEY`, `AGENT_SERVER_TOKEN`) arrive via `docker run -e`.
+- [x] `container/run-outer.sh` — extended the spike script:
+  - added `-p 127.0.0.1:4001:4001` (API) + changed the app publish to
+    `-p 127.0.0.1:10000-10199:10000-10199` (200 ports; matches appx
+    `PublishedPortRangeEnd = 10199`)
+  - passes `-e ANTHROPIC_API_KEY -e AGENT_SERVER_TOKEN` by name (never baked);
+    volumes + the proven security flags untouched
+- [ ] Run the **same Stage 1 manual e2e** with host-run appx pointed at the container via `APPX_AGENT_SERVER_URL=http://127.0.0.1:4001` — zero appx code changes expected. **Pending** (needs an `ANTHROPIC_API_KEY` + host appx in `--http` mode on this VM).
 
 ### Stage 2 environment — run on Linux, not macOS, and not the live prod box
 
@@ -324,11 +350,62 @@ Why:
 
 ### Tests (Stage 2)
 
-- [ ] `scripts/container-smoke.sh` (Linux): build image → run → poll `GET /` until healthy → `POST /v1/projects` with deployment metadata → assert `deployment.json` inside the container → `docker exec` the skill's literal command sequence to build **the seeded template** once and run it as DEV + PROD instances on the two ports (a realistic multi-stage build under nested rootless podman — not just nginx) → `curl 127.0.0.1:<devPort>` and `<prodPort>` from the host → restart outer container → assert registry + workspace survived.
-  This deliberately **bypasses the LLM**: the agent only ever runs bash commands, so executing the skill's exact commands validates all infrastructure (ports, volumes, nesting) deterministically.
-- [ ] CI: nightly/on-demand GitHub Actions job (ubuntu runners are full VMs; `--device /dev/fuse` works there) running `container-smoke.sh`
+- [x] `scripts/container-smoke.sh` (Linux): build image → run → poll `GET /` until healthy → `POST /v1/projects` with deployment metadata → assert `deployment.json` inside the container → `docker exec` the skill's literal command sequence to build **the seeded template** once and run it as DEV + PROD instances on the two ports (a realistic multi-stage build under nested rootless podman — not just nginx) → `curl 127.0.0.1:<devPort>` and `<prodPort>` from the host → restart outer container → assert registry + workspace survived + `podman start --all` recovers.
+  This deliberately **bypasses the LLM**: the agent only ever runs bash commands, so executing the skill's exact commands validates all infrastructure (ports, volumes, nesting) deterministically. **Green: 31/31.** Also adds `docker inspect` assertions for the security invariants and a redeploy-isolation check (DEV changes, PROD untouched).
+- [x] CI: nightly/on-demand GitHub Actions job running `container-smoke.sh` (`.github/workflows/container-smoke.yml`, `workflow_dispatch` + nightly `schedule`, ubuntu-latest full VM).
 
-**Acceptance:** Stage 1 e2e passes with agent-server containerised; `container-smoke.sh` green on Linux.
+**Acceptance:** `container-smoke.sh` green on Ubuntu 26.04 ✅; Stage 1 e2e with agent-server containerised **pending** (manual LLM loop).
+
+### Deviations / notes (Stage 2)
+
+- **Build context moved to the repo root** so the Node build stage can compile
+  agent-server (`docker build -f container/Dockerfile ..`); added a root
+  `.dockerignore`. `gen-seccomp.sh` updated to match.
+- **Smoke drops the named volumes up front** for determinism — a box polluted by
+  earlier manual/spike runs leaves inner containers that collide on the app ports
+  and would otherwise break `podman start --all`. Test hygiene, not a regression.
+- **"Build once, two instances":** the smoke builds `:dev` once and `podman tag`s
+  `:prod` from it (faithful to D6); redeploy rebuilds `:dev` only.
+- The Stage 0 `container/smoke.sh` is kept and still passes (11/11) as the bare
+  nesting baseline.
+
+### Stage 2 → Stage 3 handoff: what's still missing for the live flow
+
+Stage 2 proves the *nested environment* and the *contract* (appx Stage 1 already
+landed: nested deployment metadata via `EnsureProject`, DEV+PROD pair allocation
+capped at `PublishedPortRangeEnd = 10199` — in lock-step with this repo's
+`run-outer.sh` range — and `-dev`/prod subdomain selection). What is **not** yet
+built (all appx-side, tracked in the sibling `phase_9_plan.md` Stage 3):
+
+- **appx does not manage the container.** Today the live box runs agent-server as
+  a host systemd unit (`deploy/agent-server.service`); appx just talks to
+  `APPX_AGENT_SERVER_URL`. Stage 3 adds `internal/containerruntime` (a docker-CLI
+  `Supervisor` + fake) that `EnsureRunning`s the outer container from the **proven
+  flag set transcribed verbatim from this repo's `run-outer.sh`** (the source of
+  truth), behind the `APPX_AGENT_CONTAINER=true` switch, before reconcile.
+- **Egress from inside the container is the most likely silent breakage.** appx's
+  CONNECT egress proxy (the agent's path to the LLM) listens on loopback today;
+  once agent-server is *in* the container, loopback no longer reaches it. Stage 3
+  must bind it on the docker-bridge gateway and set `HTTPS_PROXY` +
+  `NODE_USE_ENV_PROXY` + `--add-host=host.docker.internal:host-gateway` in the
+  container env. Without this you can create/deploy but the **prompt step dies**.
+- **Token becomes mandatory** in container mode (generate + persist 0600), since
+  the published API port means loopback is no longer a trust boundary.
+- **Mismatch detection** (never silently recreate — it kills running user apps).
+- **Deploy scripts** (`system-setup.sh`/`bootstrap.sh`/`tools-install.sh`) still
+  install host Node + the systemd agent-server; container mode installs docker +
+  the pinned outer image instead. Open decision: how the appx user invokes docker
+  (prefer rootless docker / host podman over the root-equivalent `docker` group).
+- **`appx/scripts/smoke-deploy.sh`** is the missing cross-service gate — the
+  sibling of this repo's `container-smoke.sh`, but curling **through the appx
+  subdomain proxy** (`<name>-dev.<domain>` / `<name>.<domain>`) rather than the
+  loopback publish directly. That proves the full outside→appx→outer→podman→inner
+  path, which `container-smoke.sh` deliberately stops short of.
+
+Good news for Stage 3: the proxy *target* is unchanged across all stages
+(`127.0.0.1:<port>` means the same thing host- or container-side), the port
+ranges already match, and the handshake is live — so Stage 3 is "wrap + supervise
++ wire egress," not a re-architecture.
 
 ---
 

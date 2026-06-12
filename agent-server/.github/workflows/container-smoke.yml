@@ -1,0 +1,50 @@
+#
+# Stage 2 infra smoke — the nested-rootless-podman chain, guarded independently
+# of whichever VM is used for manual iteration.
+#
+# GitHub's ubuntu-latest runners are full VMs (not containers), so the file-cap
+# newuidmap + native-overlay recipe works there exactly as on the Hetzner box.
+# This builds the outer image, starts agent-server inside it, and runs the
+# deploy-app skill's literal command sequence end-to-end (build the seeded Vite
+# template under nested podman, run DEV + PROD, redeploy, survive a restart) —
+# all WITHOUT an LLM. See scripts/container-smoke.sh and
+# docs/plans/builder-containers-plan.md (Stage 2).
+#
+# Manual (workflow_dispatch) + nightly so it never blocks normal PRs (the build
+# is heavy) but still catches infra drift on the proven recipe.
+name: container-smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:17 UTC nightly (off the top of the hour to dodge scheduler congestion).
+    - cron: "17 3 * * *"
+
+# Don't pile up nightly/dispatch runs on the same ref.
+concurrency:
+  group: container-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Nested rootless podman chain (no LLM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Docker is preinstalled on ubuntu-latest runners; show what we're on.
+      - name: Environment
+        run: |
+          docker --version
+          uname -rm
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || true
+
+      - name: Run the Stage 2 container smoke
+        # No ANTHROPIC_API_KEY needed: the agent never runs an LLM here — the
+        # smoke executes the deploy skill's literal bash commands directly.
+        run: ./scripts/container-smoke.sh
+
+      - name: Outer container logs on failure
+        if: failure()
+        run: docker logs builder-outer || true
