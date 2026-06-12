@@ -1,7 +1,7 @@
 # Plan: Containerised Apps — agent-server Side
 
-**Date:** 2026-06-11 (updated 2026-06-12 with Stage 1 results)
-**Status:** Stage 0 ✅ done · Stage 1 ✅ code-complete + unit-tested (manual e2e pending) · Stage 2 ✅ smoke-green (manual e2e pending) · Stages 3–4 pending
+**Date:** 2026-06-11 (updated 2026-06-12 with Stage 3 results)
+**Status:** Stage 0 ✅ done · Stage 1 ✅ code-complete + unit-tested (manual e2e pending) · Stage 2 ✅ smoke-green · Stage 3 ✅ done (appx-side, smoke-green) · Stage 4 (productionize) + Stage 5 (hardening) pending
 **Scope:** Deployment metadata contract (dev + prod), app template seeding, two-container (dev/prod) deploy model, builder deploy skill/prompt, outer container image (nested rootless podman), smoke tests
 **Canonical architecture:** `docs/architecture/important/builder-container-architecture.md`
 **Sibling plan:** appx repo, `docs/plans/phase_9_plan.md` (control plane: port allocation, container supervision, subdomain routing)
@@ -152,11 +152,12 @@ Each project deploys as two inner containers built from the **same Dockerfile**
 |---|---|---|---|
 | 0 | Nested rootless podman spike (timeboxed ~1 day) | agent-server | ✅ done |
 | 1 | Full user flow with agent-server **on host** ("podman without outer container") | both | ✅ code + unit tests; manual e2e pending |
-| 2 | agent-server inside the outer container, started manually | agent-server | ✅ smoke-green (manual e2e pending) |
-| 3 | appx creates/supervises the outer container at startup | appx | pending |
-| 4 | Hardening (restarts, key stripping, resource limits) | both | pending |
+| 2 | agent-server inside the outer container, started manually | agent-server | ✅ smoke-green |
+| 3 | appx creates/supervises the outer container at startup | appx | ✅ smoke-green (`smoke-deploy.sh` 38/38) |
+| 4 | **Productionize**: appx as a systemd service in container mode (deploy scripts, secrets, docker access, soak) | appx (+ both) | pending |
+| 5 | Hardening (restarts, key stripping, resource limits, security review) | both | pending |
 
-Rationale: the user-visible flow (Stage 1) is ~80% of the value and is independent of the outer container; the outer container is packaging. The Stage 0 spike de-risks the one thing that could invalidate Stage 1 decisions — nested podman flag fragility ("works on host, breaks nested").
+Rationale: the user-visible flow (Stage 1) is ~80% of the value and is independent of the outer container; the outer container is packaging. The Stage 0 spike de-risks the one thing that could invalidate Stage 1 decisions — nested podman flag fragility ("works on host, breaks nested"). **Stage 3→4 split (2026-06-12):** Stage 3 proved appx can supervise the container when hand-run with env vars; running it as the production systemd service (secrets, docker access, boot ordering) is a distinct, soak-worthy chunk, so it was carved out as **Stage 4 (productionize)** and hardening moved to **Stage 5**.
 
 ---
 
@@ -409,10 +410,127 @@ ranges already match, and the handshake is live — so Stage 3 is "wrap + superv
 
 ---
 
-## Stage 4 — Hardening (agent-server items)
+## Stage 3 — appx supervises the outer container ✅ DONE (smoke-green)
 
-(Stage 3 is appx-side; see sibling plan.)
+**Status (2026-06-12):** landed **appx-side** (full detail in the sibling
+`phase_9_plan.md` "Stage 3 — Results"). `appx/scripts/smoke-deploy.sh` is
+**green (38/38)** on the same Ubuntu 26.04 / kernel 7.0 VM: appx in container mode
+creates a **healthy** outer container, registers a project, and the full deploy
+chain works **through the appx subdomain proxy** (create → DEV+PROD → curl both
+via the proxy → redeploy DEV (PROD unchanged) → promote → outer restart →
+appx restart). `docker inspect` on the **appx-created** container confirms the
+proven flag set byte-for-byte (`Privileged=false`, `CapAdd=[]`, no
+`no-new-privileges`, no `/dev/fuse`, loopback-only `4001` + `10000-10199`).
 
+What appx added (all appx-side; agent-server/the image unchanged):
+`internal/containerruntime` (docker-CLI `Supervisor` + fake; verbatim `RunArgs`),
+container-mode wiring in `cmd/appx/main.go` (`APPX_AGENT_CONTAINER`, token
+mandatory + persisted 0600, `--recreate-agent-container`), egress bound on the
+docker bridge gateway with `HTTPS_PROXY`/`NODE_USE_ENV_PROXY`/`--add-host`,
+container-mode branches in the deploy scripts, and the `smoke-deploy.sh` gate.
+
+### Cross-cutting findings (recorded for both repos)
+
+These surfaced during Stage 3 bring-up + manual testing and affect the whole
+system / upstream Pi, not just appx:
+
+1. **Bedrock API key set via the agent-client Settings UI does NOT work — it's an
+   upstream Pi gap, not appx/agent-server/the container.** The coding-agent SDK
+   (`pi/packages/coding-agent/src/core/sdk.ts` `streamFn`) passes the stored
+   AuthStorage credential as `options.apiKey`, but the Bedrock provider
+   (`pi/packages/ai/src/providers/amazon-bedrock.ts:141`) authenticates **only**
+   from `options.bearerToken` or `process.env.AWS_BEARER_TOKEN_BEDROCK`; nothing
+   maps `apiKey → bearerToken` for `amazon-bedrock` (and `streamSimpleBedrock` →
+   `buildBaseOptions` never sets `bearerToken`). So the key is silently ignored,
+   the AWS SDK falls back to its default credential chain, and chat fails with
+   **"Could not load credentials from any providers."** Reproduces identically in
+   host mode. **Workaround (works today):** supply `AWS_BEARER_TOKEN_BEDROCK` (+
+   `AWS_REGION`) as env vars — in container mode appx forwards them by name via
+   `APPX_AGENT_ENV_PASSTHROUGH=AWS_BEARER_TOKEN_BEDROCK,AWS_REGION`. **Proper fix
+   (upstream Pi):** map a stored `amazon-bedrock` api_key credential to
+   `bearerToken`, or have the provider accept `options.apiKey` as the bearer token.
+2. **Non-default provider endpoints need an egress allowlist entry.** appx's
+   CONNECT proxy fails closed, and the default allowlist only had Anthropic/OpenAI/
+   Go/npm. Bedrock inference (`bedrock-runtime.<region>.amazonaws.com:443`) was
+   blocked. appx now ships `bedrock-runtime.*.amazonaws.com:443` in the default
+   allowlist with **scoped DNS-wildcard matching** (`*` = one label, like a
+   wildcard cert). Any other provider (Vertex, Azure, self-hosted) similarly needs
+   its endpoint allowlisted.
+3. **`HTTPS_PROXY` is honoured by podman, not just Node.** Injecting it
+   container-wide (so agent-server's LLM traffic traverses the egress proxy) also
+   routed `podman pull` of base images through the LLM allowlist → 403 on
+   `registry-1.docker.io`. Fixed in appx: the container-mode default `NO_PROXY`
+   bypasses common image registries (`.docker.io`, `.docker.com`, `ghcr.io`,
+   `quay.io`, `gcr.io`, `registry.k8s.io`); LLM endpoints (not listed) still go
+   through the proxy.
+4. **`appRunning` (TCP-dial health) false-positives after an outer restart.**
+   Loopback publishes use docker's userland `docker-proxy`, which accepts the
+   host-side connection even when the inner backend is down, so the UI can show an
+   app "running" while inner containers are `created`. Ground truth is the inner
+   `podman inspect` state. Fix (Stage 5): make the health/degraded signal an
+   HTTP-level probe, not a bare TCP dial.
+
+---
+
+## Stage 4 — Productionize (run appx as a systemd service in container mode)
+
+Stage 3 proved appx supervises the container when **hand-run with env vars**.
+Stage 4 makes that the production deployment: appx running as the `appx` systemd
+unit, in container mode, surviving reboots — owned mostly by appx
+(`phase_9_plan.md`), listed here so the shared staging stays in sync.
+
+- [ ] **systemd ordering** — appx must start after the container runtime. Add (via
+  a container-mode **drop-in**, e.g. `/etc/systemd/system/appx.service.d/container.conf`,
+  so host mode's base unit is untouched): `Wants=docker.service` +
+  `After=docker.service network.target`. On reboot, docker comes up → appx's
+  idempotent `EnsureRunning` re-attaches to the existing container (no recreate).
+- [ ] **Secrets to the service** — provider creds reach appx's process env (appx
+  forwards them **by name** into the container; never baked). Put
+  `ANTHROPIC_API_KEY` and/or `AWS_BEARER_TOKEN_BEDROCK` + `AWS_REGION` in
+  `/etc/appx/appx.env` (0600) or an optional `EnvironmentFile=-/etc/appx/secrets.env`,
+  and set `APPX_AGENT_ENV_PASSTHROUGH` to list the extra names. The
+  `AGENT_SERVER_TOKEN` is generated + persisted 0600 by appx (no manual step).
+- [ ] **appx.env (container mode)** — `APPX_AGENT_CONTAINER=true`,
+  `APPX_AGENT_IMAGE=<pinned tag/digest>`,
+  `APPX_AGENT_SECCOMP=/etc/appx/seccomp-builder.json`. `bootstrap.sh` already
+  writes these commented; document enabling them. `system-setup.sh` already reads
+  `APPX_AGENT_CONTAINER` and (container mode) skips the `appx-agent` user +
+  `agent-server.service`, installs the seccomp profile to `/etc/appx/`, and sets
+  up docker access for the appx user; **add the drop-in install there.**
+- [ ] **docker invocation by the `appx` system user** — finalize: rootless docker
+  / host podman (preferred) vs the `docker` group (root-equivalent, current
+  fallback). Under systemd `User=appx` the service inherits the user's
+  supplementary groups, so docker-group works after `usermod` + `daemon-reload` +
+  restart. Document the trade-off; target rootless.
+- [ ] **port 443 without root** — already handled: `appx.service` sets
+  `AmbientCapabilities=CAP_NET_BIND_SERVICE` (the manual `setcap` is only for
+  hand-running the binary outside systemd).
+- [ ] **start/restart semantics** — `Type=simple` (systemd doesn't block on
+  EnsureRunning readiness). On EnsureRunning failure appx `log.Fatal`s → exits →
+  `Restart=on-failure`; consider a longer `RestartSec` in container mode so a
+  missing image / down daemon doesn't hot-loop. First boot: `tools-install.sh`
+  builds/pulls the pinned image before `appx.service` starts (bootstrap order:
+  system-setup → tools-install → start).
+- [ ] **Soak** on a prod-like box: reboot recovery, outer-container restart
+  recovery, secrets reach the container, then schedule deleting the host-mode
+  systemd path (`agent-server.service`) once container mode has run a while.
+
+**Acceptance:** a fresh box → `bootstrap.sh` (container mode) → reboot → appx
+systemd unit is active, the outer container is healthy, and the full UI e2e works
+over the public HTTPS URL with provider creds supplied only via the service env.
+
+---
+
+## Stage 5 — Hardening (agent-server items)
+
+(Stages 3–4 are appx-side; see sibling plan.)
+
+- [ ] **Upstream Pi: Bedrock credential mapping** (cross-repo, see Stage 3 finding
+  #1). Today a Bedrock key set via the Settings UI is ignored because the SDK
+  passes it as `options.apiKey` while the provider only reads `options.bearerToken`
+  / `AWS_BEARER_TOKEN_BEDROCK`. Fix in Pi: map a stored `amazon-bedrock` api_key
+  credential to `bearerToken` (or accept `options.apiKey` in the bedrock provider),
+  so the UI path works without the `AWS_BEARER_TOKEN_BEDROCK` env workaround.
 - [ ] Entrypoint resurrects inner apps after an outer restart: **wipe stale `XDG_RUNTIME_DIR` runtime state first**, then `podman start --all` (the spike proved bare `podman start --all` fails without the wipe; `entrypoint.sh` already does this — confirm it covers both DEV and PROD containers). Architecture doc limitation #6
 - [ ] Bash tool `spawnHook` strips `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `*_API_KEY` from child process env — defence in depth so keys can't leak into `podman run -e`-style invocations even by accident (OWASP secrets-management alignment; keys live in the process heap, not child envs)
 - [ ] **Validate `deployment.url`** in the create-project zod schema as a bounded
