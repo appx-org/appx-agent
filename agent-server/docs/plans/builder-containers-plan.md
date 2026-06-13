@@ -154,10 +154,10 @@ Each project deploys as two inner containers built from the **same Dockerfile**
 | 1 | Full user flow with agent-server **on host** ("podman without outer container") | both | ✅ code + unit tests; manual e2e pending |
 | 2 | agent-server inside the outer container, started manually | agent-server | ✅ smoke-green |
 | 3 | appx creates/supervises the outer container at startup | appx | ✅ smoke-green (`smoke-deploy.sh` 38/38) |
-| 4 | **Productionize**: appx as a systemd service in container mode (deploy scripts, secrets, docker access, soak) | appx (+ both) | pending |
+| 4 | **Productionize**: deploy is container-mode only (remove host mode), appx as a systemd service, secrets, docker access, soak | appx (+ both) | pending |
 | 5 | Hardening (restarts, key stripping, resource limits, security review) | both | pending |
 
-Rationale: the user-visible flow (Stage 1) is ~80% of the value and is independent of the outer container; the outer container is packaging. The Stage 0 spike de-risks the one thing that could invalidate Stage 1 decisions — nested podman flag fragility ("works on host, breaks nested"). **Stage 3→4 split (2026-06-12):** Stage 3 proved appx can supervise the container when hand-run with env vars; running it as the production systemd service (secrets, docker access, boot ordering) is a distinct, soak-worthy chunk, so it was carved out as **Stage 4 (productionize)** and hardening moved to **Stage 5**.
+Rationale: the user-visible flow (Stage 1) is ~80% of the value and is independent of the outer container; the outer container is packaging. The Stage 0 spike de-risks the one thing that could invalidate Stage 1 decisions — nested podman flag fragility ("works on host, breaks nested"). **Stage 3→4 split (2026-06-12):** Stage 3 proved appx can supervise the container when hand-run with env vars; running it as the production systemd service (secrets, docker access, boot ordering) is a distinct, soak-worthy chunk, so it was carved out as **Stage 4 (productionize)** and hardening moved to **Stage 5**. **Host mode dropped from deploy (2026-06-12):** container mode supersedes it, so Stage 4 removes the host-mode deploy/systemd path entirely (no `appx-agent` user, no `agent-server.service`, no host Node/Pi install); local development becomes a manual, no-systemd flow (run agent-server by hand + `appx --http`). The appx binary keeps its `APPX_AGENT_SERVER_URL` runtime path for that local/macOS use.
 
 ---
 
@@ -395,8 +395,11 @@ built (all appx-side, tracked in the sibling `phase_9_plan.md` Stage 3):
 - **Mismatch detection** (never silently recreate — it kills running user apps).
 - **Deploy scripts** (`system-setup.sh`/`bootstrap.sh`/`tools-install.sh`) still
   install host Node + the systemd agent-server; container mode installs docker +
-  the pinned outer image instead. Open decision: how the appx user invokes docker
-  (prefer rootless docker / host podman over the root-equivalent `docker` group).
+  the pinned outer image instead. ~~Open decision: how the appx user invokes
+  docker~~ **Resolved (Stage 4):** outer = rootful host Docker (spike T2);
+  rootless-docker-outer is non-viable (nested subuid), so the `appx` user uses the
+  `docker` group (root-equivalent, accepted on a dedicated box) — tighter scoping
+  is Stage 5.
 - **`appx/scripts/smoke-deploy.sh`** is the missing cross-service gate — the
   sibling of this repo's `container-smoke.sh`, but curling **through the appx
   subdomain proxy** (`<name>-dev.<domain>` / `<name>.<domain>`) rather than the
@@ -472,52 +475,102 @@ system / upstream Pi, not just appx:
 
 ---
 
-## Stage 4 — Productionize (run appx as a systemd service in container mode)
+## Stage 4 — Productionize (deploy is container-mode only; appx runs as a systemd service)
 
 Stage 3 proved appx supervises the container when **hand-run with env vars**.
-Stage 4 makes that the production deployment: appx running as the `appx` systemd
-unit, in container mode, surviving reboots — owned mostly by appx
-(`phase_9_plan.md`), listed here so the shared staging stays in sync.
+Stage 4 makes that *the* production deployment and **removes host mode from the
+deploy path entirely** — owned mostly by appx (`phase_9_plan.md`), listed here so
+the shared staging stays in sync.
 
-- [ ] **systemd ordering** — appx must start after the container runtime. Add (via
-  a container-mode **drop-in**, e.g. `/etc/systemd/system/appx.service.d/container.conf`,
-  so host mode's base unit is untouched): `Wants=docker.service` +
-  `After=docker.service network.target`. On reboot, docker comes up → appx's
+**Decision (2026-06-12): drop host mode from `deploy/`.** The deploy scripts +
+systemd become **container-mode only**. There is no longer a host-mode toggle to
+maintain, no `appx-agent` user, no `agent-server.service`, and no host install of
+Node/Pi/agent-server. Local development does **not** use these scripts: a
+developer runs agent-server manually (e.g. `npm run dev`) and appx in `--http`
+mode pointed at `APPX_AGENT_SERVER_URL` — by hand, no systemd. This keeps the
+appx **binary's** host-mode runtime capability (the `APPX_AGENT_SERVER_URL` path
+is still in the code for local/macOS dev) while deleting the host-mode
+**deployment** machinery that container mode supersedes.
+
+- [ ] **Strip host mode from the deploy scripts** — `system-setup.sh`: remove the
+  `appx-agent` user/group, `/home/appx-agent` dirs, and the
+  `agent-server.service` install/enable; **delete** `deploy/agent-server.service`
+  and remove the `APPX_AGENT_CONTAINER` branch (container mode is now the only
+  path). `tools-install.sh`: drop the host Pi/agent-server install; **build the
+  outer image from the agent-server checkout**
+  (`docker build -f <agent-server>/container/Dockerfile`), tagged
+  `APPX_AGENT_IMAGE` (the Dockerfile's own multi-stage build compiles agent-server
+  inside a `node:22` stage, so the prod box needs docker + the source, not host
+  Node). Pinned by **tag** for now; publishing a registry image + deploy-by-digest
+  is a deferred *Potential improvement* (below). `bootstrap.sh`: stop prompting for / writing
+  a mode toggle; always write the container-mode `appx.env`; start only `appx`.
+  Existing boxes with a stale `agent-server.service` should have it disabled +
+  removed on upgrade (idempotent cleanup), not left dangling.
+- [ ] **systemd ordering** — appx must start after the container runtime: in
+  `appx.service` (or a drop-in) `Wants=docker.service` +
+  `After=docker.service network.target`. On reboot docker comes up → appx's
   idempotent `EnsureRunning` re-attaches to the existing container (no recreate).
+  (No host-mode base unit to keep clean anymore, so this can live directly in
+  `appx.service`.)
+- [ ] **Container restart policy + supervision model** — add `--restart
+  unless-stopped` to `ContainerSpec.RunArgs` so the **Docker daemon** resurrects
+  the outer container on process crash *and* on reboot, independent of appx. This
+  closes a real Stage 3 gap: appx runs `EnsureRunning` **only at startup** (it is
+  not a continuous watchdog), and the spec set no restart policy, so a
+  `builder-outer` crash *while appx keeps running* was not auto-healed. The model
+  to document: **the daemon keeps the container's process alive** (`--restart`);
+  **appx ensures it exists / is correct / is healthy** at startup (`EnsureRunning`,
+  drift detection, health poll); **`appx.service` `Restart=on-failure`** covers
+  appx itself. (Whether appx also needs a periodic re-`EnsureRunning`/health loop
+  vs. relying on the restart policy + the Stage 5 degraded banner is a Stage 5
+  call.) Verify `--restart unless-stopped` plays well with the entrypoint's
+  stale-`XDG_RUNTIME_DIR` wipe on a daemon-driven restart.
 - [ ] **Secrets to the service** — provider creds reach appx's process env (appx
   forwards them **by name** into the container; never baked). Put
   `ANTHROPIC_API_KEY` and/or `AWS_BEARER_TOKEN_BEDROCK` + `AWS_REGION` in
-  `/etc/appx/appx.env` (0600) or an optional `EnvironmentFile=-/etc/appx/secrets.env`,
-  and set `APPX_AGENT_ENV_PASSTHROUGH` to list the extra names. The
-  `AGENT_SERVER_TOKEN` is generated + persisted 0600 by appx (no manual step).
-- [ ] **appx.env (container mode)** — `APPX_AGENT_CONTAINER=true`,
+  `/etc/appx/appx.env` (0600) or an optional `EnvironmentFile=-/etc/appx/secrets.env`
+  (`root:root 0600`), and set `APPX_AGENT_ENV_PASSTHROUGH` to list the extra
+  names. `AGENT_SERVER_TOKEN` is generated + persisted 0600 by appx (no manual step).
+- [ ] **appx.env** — always container mode: `APPX_AGENT_CONTAINER=true`,
   `APPX_AGENT_IMAGE=<pinned tag/digest>`,
-  `APPX_AGENT_SECCOMP=/etc/appx/seccomp-builder.json`. `bootstrap.sh` already
-  writes these commented; document enabling them. `system-setup.sh` already reads
-  `APPX_AGENT_CONTAINER` and (container mode) skips the `appx-agent` user +
-  `agent-server.service`, installs the seccomp profile to `/etc/appx/`, and sets
-  up docker access for the appx user; **add the drop-in install there.**
-- [ ] **docker invocation by the `appx` system user** — finalize: rootless docker
-  / host podman (preferred) vs the `docker` group (root-equivalent, current
-  fallback). Under systemd `User=appx` the service inherits the user's
-  supplementary groups, so docker-group works after `usermod` + `daemon-reload` +
-  restart. Document the trade-off; target rootless.
+  `APPX_AGENT_SECCOMP=/etc/appx/seccomp-builder.json`. `system-setup.sh` installs
+  the seccomp profile to `/etc/appx/` and sets up docker access for the appx user.
+- [ ] **`appx` service user → Docker access** — *Runtime is already decided +
+  validated (SPIKE-FINDINGS T2): outer = **rootful host Docker**, inner = rootless
+  podman. Not open* (rootless-docker-outer would reintroduce the nested
+  subuid-exhaustion that killed rootless-podman-outer, and would break the
+  rootful-bridge egress auto-detect — so it is **not** an option). The only thing
+  to wire is how the unprivileged `appx` system user reaches the root daemon:
+  **Decision — add `appx` to the `docker` group** (proven in Stages 2–3; under
+  systemd `User=appx` the service inherits it after `usermod` + `daemon-reload` +
+  restart). Document the residual risk honestly — docker-group membership is
+  **root-equivalent** — mitigated by this being a dedicated single-purpose box +
+  dedicated `appx` user. Tightening that access (a docker-socket proxy restricting
+  the API surface, or a narrow sudoers rule) is **Stage 5 hardening**, not a
+  blocker here.
 - [ ] **port 443 without root** — already handled: `appx.service` sets
   `AmbientCapabilities=CAP_NET_BIND_SERVICE` (the manual `setcap` is only for
   hand-running the binary outside systemd).
 - [ ] **start/restart semantics** — `Type=simple` (systemd doesn't block on
   EnsureRunning readiness). On EnsureRunning failure appx `log.Fatal`s → exits →
-  `Restart=on-failure`; consider a longer `RestartSec` in container mode so a
-  missing image / down daemon doesn't hot-loop. First boot: `tools-install.sh`
-  builds/pulls the pinned image before `appx.service` starts (bootstrap order:
-  system-setup → tools-install → start).
+  `Restart=on-failure`; pick a `RestartSec` large enough that a missing image /
+  down daemon doesn't hot-loop. First boot: `tools-install.sh` builds/pulls the
+  pinned image before `appx.service` starts (bootstrap order: system-setup →
+  tools-install → start).
+- [ ] **verify-installation.sh** — container-mode checks (unit active, container
+  healthy, proven flags present, publishes loopback-only, secret reachable);
+  remove host-mode (agent-server.service) assertions.
+- [ ] **Docs** — update `README`/`.env.example` so local dev is described as the
+  manual no-systemd flow (run agent-server yourself + `appx --http` with
+  `APPX_AGENT_SERVER_URL`); production = `bootstrap.sh` (container only).
 - [ ] **Soak** on a prod-like box: reboot recovery, outer-container restart
-  recovery, secrets reach the container, then schedule deleting the host-mode
-  systemd path (`agent-server.service`) once container mode has run a while.
+  recovery, secrets reach the container, full UI e2e over public HTTPS.
 
-**Acceptance:** a fresh box → `bootstrap.sh` (container mode) → reboot → appx
-systemd unit is active, the outer container is healthy, and the full UI e2e works
-over the public HTTPS URL with provider creds supplied only via the service env.
+**Acceptance:** a fresh box → `bootstrap.sh` → reboot → the `appx` systemd unit is
+active, the outer container is healthy, and the full UI e2e works over the public
+HTTPS URL with provider creds supplied only via the service env. No `appx-agent`
+user, no `agent-server.service`, no host Node/Pi/agent-server install exist on the
+box. Local dev still works by hand (manual agent-server + `appx --http`).
 
 ---
 
@@ -563,6 +616,52 @@ Every networking boundary is tested by a real connection at exactly one layer an
 
 Validated or low-risk upgrades we defer to keep v1 simple and uniform. None
 require app-specific logic in appx.
+
+### Publish the outer image (registry + pinned digest)
+
+Stage 4 builds `builder-outer` from the agent-server checkout **on the box** (prod
+carries the source). A later improvement: build it in **CI**, push to a registry,
+and set `APPX_AGENT_IMAGE=<registry>/builder-outer@sha256:…` so deploy **pulls a
+pinned digest** instead of building — removing the agent-server source + build
+step from prod, and making "what's running" immutable, reproducible, and
+auditable. `tools-install.sh` already takes the pull path when `APPX_AGENT_IMAGE`
+is a registry ref, so this is mostly a CI/registry task (decide tagging + signing,
+e.g. cosign, and who owns the registry), not appx code. Deferred — building from
+source is fine while the image and its base recipe are still moving.
+
+### Durable app data (persistent volumes for stateful apps)
+
+The deploy model rebuilds containers on every refinement/redeploy, so anything an
+app writes to its **container layer is lost** on the next deploy; and the skill's
+*Multi-container apps* section invites a `<project>-db` sibling without saying how
+to persist it. Today this is harmless (the seeded template is a static Vite SPA
+with no data), but it becomes load-bearing the first time a template/app has a
+database. Add a **"Persistent data"** convention to the `deploy-app` skill — but
+as a deliberate design item, not a one-line `-v` flag, because it changes the
+deploy model's statefulness semantics. It must cover:
+
+- **Named volumes, reused on redeploy, never `rm`'d.** e.g.
+  `-v <project>-db-data:/var/lib/postgresql/data`. Redeploy replaces the
+  *container*, never the *data volume* (a "clean up" `volume rm` = data loss).
+  Volumes live under the `builder-podman-storage` named docker volume, so they
+  already survive outer restart/recreate.
+- **DEV/PROD data isolation.** The skill currently runs **one** shared
+  `<project>-db` for both env instances — which already half-breaks "iterate on
+  DEV without touching PROD," and durable data makes a bad DEV migration able to
+  corrupt PROD's real data. Persistence forces a choice: separate volumes (and
+  likely separate db containers) per env (`<project>-db-dev-data` /
+  `<project>-db-prod-data`), or an explicit, documented "DEV and PROD share data"
+  stance.
+- **Migrations, not resets.** Once data survives rebuilds, schema changes must be
+  migrations; "drop and recreate" silently destroys user data.
+- **Cleanup on project delete.** Durable volumes leak — today
+  `appx Delete → agent-server DeleteProject` removes the project dir + sessions
+  but **not** podman containers/images/volumes. A stateful model needs a teardown
+  hook (agent-server or the skill's "remove app" path) so volumes don't accumulate.
+
+Deferred because v1's template has no data, and getting it right is a small design
+pass (the four points above) rather than a flag. Owned by this repo (skill + D6
+deploy model + template); the only appx touch-point is delete-time volume cleanup.
 
 ### Hot-reload DEV (instant refinements)
 
