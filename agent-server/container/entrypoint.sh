@@ -35,4 +35,25 @@ else
 	tail -n 20 /tmp/podman-info.log || true
 fi
 
+# Resurrect inner app containers after an outer restart/crash/reboot. The named
+# ~/.local/share/containers volume preserves each app container's definition, but
+# `docker restart`/a daemon-driven restart leaves them in 'Created'/'Exited', so
+# without this the user's deployed apps stay DOWN until the next redeploy.
+#
+# `|| true` is load-bearing: this runs under `set -euo pipefail`, so one
+# un-startable inner container must NOT abort the entrypoint and crash-loop the
+# whole outer container (same fail-soft stance as the warmup above). Runs after
+# the XDG_RUNTIME_DIR wipe so podman's pause process is freshly valid.
+#
+# SHORT-TERM FIX (Stage 5 follow-up): `--all` is deliberately blunt — it starts
+# every container that exists, including intentionally-stopped or stale ones from
+# old deploys, with no DEV/PROD intent and possible published-port clashes. The
+# principled replacement is registry-driven reconciliation (start exactly the
+# containers the project registry says should be running). Acceptable today given
+# the strict one-DEV/one-PROD-per-project model. Pairs with the Stage 5 HTTP-probe
+# health fix (the appRunning TCP dial false-positives during this startup window).
+echo "[entrypoint] resurrecting inner app containers (podman start --all)"
+podman start --all > /tmp/podman-start-all.log 2>&1 || \
+	echo "[entrypoint] WARNING: 'podman start --all' had failures — see /tmp/podman-start-all.log (continuing)"
+
 exec "$@"
