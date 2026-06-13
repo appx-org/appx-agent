@@ -1,12 +1,42 @@
 # syntax=docker/dockerfile:1
-# Stage 0 spike draft — the OUTER "builder" container image.
+# Stage 2 — the OUTER "builder" container image.
 #
-# Validates: unprivileged docker container running rootless podman inside.
-# agent-server is deliberately NOT installed here (Stage 2 adds it); this image
-# exists purely to prove the nesting works on the target host.
+# Promotes the Stage 0 spike image (which only proved nested rootless podman by
+# keeping itself alive for `docker exec`) to actually RUN agent-server, with the
+# deploy-app skill + app template baked in.
 #
-# See docs/plans/stage0-spike-brief.md for the validation tasks and
-# container/SPIKE-FINDINGS.md for the (to-be-recorded) results.
+# Built from the REPO ROOT (not container/) so the Node build stage can compile
+# agent-server. `run-outer.sh` invokes: docker build -f container/Dockerfile .
+#
+# HARD SECURITY INVARIANTS (transcribed verbatim from the deletion-tested Stage 0
+# recipe — see container/SPIKE-FINDINGS.md). Do NOT weaken any of these:
+#   - no --privileged, no --cap-add SYS_ADMIN, no /dev/fuse, no seccomp=unconfined
+#   - the outer process runs as uid 1000 (builder)
+#   - newuidmap/newgidmap ship with FILE CAPABILITIES (not setuid-root)
+#   - NEVER add --security-opt no-new-privileges (incompatible with the file-cap
+#     helpers; see the WARNING below)
+#   - native rootless overlay, cgroupfs, file events logger, subuid/subgid ranges
+# See docs/plans/builder-containers-plan.md (Stage 2, D3/D5/D6).
+
+# ── Stage A: compile agent-server + prune to a production runtime ─────────────
+# Official node:22 (current LTS, matches .github/workflows/contract.yml's
+# node-version: 22 and the box's node). The build stage owns npm + the dev
+# toolchain; only the pruned dist/ + production node_modules are copied forward,
+# so none of that tooling reaches the final unprivileged image.
+FROM node:22-bookworm-slim AS server-build
+WORKDIR /build
+# Install deps first (cache anchor) — only re-runs when the lockfile changes.
+COPY package.json package-lock.json ./
+RUN npm ci
+# Compile TypeScript → dist/ (the build script also copies the generated event
+# schema into dist/contract/).
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
+# Prune to production dependencies in place; node_modules is now runtime-only.
+RUN npm prune --omit=dev
+
+# ── Stage B: the rootless-podman outer image (Stage 0 recipe, UNCHANGED) ──────
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -19,6 +49,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       podman uidmap slirp4netns fuse-overlayfs \
       ca-certificates curl git iproute2 libcap2-bin \
     && rm -rf /var/lib/apt/lists/*
+
+# Node 22 runtime for agent-server in the final stage. Installed from NodeSource
+# (the canonical way to get a specific Node LTS on Ubuntu, with correct apt
+# dependency resolution) so it matches the build stage's major version. We keep
+# the proven ubuntu:24.04 podman base rather than switching to a node:* base —
+# the nesting recipe (file-cap helpers, native overlay) was validated on this
+# base and must not change.
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/* \
+ && node --version
 
 # CRITICAL FIX (see SPIKE-FINDINGS.md "newuidmap"): Ubuntu ships newuidmap /
 # newgidmap as setuid-root. Inside an unprivileged docker container that makes
@@ -69,8 +110,32 @@ RUN mkdir -p /home/builder/.config/containers \
 RUN mkdir -p /workspace /home/builder/.local/share/containers \
  && chown -R builder:builder /workspace /home/builder/.local
 
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+# ── agent-server runtime + baked builder assets (Stage 2 additions) ───────────
+# Pruned runtime from the build stage (dist/ + production node_modules +
+# package.json so Node resolves "type": "module" and node_modules). Root-owned
+# is fine — the unprivileged builder process only READS these.
+COPY --from=server-build /build/dist /opt/agent-server/dist
+COPY --from=server-build /build/node_modules /opt/agent-server/node_modules
+COPY --from=server-build /build/package.json /opt/agent-server/package.json
+
+# Bake the deploy skill + app template at fixed paths and point env at them
+# (D4 / D5). builder reads these read-only.
+COPY builder-agent/skills/deploy-app /opt/builder-agent/skills/deploy-app
+COPY builder-agent/templates/vite-spa /opt/builder-agent/templates/vite-spa
+
+COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+# agent-server env contract (see src/config.ts). Secrets (ANTHROPIC_API_KEY,
+# AGENT_SERVER_TOKEN) are NEVER baked — they arrive via `docker run -e`.
+#   AGENT_SERVER_HOST=0.0.0.0  the container boundary takes over loopback's
+#   role; the host PUBLISH stays loopback-only (run-outer.sh -p 127.0.0.1:...).
+ENV WORKSPACE_DIR=/workspace \
+    AGENT_SERVER_HOST=0.0.0.0 \
+    AGENT_SERVER_PORT=4001 \
+    APP_CONTAINER_RUNTIME=podman \
+    APPX_TEMPLATE_DIR=/opt/builder-agent/templates/vite-spa \
+    PI_SKILL_PATHS=/opt/builder-agent/skills/deploy-app
 
 USER builder
 WORKDIR /workspace
@@ -79,6 +144,7 @@ WORKDIR /workspace
 ENV XDG_RUNTIME_DIR=/tmp/runtime-builder
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-# Spike keeps the container alive for `docker exec` iteration; Stage 2 replaces
-# this with the agent-server process.
-CMD ["sleep", "infinity"]
+# Stage 2: agent-server is the container's main process. The entrypoint warms
+# up rootless podman then `exec`s this (so signals reach Node directly). Node
+# resolves /opt/agent-server/node_modules by walking up from the script dir.
+CMD ["node", "/opt/agent-server/dist/server.js"]

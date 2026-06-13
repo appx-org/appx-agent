@@ -315,12 +315,53 @@ export const ProjectIdParamSchema = z.object({
 		.openapi({ param: { name: "id", in: "path" } }),
 });
 
-/** Body for `POST /v1/projects`. Name-only — the id/dir are derived server-side. */
+/**
+ * One deployment environment's address. The control plane (appx) owns ports
+ * and URLs and pushes them down here; agent-server never invents or reports a
+ * port back. Both fields are optional so a partial registration is still valid.
+ *
+ * Security (OWASP fail-fast at the boundary): the port must be a non-privileged,
+ * in-range TCP port — privileged (<1024) or out-of-range values are rejected
+ * with a 400 before any persistence happens.
+ */
+export const DeploymentTargetSchema = z
+	.object({
+		port: z
+			.number()
+			.int()
+			.min(1024)
+			.max(65535)
+			.optional()
+			.openapi({ example: 10007, description: "Reserved host port (non-privileged, 1024–65535)." }),
+		url: z.string().optional().openapi({
+			example: "https://eventx.example.com",
+			description: "Public URL appx exposes for this environment.",
+		}),
+	})
+	.openapi("DeploymentTarget");
+
+/**
+ * Deployment metadata for a project: a DEV and a PROD environment built from
+ * the same image (two instances, not two builds). Authored by the control
+ * plane, read by the agent — an instruction, never a discovery.
+ */
+export const DeploymentSchema = z
+	.object({
+		dev: DeploymentTargetSchema.optional(),
+		prod: DeploymentTargetSchema.optional(),
+	})
+	.openapi("Deployment");
+
+/** Body for `POST /v1/projects`. Name plus optional control-plane deployment metadata. */
 export const CreateProjectRequestSchema = z
 	.object({
 		name: z.string().min(1).openapi({
 			example: "My Cool App",
 			description: "Human-facing project name. Slugified into the immutable id and directory name.",
+		}),
+		deployment: DeploymentSchema.optional().openapi({
+			description:
+				"Optional control-plane deployment metadata (dev + prod ports/URLs). Idempotent re-POST updates it.",
 		}),
 	})
 	.openapi("CreateProjectRequest");
@@ -340,6 +381,9 @@ export const ProjectInfoSchema = z
 		createdAt: z.string().openapi({
 			example: "2026-06-03T10:00:00.000Z",
 			description: "ISO-8601 UTC timestamp",
+		}),
+		deployment: DeploymentSchema.optional().openapi({
+			description: "Control-plane deployment metadata, if registered.",
 		}),
 	})
 	.openapi("ProjectInfo");

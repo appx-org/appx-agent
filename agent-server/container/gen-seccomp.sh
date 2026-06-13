@@ -17,7 +17,8 @@
 # Net result: a tailored profile that is strictly tighter than `unconfined`.
 set -euo pipefail
 cd "$(dirname "$0")"
-docker build -t builder-outer . >/dev/null
+# Built from the repo root (Stage 2 context change); the Dockerfile lives here.
+docker build -f Dockerfile -t builder-outer .. >/dev/null
 cid=$(docker create builder-outer)
 docker cp "$cid:/usr/share/containers/seccomp.json" /tmp/stock-seccomp.json
 docker rm "$cid" >/dev/null

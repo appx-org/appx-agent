@@ -257,3 +257,90 @@ The Stage 2 image and appx's Stage 3 supervisor should transcribe this verbatim:
 - If appx ever wants podman-on-host, settle the rootful-podman DNS configuration
   (`aardvark-dns`/`netavark` or `--dns`) noted in the T2 sub-question.
 
+
+---
+
+# Stage 2 Findings — agent-server packaged inside the outer container
+
+**Status:** COMPLETE — `./scripts/container-smoke.sh` exits 0 (31/31) and the
+Stage 0 `./container/smoke.sh` still exits 0 (11/11), both on the same Ubuntu
+26.04 / kernel 7.0 Hetzner VM as Stage 0. The security boundary is byte-for-byte
+the proven Stage 0 set; Stage 2 added ONLY packaging (agent-server + assets) and
+the two new publishes. `docker inspect` confirms `Privileged=false`,
+`CapAdd=[]`, no `no-new-privileges`, no `/dev/fuse`.
+
+## What changed (packaging only — no flag/recipe change)
+
+- `container/Dockerfile` — added a **Node 22 build stage** (`node:22-bookworm-slim`,
+  `npm ci && npm run build && npm prune --omit=dev`) and copied the pruned runtime
+  (`dist/` + production `node_modules` + `package.json`) into the unchanged
+  ubuntu:24.04 rootless-podman stage. The file-cap `newuidmap`/`newgidmap` fix,
+  native-overlay `storage.conf`, `containers.conf`, subuid/subgid, `builder` user
+  and volume mountpoints are **verbatim from Stage 0**.
+- The image is now built from the **repo root** (`docker build -f container/Dockerfile ..`)
+  so the build stage can see the agent-server source; a root `.dockerignore`
+  keeps the context lean (host `node_modules`/`dist`/`.git`/`docs` excluded).
+- Baked assets at fixed paths: `/opt/builder-agent/skills/deploy-app` (→ `PI_SKILL_PATHS`)
+  and `/opt/builder-agent/templates/vite-spa` (→ `APPX_TEMPLATE_DIR`).
+- `container/entrypoint.sh` — kept the stale-`XDG_RUNTIME_DIR` wipe + `podman info`
+  warmup **exactly**; the warmup still does not crash-loop the container on
+  failure (now so the API stays reachable, not for spike debugging). CMD is now
+  `node /opt/agent-server/dist/server.js`, `exec`'d as PID 1 for clean signals.
+- `container/run-outer.sh` — added `-p 127.0.0.1:4001:4001` (API) and changed the
+  app publish to `-p 127.0.0.1:10000-10199:10000-10199` (200 ports = 100 projects
+  × DEV+PROD; matches appx `PublishedPortRangeEnd=10199`). Secrets passed by name
+  (`-e ANTHROPIC_API_KEY -e AGENT_SERVER_TOKEN`) — never baked. Security flags
+  untouched.
+
+## Decisions (industry-standard options + rationale)
+
+- **Node in the final stage: NodeSource apt repo (`setup_22.x`).** Canonical way
+  to get a specific Node LTS on Ubuntu with correct apt dependency resolution,
+  and it keeps the *proven* ubuntu:24.04 podman base (we did NOT switch to a
+  `node:*` base — the nesting recipe was validated on ubuntu:24.04 and must not
+  change). The build stage uses the official `node:22-bookworm-slim` for fast,
+  reproducible `npm ci`/`build`; only the pruned runtime crosses into the final
+  image (no npm/dev-toolchain shipped). Node major matches (22) across both
+  stages so any native addons stay ABI-compatible; bookworm→ubuntu24.04 is a
+  forward glibc step (2.36 → 2.39), which is compatible.
+- **Build once, two instances (D6).** The smoke builds `<p>-app:dev` once and
+  `podman tag`s `:prod` from it, then runs both — the most faithful encoding of
+  "DEV and PROD are the same build." Redeploy rebuilds the `:dev` tag only, so
+  PROD stays the old image (verified by grepping each instance's hashed JS bundle).
+- **Invoker runtime: rootful host docker** (the box's pre-installed Docker
+  29.5.3, user in the `docker` group). Stage 0's T2 sub-question already settled
+  this: docker-outer is the complete, lowest-friction path (embedded DNS resolver,
+  no extra flags); rootless-podman-outer is a dead end (nested subuid exhaustion)
+  and rootful-podman-outer trades two security flags for a DNS-config burden.
+  No change for Stage 2.
+- **Smoke determinism: drop the named volumes up front.** A box polluted by
+  earlier manual/spike runs leaves inner containers that collide on the app ports
+  (`podman start --all` → "address already in use"). The gate starts from clean
+  `builder-workspace` + `builder-podman-storage` volumes so it can't flap. (This
+  is exactly the contamination that surfaced during bring-up; it is a test-hygiene
+  issue, not a Stage 2 regression.)
+
+## Metrics (this VM: 4 vCPU / 7.6 GiB)
+
+- **Node version:** build stage `node:22-bookworm-slim`; final-stage runtime
+  `node v22.22.3` (NodeSource 22.x). Matches CI's `node-version: 22`.
+- **Image size:** ~1.03 GB (reported). Dominated by production `node_modules`
+  (263 MB) + the Node runtime + podman/ubuntu base; `dist/` is 456 KB. Not
+  optimised for Stage 2 (Stage 4 can trim if it matters).
+- **Build times:** cold (build-cache pruned, base images present) **~55 s**
+  end-to-end, npm ci dominating; warm rebuild after a source-only edit is a few
+  seconds (layer cache on the `npm ci` stage).
+- **Inner multi-stage Vite build under nested rootless podman:** **~13 s cold**
+  (consistent with the inner-app spike); warm redeploy is sub-second on the cached
+  deps layer.
+
+## Open items carried forward
+
+- Tailored AppArmor profile (Stage 0 item 7) still deferred — bounded containment
+  loss; seccomp + userns + cap-bounding still apply.
+- The one Stage 0 caveat ("re-verify on genuine Ubuntu 24.04") is **unchanged by
+  Stage 2** — this VM is 26.04, same family the spike was validated on; the
+  in-image podman target is still ubuntu:24.04. No OS-divergence re-check was in
+  scope here.
+- Image-size trim, resource limits (`--memory`/`--cpus`), and the bash-tool
+  `*_API_KEY` strip are Stage 4.

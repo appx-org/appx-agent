@@ -68,6 +68,12 @@
  *   AGENT_SERVER_TOKEN     if set, /v1/* requires Bearer auth.
  *                          APPX_AGENT_SERVER_TOKEN is a legacy alias.
  *
+ *   APPX_TEMPLATE_DIR      optional app template recursively copied into a
+ *                          project dir the first time it is created. Absent ⇒
+ *                          projects start empty. Must exist if set.
+ *   APP_CONTAINER_RUNTIME  container runtime the deploy skill + prompt section
+ *                          reference (default "podman"). docker in macOS dev.
+ *
  * LITELLM_* variables are owned by `./providers/litellm.ts` and parsed
  * separately at the same boundary.
  */
@@ -146,6 +152,9 @@ const RawEnv = z.object({
 	AGENT_SERVER_PORT: z.preprocess(blankToUndefined, z.coerce.number().int().positive().max(65535).default(4001)),
 	AGENT_SERVER_TOKEN: optionalString,
 	APPX_AGENT_SERVER_TOKEN: optionalString,
+
+	APPX_TEMPLATE_DIR: optionalString,
+	APP_CONTAINER_RUNTIME: stringWithDefault("podman"),
 });
 
 /** Fully resolved, validated server configuration. */
@@ -164,6 +173,10 @@ export type ServerConfig = {
 	host: string;
 	port: number;
 	token: string | undefined;
+	/** Optional app template seeded into brand-new project dirs (absent ⇒ no seeding). */
+	templateDir: string | undefined;
+	/** Container runtime the agent's deploy skill + prompt reference. */
+	appContainerRuntime: string;
 };
 
 /**
@@ -205,6 +218,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 	// alias when both are set.
 	const token = raw.AGENT_SERVER_TOKEN ?? raw.APPX_AGENT_SERVER_TOKEN;
 
+	// Resolve + existence-check the optional template dir so a misconfigured path
+	// fails fast at boot rather than on the first project create.
+	const templateDir = raw.APPX_TEMPLATE_DIR ? resolve(raw.APPX_TEMPLATE_DIR) : undefined;
+	if (templateDir && !existsSync(templateDir)) {
+		throw new ConfigError([`APPX_TEMPLATE_DIR does not exist: ${templateDir}`]);
+	}
+
 	return {
 		workspaceDir,
 		anthropicApiKey: raw.ANTHROPIC_API_KEY,
@@ -219,5 +239,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 		host: raw.AGENT_SERVER_HOST,
 		port: raw.AGENT_SERVER_PORT,
 		token,
+		templateDir,
+		appContainerRuntime: raw.APP_CONTAINER_RUNTIME,
 	};
 }

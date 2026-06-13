@@ -1,0 +1,21 @@
+# Build context for container/Dockerfile (built from the repo root so the Node
+# build stage can compile agent-server). Keep the context lean: the build stage
+# runs `npm ci` itself, so host node_modules/dist must never be shipped (stale
+# artifacts + huge context). Docs/git history are irrelevant to the image.
+node_modules
+dist
+.gen
+.git
+.github
+docs
+test
+*.log
+.env
+.env.local
+.DS_Store
+# container/ runtime artefacts that are NOT baked into the image (the host
+# passes seccomp by absolute path at `docker run` time; scripts/md are docs).
+container/*.md
+container/run-outer.sh
+container/smoke.sh
+container/gen-seccomp.sh

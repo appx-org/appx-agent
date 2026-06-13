@@ -44,10 +44,40 @@ All via env vars (see `.env.example`):
 | `AGENT_SERVER_HOST`  | no       | `127.0.0.1` | Bind host.                                                                                                                    |
 | `AGENT_SERVER_PORT`  | no       | `4001`      | Bind port.                                                                                                                    |
 | `AGENT_SERVER_TOKEN` | no       | —           | If set, `/v1/*` requires `Authorization: Bearer <token>`.                                                                     |
+| `APPX_TEMPLATE_DIR`  | no       | —           | App template recursively copied into a project dir the first time it is created (build caches skipped). Absent ⇒ projects start empty. Must exist if set. |
+| `APP_CONTAINER_RUNTIME` | no    | `podman`    | Container runtime the deploy-app skill + injected prompt reference. Use `docker` for macOS Docker Desktop in local dev.        |
 
 Auth is opt-in: loopback-only single-user dev can leave `AGENT_SERVER_TOKEN`
 unset. Set it for shared hosts or any deployment where another local process
 could reach the port.
+
+### Containerised apps (Stage 1)
+
+New projects can be seeded from a baked-in app template and deployed as DEV +
+PROD containers. The builder-agent assets (the deploy skill + app template) live
+under `builder-agent/`. For local dev:
+
+```sh
+WORKSPACE_DIR=/abs/path/to/workspace \
+  APPX_TEMPLATE_DIR="$PWD/builder-agent/templates/vite-spa" \
+  APP_CONTAINER_RUNTIME=docker \
+  PI_SKILL_PATHS="$PWD/builder-agent/skills/deploy-app" \
+  npm run dev
+```
+
+- `APPX_TEMPLATE_DIR` seeds the provisional Vite SPA template (a lean,
+  single-runtime-target Dockerfile served by nginx) into each fresh project.
+- `PI_SKILL_PATHS` wires in the `deploy-app` skill so the builder agent knows
+  the build/run/redeploy/promote conventions. The outer container image bakes
+  both in at fixed paths (Stage 2).
+- Ports + public URLs come from the control plane (appx) on project create and
+  are written to each project's `.pi/deployment.json`; the agent never invents a
+  port.
+
+> The shell above exports the vars (so `$PWD` expands). When using a `.env`
+> file, Node's `--env-file` does **not** expand `$PWD` — write real paths, and
+> make `PI_SKILL_PATHS` **absolute** (it is passed through unresolved and the
+> runtime cwd is the project dir, not the agent-server repo).
 
 ## Filesystem layout
 

@@ -57,9 +57,9 @@ export function createProjectsApp(registry: ProjectRegistry): OpenAPIHono {
 			},
 		}),
 		(c) => {
-			const { name } = c.req.valid("json");
+			const { name, deployment } = c.req.valid("json");
 			try {
-				return c.json(registry.createProject({ name }), 200);
+				return c.json(registry.createProject({ name, deployment }), 200);
 			} catch (err) {
 				if (err instanceof InvalidProjectNameError) {
 					return c.json({ error: err.message }, 400);

@@ -52,6 +52,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentCredentialsService } from "../credentials/credentialsService.js";
 import type { ThinkingLevel } from "../shared/thinking.js";
+import { buildDeploymentPromptSection, type Deployment } from "./deployment.js";
 import { ProjectSession } from "./projectSession.js";
 
 type SessionModel = NonNullable<CreateAgentSessionOptions["model"]>;
@@ -150,6 +151,19 @@ export type ProjectRuntimeConfig = {
 	agentsFile?: string;
 	/** Optional logger; defaults to console. */
 	logger?: Pick<Console, "log" | "error">;
+	/**
+	 * Optional control-plane deployment metadata. When present, a generated
+	 * "Deployment" section is appended to the resolved system prompt (after
+	 * `.pi/AGENTS.md`, never replacing it) so the agent knows the DEV/PROD
+	 * ports + URLs without reading a file.
+	 */
+	deployment?: Deployment;
+	/**
+	 * Container runtime the deploy skill + prompt reference (default `"podman"`).
+	 * Env config, never hardcoded, so Stage 1 host dev (docker) and the nested
+	 * outer container (podman) share one skill.
+	 */
+	appContainerRuntime?: string;
 };
 
 /**
@@ -214,7 +228,12 @@ export class ProjectRuntime {
 
 		// Read pinned system prompt up-front so we can both feed it into
 		// the resource loader and suppress Pi's ancestor AGENTS.md walk.
-		const { systemPrompt, agentsFilePath } = resolveSystemPrompt(config, projectDir, logger);
+		const { systemPrompt: agentsPrompt, agentsFilePath } = resolveSystemPrompt(config, projectDir, logger);
+
+		// Append the generated Deployment section after .pi/AGENTS.md (never
+		// replacing it) when the project carries control-plane metadata.
+		const deploymentSection = buildDeploymentPromptSection(config.deployment, config.appContainerRuntime ?? "podman");
+		const systemPrompt = composeSystemPrompt(agentsPrompt, deploymentSection);
 
 		// Caller may share an AuthStorage across projects; otherwise build a
 		// project-local one against the resolved agentDir so our auth.json
@@ -605,4 +624,19 @@ function resolveSystemPrompt(
 	}
 	const systemPrompt = readFileSync(conventionPath, "utf8");
 	return { systemPrompt, agentsFilePath: conventionPath };
+}
+
+/**
+ * Combine the resolved AGENTS.md prompt with the generated Deployment section.
+ * The deployment section is appended after the project prompt, never replacing
+ * it; either may be absent. Returns undefined when neither exists so the caller
+ * preserves Pi's default context-file discovery.
+ */
+function composeSystemPrompt(
+	agentsPrompt: string | undefined,
+	deploymentSection: string | undefined,
+): string | undefined {
+	if (deploymentSection === undefined) return agentsPrompt;
+	if (agentsPrompt === undefined) return deploymentSection;
+	return `${agentsPrompt}\n\n${deploymentSection}`;
 }
