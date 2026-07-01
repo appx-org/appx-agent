@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentModel, ThinkingLevel, UiMessage } from "../core/types";
-import { useAgentChatContext } from "./context";
+import { aggregateSessionUsage } from "../core/usage";
+import { resolveCostRates, useAgentChatContext } from "./context";
 import { useAgentSession } from "./useAgentSession";
 import { MessageItem } from "./MessageItem";
 import { MessageList } from "./MessageList";
+import { UsageBar } from "./UsageBar";
 import { ExtensionRequestPanel, isBlockingRequest } from "./ExtensionRequestPanel";
 
 function modelOptionValue(model: AgentModel): string {
@@ -43,6 +45,8 @@ export interface ChatPanelProps {
   onTurnComplete?: () => void;
   /** Toggle the model + thinking-level selectors in the header. Default: true. */
   showModelControls?: boolean;
+  /** Toggle the per-session usage readout (cost / cache-hit / context). Default: true. */
+  showUsage?: boolean;
   /** Toggle the built-in header entirely. Default: true. */
   showHeader?: boolean;
   /** Override the rendering of a single message; receives the default node. */
@@ -62,12 +66,13 @@ export function ChatPanel({
   sessionId,
   onTurnComplete,
   showModelControls = true,
+  showUsage = true,
   showHeader = true,
   renderMessage,
   renderEmpty,
   className,
 }: ChatPanelProps) {
-  const { classNames, labels } = useAgentChatContext();
+  const { classNames, labels, costRates } = useAgentChatContext();
   const { state, sendPrompt, abort, respondExtensionRequest, loadModelSettings, updateModelSettings } =
     useAgentSession(projectId, sessionId);
   const [input, setInput] = useState("");
@@ -87,9 +92,28 @@ export function ChatPanel({
   const extensionStatus = Object.values(state.extensionStatus).find(Boolean);
   const activeExtensionRequest = state.extensionRequests.find(isBlockingRequest);
 
+  // Per-session usage folds the raw transcript against the active model's
+  // context window and (for zero-cost LiteLLM models) consumer-supplied rates.
+  const activeModel = sessionSettings?.model ?? null;
+  const costRatesForModel = useMemo(
+    () => resolveCostRates(costRates, activeModel),
+    [costRates, activeModel],
+  );
+  const usage = useMemo(
+    () =>
+      aggregateSessionUsage(state.rawMessages, {
+        contextWindow: activeModel?.contextWindow,
+        costRates: costRatesForModel,
+      }),
+    [state.rawMessages, activeModel?.contextWindow, costRatesForModel],
+  );
+  const showUsageBar = showUsage && usage.assistantMessages > 0;
+
   useEffect(() => {
-    if (showModelControls) void loadModelSettings();
-  }, [showModelControls, loadModelSettings]);
+    // Usage needs the active model's contextWindow / cost rates, so load
+    // settings whenever either the controls or the usage readout is shown.
+    if (showModelControls || showUsage) void loadModelSettings();
+  }, [showModelControls, showUsage, loadModelSettings]);
 
   useEffect(() => {
     if (prevStatusRef.current !== "idle" && state.status === "idle") {
@@ -280,6 +304,17 @@ export function ChatPanel({
           </button>
         )}
       </div>
+
+      {showUsageBar && (
+        <UsageBar
+          metrics={usage}
+          labels={{
+            cost: labels.usageCost,
+            cache: labels.usageCache,
+            context: labels.usageContext,
+          }}
+        />
+      )}
     </div>
   );
 }

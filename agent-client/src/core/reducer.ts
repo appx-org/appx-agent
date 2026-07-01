@@ -350,6 +350,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       return {
         ...state,
         messages: [],
+        rawMessages: [],
         pendingPromptIds: [],
         extensionRequests: [],
         extensionNotice: null,
@@ -453,7 +454,16 @@ function loadHistory(state: SessionState, history: AgentMessage[]): SessionState
     });
   }
 
-  return { ...state, messages: result, status: "idle", error: null, pendingPromptIds: [] };
+  return {
+    ...state,
+    messages: result,
+    // Keep the authoritative wire transcript for usage aggregation; a full
+    // reload is the source of truth, so replace rather than merge.
+    rawMessages: history,
+    status: "idle",
+    error: null,
+    pendingPromptIds: [],
+  };
 }
 
 function reduceEvent(state: SessionState, event: AgentEvent): SessionState {
@@ -526,12 +536,17 @@ function reduceEvent(state: SessionState, event: AgentEvent): SessionState {
       };
     }
     case "message_end": {
+      // Append the finalised wire message to the raw transcript so usage
+      // aggregation sees the real `usage`/`stopReason`; a later history reload
+      // (recovery poll) replaces this best-effort accumulation wholesale.
+      const rawMessages = [...state.rawMessages, event.message];
       if (isToolResultMessage(event.message)) {
         const { text, toolUseId } = extractToolResultText(event.message);
         const isError = event.message.isError;
-        if (!toolUseId) return state;
+        if (!toolUseId) return { ...state, rawMessages };
         return {
           ...state,
+          rawMessages,
           messages: applyToolResult(state.messages, toolUseId, {
             status: isError ? "error" : "done",
             result: text,
@@ -539,7 +554,8 @@ function reduceEvent(state: SessionState, event: AgentEvent): SessionState {
           }),
         };
       }
-      if (event.message.role !== "user" && event.message.role !== "assistant") return state; // FIXME: what case is that even covering?
+      if (event.message.role !== "user" && event.message.role !== "assistant")
+        return { ...state, rawMessages };
       const finalisedParts = partsFromContent(event.message.content);
       let replaced = false;
       const messages = state.messages.map((m) => {
@@ -556,7 +572,20 @@ function reduceEvent(state: SessionState, event: AgentEvent): SessionState {
       // pi delivers provider/run failures as the finalized assistant message's
       // stopReason/errorMessage (empty content), so surface it here.
       const runError = assistantErrorMessage(event.message);
-      return { ...state, messages, ...(runError ? { error: runError } : {}) };
+      return { ...state, rawMessages, messages, ...(runError ? { error: runError } : {}) };
+    }
+    case "compaction_end": {
+      // A completed compaction shrinks the live context; record a synthetic
+      // `compactionSummary` so `aggregateSessionUsage` reports context as
+      // unknown until the next assistant turn re-measures the window.
+      if (event.aborted || !event.result) return state;
+      const summary: AgentMessage = {
+        role: "compactionSummary",
+        summary: event.result.summary,
+        tokensBefore: event.result.tokensBefore,
+        timestamp: Date.now(),
+      };
+      return { ...state, rawMessages: [...state.rawMessages, summary] };
     }
     case "tool_execution_start":
       return {

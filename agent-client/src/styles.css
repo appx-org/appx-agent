@@ -263,6 +263,34 @@
   color: var(--ac-red);
 }
 
+.agent-chat-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 7px 20px;
+  border-top: 1px solid var(--ac-border);
+  background: var(--ac-surface);
+  font-family: var(--ac-font-mono);
+  font-size: 10px;
+}
+
+.agent-chat-usage-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.agent-chat-usage-label {
+  color: var(--ac-muted);
+  letter-spacing: 0.06em;
+}
+
+.agent-chat-usage-value {
+  color: var(--ac-cyan);
+}
+
 .agent-chat-model-controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 116px;

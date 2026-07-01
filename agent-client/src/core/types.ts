@@ -143,6 +143,14 @@ export type SessionStatus = "idle" | "starting" | "streaming";
 export type SessionState = {
   sessionId: string | null;
   messages: UiMessage[];
+  /**
+   * The raw wire transcript (canonical `AgentMessage[]`), kept alongside the
+   * derived `messages` because usage aggregation needs fields the UI shape
+   * drops — `usage`, `stopReason`, and `compactionSummary` markers. Seeded from
+   * REST history and kept current from `message_end` / `compaction_end` events;
+   * folded by `aggregateSessionUsage` into per-session cost/cache/context.
+   */
+  rawMessages: AgentMessage[];
   /** Monotonic counter backing stable ids for live (streamed) messages. */
   messageSeq: number;
   /**
@@ -177,6 +185,7 @@ export type SessionState = {
 export const initialSessionState: SessionState = {
   sessionId: null,
   messages: [],
+  rawMessages: [],
   messageSeq: 0,
   pendingPromptIds: [],
   extensionRequests: [],
