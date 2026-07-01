@@ -52,6 +52,15 @@ export type {
   SessionState,
   SessionStatus,
 } from './core/types';
+export { aggregateSessionUsage, emptySessionUsageMetrics } from './core/usage';
+export type {
+  SessionUsageMetrics,
+  UsageTokens,
+  UsageCost,
+  UsageCostRates,
+  ContextUsage,
+  AggregateSessionUsageOptions,
+} from './core/usage';
 export type { components as AgentServerSchema, paths as AgentServerPaths } from './core/agent-server.generated';
 
 // React layer --------------------------------------------------------------
