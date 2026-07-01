@@ -66,12 +66,16 @@ export type { components as AgentServerSchema, paths as AgentServerPaths } from 
 // React layer --------------------------------------------------------------
 export { AgentChatProvider, useAgentChatContext } from './react/context';
 export type { AgentChatProviderProps, AgentChatClassNames, AgentChatLabels } from './react/context';
+export { resolveCostRates } from './react/context';
+export type { UsageCostRatesResolver } from './react/context';
 export { useAgentSession } from './react/useAgentSession';
 export type { UseAgentSessionResult } from './react/useAgentSession';
 export { AgentChat } from './react/AgentChat';
 export type { AgentChatProps } from './react/AgentChat';
 export { ChatPanel } from './react/ChatPanel';
 export type { ChatPanelProps } from './react/ChatPanel';
+export { UsageBar } from './react/UsageBar';
+export type { UsageBarProps, UsageBarLabels } from './react/UsageBar';
 export { MessageItem } from './react/MessageItem';
 export type { MessageItemProps } from './react/MessageItem';
 export { MessageList } from './react/MessageList';

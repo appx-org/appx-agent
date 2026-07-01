@@ -1,6 +1,37 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { AgentClient, type AgentClientConfig } from '../core/client';
 import { SessionStore } from '../core/store';
+import type { AgentModel } from '../core/types';
+import type { UsageCostRates } from '../core/usage';
+
+/**
+ * Resolves per-million-token cost rates for a model so the usage panel can
+ * recalculate spend when LiteLLM-routed models report a zero wire cost. Either
+ * a static map keyed by `provider/id` (e.g. `"litellm/openai/gpt-5.5"`) or a
+ * function. Optional — without it, only the wire cost (`usage.cost`) is shown.
+ */
+export type UsageCostRatesResolver =
+  | Record<string, UsageCostRates>
+  | ((model: AgentModel | null) => UsageCostRates | undefined);
+
+/** Model row once agent-server exposes cost rates on the contract (issue #5). */
+type ModelWithCost = AgentModel & { cost?: UsageCostRates };
+
+/**
+ * Resolve cost rates for the active model. Prefers rates carried on the model
+ * itself (forward-compatible with agent-server issue #5), then the consumer's
+ * resolver keyed by `provider/id`.
+ */
+export function resolveCostRates(
+  resolver: UsageCostRatesResolver | undefined,
+  model: AgentModel | null,
+): UsageCostRates | undefined {
+  const carried = (model as ModelWithCost | null)?.cost;
+  if (carried) return carried;
+  if (!resolver || !model) return undefined;
+  if (typeof resolver === 'function') return resolver(model);
+  return resolver[`${model.provider}/${model.id}`];
+}
 
 /**
  * Slot-level class name overrides. Every component merges its built-in class
@@ -32,6 +63,9 @@ export interface AgentChatLabels {
   stopButton?: string;
   inputPlaceholder?: string;
   workingPlaceholder?: string;
+  usageCost?: string;
+  usageCache?: string;
+  usageContext?: string;
 }
 
 const defaultLabels: Required<AgentChatLabels> = {
@@ -47,6 +81,9 @@ const defaultLabels: Required<AgentChatLabels> = {
   stopButton: 'Stop',
   inputPlaceholder: 'Send a message...',
   workingPlaceholder: 'Agent is working...',
+  usageCost: 'cost',
+  usageCache: 'cache',
+  usageContext: 'ctx',
 };
 
 interface AgentChatContextValue {
@@ -54,6 +91,7 @@ interface AgentChatContextValue {
   store: SessionStore;
   classNames: AgentChatClassNames;
   labels: Required<AgentChatLabels>;
+  costRates?: UsageCostRatesResolver;
 }
 
 const AgentChatContext = createContext<AgentChatContextValue | null>(null);
@@ -65,6 +103,12 @@ export interface AgentChatProviderProps {
   config?: AgentClientConfig;
   classNames?: AgentChatClassNames;
   labels?: AgentChatLabels;
+  /**
+   * Per-million-token cost rates used to recalculate session spend when the
+   * wire cost is zero (typical for LiteLLM-routed models). See
+   * `UsageCostRatesResolver`.
+   */
+  costRates?: UsageCostRatesResolver;
   children: ReactNode;
 }
 
@@ -73,7 +117,7 @@ export interface AgentChatProviderProps {
  * agent-chat components below it. Memoizes the store so a single SSE connection
  * is shared across the subtree.
  */
-export function AgentChatProvider({ client, config, classNames, labels, children }: AgentChatProviderProps) {
+export function AgentChatProvider({ client, config, classNames, labels, costRates, children }: AgentChatProviderProps) {
   // The client + store are the expensive, stateful layer (one SSE connection and
   // the live SessionState), so they are memoized *independently of theming*.
   // They rebuild only when `client`/`config` identity changes — never when
@@ -89,8 +133,9 @@ export function AgentChatProvider({ client, config, classNames, labels, children
       store,
       classNames: classNames ?? {},
       labels: { ...defaultLabels, ...labels },
+      costRates,
     }),
-    [resolvedClient, store, classNames, labels],
+    [resolvedClient, store, classNames, labels, costRates],
   );
 
   return <AgentChatContext.Provider value={value}>{children}</AgentChatContext.Provider>;
