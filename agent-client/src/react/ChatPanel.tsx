@@ -53,6 +53,8 @@ export interface ChatPanelProps {
   renderMessage?: (message: UiMessage, index: number, defaultNode: ReactNode) => ReactNode;
   /** Override the empty-conversation placeholder. */
   renderEmpty?: () => ReactNode;
+  /** Extra controls rendered in the composer, just before the Send/Stop button. */
+  renderComposerActions?: () => ReactNode;
   className?: string;
 }
 
@@ -70,6 +72,7 @@ export function ChatPanel({
   showHeader = true,
   renderMessage,
   renderEmpty,
+  renderComposerActions,
   className,
 }: ChatPanelProps) {
   const { classNames, labels, costRates } = useAgentChatContext();
@@ -290,6 +293,7 @@ export function ChatPanel({
           rows={1}
           disabled={sending}
         />
+        {renderComposerActions?.()}
         {isRunning ? (
           <button className="agent-chat-btn-stop" onClick={() => void abort()}>
             {labels.stopButton}
