@@ -8,10 +8,10 @@
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AgentClient } from "../../core/client";
-import type { AgentAuthProvider } from "../../core/types";
-import { AgentSettings } from "../AgentSettings";
-import { AgentChatProvider } from "../context";
+import { AgentClient } from "../../core/client.js";
+import type { AgentAuthProvider } from "../../core/types.js";
+import { AgentSettings } from "../AgentSettings.js";
+import { AgentChatProvider } from "../context.js";
 
 function makeProviders(): AgentAuthProvider[] {
 	return [

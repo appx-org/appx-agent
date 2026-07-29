@@ -1,5 +1,5 @@
 import { memo } from "react";
-import type { SessionUsageMetrics } from "../core/usage";
+import type { SessionUsageMetrics } from "../core/usage.js";
 
 export interface UsageBarLabels {
 	cost?: string;

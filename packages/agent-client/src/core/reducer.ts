@@ -15,7 +15,7 @@ import type {
 	ToolResultMessage,
 	UiMessage,
 	UiMessagePart,
-} from "./types";
+} from "./types.js";
 
 type ToolPart = Extract<UiMessagePart, { type: "tool" }>;
 type ToolPatch = Partial<Omit<ToolPart, "id" | "type">>;

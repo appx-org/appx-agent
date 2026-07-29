@@ -1,8 +1,8 @@
 import { createContext, type ReactNode, useContext, useMemo } from "react";
-import { AgentClient, type AgentClientConfig } from "../core/client";
-import { SessionStore } from "../core/store";
-import type { AgentModel } from "../core/types";
-import type { UsageCostRates } from "../core/usage";
+import { AgentClient, type AgentClientConfig } from "../core/client.js";
+import { SessionStore } from "../core/store.js";
+import type { AgentModel } from "../core/types.js";
+import type { UsageCostRates } from "../core/usage.js";
 
 /**
  * Resolves per-million-token cost rates for a model so the usage panel can

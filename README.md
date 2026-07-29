@@ -54,3 +54,26 @@ Merging to main with pending changesets opens a "Version Packages" PR; merging
 that publishes `agent-protocol` + `agent-client` to GitHub Packages
 (`release.yml`). `agent-protocol`'s version **is** the wire-contract version —
 agent-server's `/openapi.json` reports it, and consumers pin against it.
+
+> Note: with no pending changesets, `release.yml` falls back to publishing any
+> package whose local version isn't in the registry. Always land a changeset
+> with a change you intend to release, so the version bump is deliberate.
+
+### The agent-server image
+
+`docker.yml` publishes `ghcr.io/appx-org/agent-server` on every push to main:
+
+| Tag             | When                                              |
+| --------------- | ------------------------------------------------- |
+| `edge`          | every push to main — the tip of trunk             |
+| `sha-<short>`   | every push — immutable, for rollback              |
+| `X.Y.Z`, `X.Y`, `latest` | only when `packages/agent-server/package.json`'s version changes |
+
+agent-server is `private: true`, so changesets bumps its version (and writes its
+changelog) without publishing an npm tarball — the manifest version is what
+promotes an image from `edge` to a semver release.
+
+```bash
+docker pull ghcr.io/appx-org/agent-server:edge      # trunk
+docker pull ghcr.io/appx-org/agent-server:0.1.0     # pinned release
+```

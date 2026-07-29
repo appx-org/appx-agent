@@ -1,7 +1,7 @@
 import { memo } from "react";
-import type { UiMessage, UiMessagePart } from "../core/types";
-import { Markdown } from "./Markdown";
-import { ToolCallCard } from "./ToolCallCard";
+import type { UiMessage, UiMessagePart } from "../core/types.js";
+import { Markdown } from "./Markdown.js";
+import { ToolCallCard } from "./ToolCallCard.js";
 
 /** Stable per-part key for React reconciliation within a message. */
 function partKey(part: UiMessagePart, index: number): string {

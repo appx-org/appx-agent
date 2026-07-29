@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { type Components, Virtuoso } from "react-virtuoso";
-import type { UiMessage } from "../core/types";
+import type { UiMessage } from "../core/types.js";
 
 /**
  * Fixed spacers stand in for the scroller's top/bottom gutter. We render them as

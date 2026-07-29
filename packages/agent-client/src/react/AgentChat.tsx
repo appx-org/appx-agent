@@ -1,8 +1,8 @@
 import { type ReactNode, useCallback, useState } from "react";
-import type { UiMessage } from "../core/types";
-import { ChatPanel } from "./ChatPanel";
-import { useAgentChatContext } from "./context";
-import { SessionList } from "./SessionList";
+import type { UiMessage } from "../core/types.js";
+import { ChatPanel } from "./ChatPanel.js";
+import { useAgentChatContext } from "./context.js";
+import { SessionList } from "./SessionList.js";
 
 export interface AgentChatProps {
 	/** The agent-server project to scope sessions to. */

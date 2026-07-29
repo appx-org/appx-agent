@@ -4,8 +4,8 @@
  * that turns HTTP outcomes into resolved values / thrown errors.
  */
 import { describe, expect, it, vi } from "vitest";
-import { AgentClient } from "../client";
-import { FakeEventSource, makeMockFetch } from "./helpers";
+import { AgentClient } from "../client.js";
+import { FakeEventSource, makeMockFetch } from "./helpers.js";
 
 function client(
 	routes: Parameters<typeof makeMockFetch>[0],

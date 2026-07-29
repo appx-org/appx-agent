@@ -33,7 +33,7 @@ import type {
 	ExtensionUiResponse,
 	ThinkingLevel,
 	UpsertCustomProviderRequest,
-} from "./types";
+} from "./types.js";
 
 /** The contract prefix baked into the generated `paths` keys (`/v1/...`). */
 const CONTRACT_PREFIX = "/v1";

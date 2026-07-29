@@ -5,7 +5,7 @@
  * is supplied via `eventSourceFactory` and `makeMockFetch` via `fetch`, letting us
  * exercise the full client → store → reducer loop with zero network.
  */
-import type { EventSourceLike } from "../client";
+import type { EventSourceLike } from "../client.js";
 
 /**
  * A controllable `EventSource` test double. Implements the minimal

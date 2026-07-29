@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ExtensionUiRequest, ExtensionUiResponse } from "../core/types";
+import type { ExtensionUiRequest, ExtensionUiResponse } from "../core/types.js";
 
 export type BlockingExtensionUiRequest =
 	| Extract<ExtensionUiRequest, { method: "select" }>

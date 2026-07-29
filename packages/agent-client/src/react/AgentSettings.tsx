@@ -4,8 +4,8 @@ import type {
 	AgentCustomProvider,
 	AgentCustomProviderApi,
 	AgentOAuthFlowState,
-} from "../core/types";
-import { useAgentChatContext } from "./context";
+} from "../core/types.js";
+import { useAgentChatContext } from "./context.js";
 
 /** Local editor model for the custom-provider form (flattened single-model shape). */
 type CustomForm = {

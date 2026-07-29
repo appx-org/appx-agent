@@ -12,8 +12,8 @@
  * Unlike a module-global singleton, a store is bound to one client instance so
  * different providers/origins stay isolated — important for reuse across apps.
  */
-import type { AgentClient, EventSourceLike } from "./client";
-import { type SessionAction, sessionReducer } from "./reducer";
+import type { AgentClient, EventSourceLike } from "./client.js";
+import { type SessionAction, sessionReducer } from "./reducer.js";
 import {
 	type AgentEvent,
 	type AgentModel,
@@ -21,7 +21,7 @@ import {
 	initialSessionState,
 	type SessionState,
 	type ThinkingLevel,
-} from "./types";
+} from "./types.js";
 
 type Entry = {
 	state: SessionState;

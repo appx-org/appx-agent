@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { UiMessagePart } from "../core/types";
+import type { UiMessagePart } from "../core/types.js";
 
 type Tool = Extract<UiMessagePart, { type: "tool" }>;
 

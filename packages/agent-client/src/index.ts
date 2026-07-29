@@ -16,12 +16,12 @@
  */
 
 export type { components as AgentServerSchema, paths as AgentServerPaths } from "@appx-org/agent-protocol";
-export type { AgentClientConfig, EventSourceLike } from "./core/client";
+export type { AgentClientConfig, EventSourceLike } from "./core/client.js";
 // Core (transport-agnostic) ------------------------------------------------
-export { AgentClient, createAgentClient } from "./core/client";
-export type { SessionAction } from "./core/reducer";
-export { sessionReducer } from "./core/reducer";
-export { SessionStore } from "./core/store";
+export { AgentClient, createAgentClient } from "./core/client.js";
+export type { SessionAction } from "./core/reducer.js";
+export { sessionReducer } from "./core/reducer.js";
+export { SessionStore } from "./core/store.js";
 export type {
 	AgentAuthProvider,
 	AgentCustomProvider,
@@ -51,8 +51,8 @@ export type {
 	UiMessagePart,
 	UpsertCustomProviderRequest,
 	WireEvent,
-} from "./core/types";
-export { initialSessionState } from "./core/types";
+} from "./core/types.js";
+export { initialSessionState } from "./core/types.js";
 export type {
 	AggregateSessionUsageOptions,
 	ContextUsage,
@@ -60,35 +60,35 @@ export type {
 	UsageCost,
 	UsageCostRates,
 	UsageTokens,
-} from "./core/usage";
-export { aggregateSessionUsage, emptySessionUsageMetrics } from "./core/usage";
-export type { AgentChatProps } from "./react/AgentChat";
-export { AgentChat } from "./react/AgentChat";
-export type { AgentSettingsProps } from "./react/AgentSettings";
-export { AgentSettings } from "./react/AgentSettings";
-export type { ChatPanelProps } from "./react/ChatPanel";
-export { ChatPanel } from "./react/ChatPanel";
+} from "./core/usage.js";
+export { aggregateSessionUsage, emptySessionUsageMetrics } from "./core/usage.js";
+export type { AgentChatProps } from "./react/AgentChat.js";
+export { AgentChat } from "./react/AgentChat.js";
+export type { AgentSettingsProps } from "./react/AgentSettings.js";
+export { AgentSettings } from "./react/AgentSettings.js";
+export type { ChatPanelProps } from "./react/ChatPanel.js";
+export { ChatPanel } from "./react/ChatPanel.js";
 export type {
 	AgentChatClassNames,
 	AgentChatLabels,
 	AgentChatProviderProps,
 	UsageCostRatesResolver,
-} from "./react/context";
+} from "./react/context.js";
 // React layer --------------------------------------------------------------
-export { AgentChatProvider, resolveCostRates, useAgentChatContext } from "./react/context";
-export type { BlockingExtensionUiRequest, ExtensionRequestPanelProps } from "./react/ExtensionRequestPanel";
-export { ExtensionRequestPanel, isBlockingRequest } from "./react/ExtensionRequestPanel";
-export type { MarkdownProps } from "./react/Markdown";
-export { Markdown } from "./react/Markdown";
-export type { MessageItemProps } from "./react/MessageItem";
-export { MessageItem } from "./react/MessageItem";
-export type { MessageListProps } from "./react/MessageList";
-export { MessageList } from "./react/MessageList";
-export type { SessionListProps } from "./react/SessionList";
-export { SessionList } from "./react/SessionList";
-export type { ToolCallCardProps } from "./react/ToolCallCard";
-export { ToolCallCard } from "./react/ToolCallCard";
-export type { UsageBarLabels, UsageBarProps } from "./react/UsageBar";
-export { UsageBar } from "./react/UsageBar";
-export type { UseAgentSessionResult } from "./react/useAgentSession";
-export { useAgentSession } from "./react/useAgentSession";
+export { AgentChatProvider, resolveCostRates, useAgentChatContext } from "./react/context.js";
+export type { BlockingExtensionUiRequest, ExtensionRequestPanelProps } from "./react/ExtensionRequestPanel.js";
+export { ExtensionRequestPanel, isBlockingRequest } from "./react/ExtensionRequestPanel.js";
+export type { MarkdownProps } from "./react/Markdown.js";
+export { Markdown } from "./react/Markdown.js";
+export type { MessageItemProps } from "./react/MessageItem.js";
+export { MessageItem } from "./react/MessageItem.js";
+export type { MessageListProps } from "./react/MessageList.js";
+export { MessageList } from "./react/MessageList.js";
+export type { SessionListProps } from "./react/SessionList.js";
+export { SessionList } from "./react/SessionList.js";
+export type { ToolCallCardProps } from "./react/ToolCallCard.js";
+export { ToolCallCard } from "./react/ToolCallCard.js";
+export type { UsageBarLabels, UsageBarProps } from "./react/UsageBar.js";
+export { UsageBar } from "./react/UsageBar.js";
+export type { UseAgentSessionResult } from "./react/useAgentSession.js";
+export { useAgentSession } from "./react/useAgentSession.js";

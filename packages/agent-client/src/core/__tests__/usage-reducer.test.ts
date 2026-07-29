@@ -4,8 +4,8 @@
  * here — cost/context math lives in `aggregateSessionUsage` (see usage.test.ts).
  */
 import { describe, expect, it } from "vitest";
-import { type SessionAction, sessionReducer } from "../reducer";
-import { type AgentEvent, initialSessionState, type SessionState } from "../types";
+import { type SessionAction, sessionReducer } from "../reducer.js";
+import { type AgentEvent, initialSessionState, type SessionState } from "../types.js";
 
 function emit(state: SessionState, event: Record<string, unknown>): SessionState {
 	return sessionReducer(state, { type: "agent_event", event: event as unknown as AgentEvent });

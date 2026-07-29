@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AgentSessionInfo } from "../core/types";
-import { useAgentChatContext } from "./context";
+import type { AgentSessionInfo } from "../core/types.js";
+import { useAgentChatContext } from "./context.js";
 
 export interface SessionListProps {
 	projectId: string;

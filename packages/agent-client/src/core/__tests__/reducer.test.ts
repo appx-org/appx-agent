@@ -8,14 +8,14 @@
  * never reads, so spelling them all out would add noise without adding coverage.
  */
 import { describe, expect, it } from "vitest";
-import { type SessionAction, sessionReducer } from "../reducer";
+import { type SessionAction, sessionReducer } from "../reducer.js";
 import {
 	type AgentEvent,
 	type AgentMessage,
 	initialSessionState,
 	type SessionState,
 	type UiMessagePart,
-} from "../types";
+} from "../types.js";
 
 /** Apply one wire event to the state. */
 function emit(state: SessionState, event: Record<string, unknown>): SessionState {

@@ -1,0 +1,88 @@
+#
+# Publishes the agent-server container image to GHCR.
+#
+# Two tagging tracks, both from the same build:
+#   - every push to main → `edge` + `sha-<short>`  (deploy target for the box,
+#     always the tip of trunk, immutable per-commit tag for rollback)
+#   - when packages/agent-server/package.json's version changes → the semver
+#     tags `X.Y.Z`, `X.Y`, and `latest`. agent-server is a private package, so
+#     changesets bumps its version but publishes no npm tarball and cuts no git
+#     tag — the manifest is the release signal.
+#
+# The image is built from the MONOREPO ROOT context (the Dockerfile needs the
+# root lockfile + the agent-protocol workspace); see the Dockerfile header.
+#
+name: docker
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Build and push agent-server image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the previous commit to diff the manifest version.
+          fetch-depth: 2
+
+      - name: Resolve version and whether it changed
+        id: meta
+        run: |
+          version=$(node -p "require('./packages/agent-server/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          # `git show` fails on the very first commit; treat that as "changed".
+          previous=$(git show HEAD~1:packages/agent-server/package.json 2>/dev/null \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).version)}catch{console.log('')}})" \
+            || echo "")
+          if [ "$version" != "$previous" ]; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "agent-server version $previous -> $version: tagging semver + latest"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            echo "agent-server version unchanged ($version): edge + sha tags only"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        uses: docker/metadata-action@v5
+        id: tags
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/agent-server
+          # `edge` + immutable sha always; semver + latest only on a version bump.
+          tags: |
+            type=raw,value=edge
+            type=sha,prefix=sha-,format=short
+            type=semver,pattern={{version}},value=${{ steps.meta.outputs.version }},enable=${{ steps.meta.outputs.released == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.meta.outputs.version }},enable=${{ steps.meta.outputs.released == 'true' }}
+            type=raw,value=latest,enable=${{ steps.meta.outputs.released == 'true' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/agent-server/container/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: ${{ steps.tags.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

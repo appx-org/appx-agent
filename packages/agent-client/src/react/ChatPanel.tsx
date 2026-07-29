@@ -1,12 +1,12 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentModel, ThinkingLevel, UiMessage } from "../core/types";
-import { aggregateSessionUsage } from "../core/usage";
-import { resolveCostRates, useAgentChatContext } from "./context";
-import { ExtensionRequestPanel, isBlockingRequest } from "./ExtensionRequestPanel";
-import { MessageItem } from "./MessageItem";
-import { MessageList } from "./MessageList";
-import { UsageBar } from "./UsageBar";
-import { useAgentSession } from "./useAgentSession";
+import type { AgentModel, ThinkingLevel, UiMessage } from "../core/types.js";
+import { aggregateSessionUsage } from "../core/usage.js";
+import { resolveCostRates, useAgentChatContext } from "./context.js";
+import { ExtensionRequestPanel, isBlockingRequest } from "./ExtensionRequestPanel.js";
+import { MessageItem } from "./MessageItem.js";
+import { MessageList } from "./MessageList.js";
+import { UsageBar } from "./UsageBar.js";
+import { useAgentSession } from "./useAgentSession.js";
 
 function modelOptionValue(model: AgentModel): string {
 	return JSON.stringify([model.provider, model.id]);

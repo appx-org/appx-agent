@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
-import { type ExtensionUiResponse, initialSessionState, type SessionState, type ThinkingLevel } from "../core/types";
-import { useAgentChatContext } from "./context";
+import { type ExtensionUiResponse, initialSessionState, type SessionState, type ThinkingLevel } from "../core/types.js";
+import { useAgentChatContext } from "./context.js";
 
 export interface UseAgentSessionResult {
 	state: SessionState;

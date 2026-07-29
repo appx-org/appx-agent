@@ -10,7 +10,7 @@
  * per-million-token `costRates` to recalculate in that case; the wire cost
  * wins whenever it is non-zero.
  */
-import type { AgentMessage } from "./types";
+import type { AgentMessage } from "./types.js";
 
 type AssistantMessage = Extract<AgentMessage, { role: "assistant" }>;
 type WireUsage = AssistantMessage["usage"];

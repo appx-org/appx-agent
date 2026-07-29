@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AgentMessage } from "../types";
-import { aggregateSessionUsage, emptySessionUsageMetrics, type UsageCostRates } from "../usage";
+import type { AgentMessage } from "../types.js";
+import { aggregateSessionUsage, emptySessionUsageMetrics, type UsageCostRates } from "../usage.js";
 
 type AssistantOverrides = {
 	usage?: Partial<NonNullable<Extract<AgentMessage, { role: "assistant" }>["usage"]>>;

@@ -9,8 +9,8 @@
 import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
-import { AgentClient } from "../../core/client";
-import { AgentChatProvider, useAgentChatContext } from "../context";
+import { AgentClient } from "../../core/client.js";
+import { AgentChatProvider, useAgentChatContext } from "../context.js";
 
 describe("AgentChatProvider — store stability", () => {
 	it("keeps the same store instance when labels change identity", () => {

@@ -7,8 +7,8 @@
 
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { emptySessionUsageMetrics, type SessionUsageMetrics } from "../../core/usage";
-import { UsageBar } from "../UsageBar";
+import { emptySessionUsageMetrics, type SessionUsageMetrics } from "../../core/usage.js";
+import { UsageBar } from "../UsageBar.js";
 
 afterEach(cleanup);
 

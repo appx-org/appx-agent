@@ -12,8 +12,8 @@
 
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import type { UiMessage } from "../../core/types";
-import { MessageList } from "../MessageList";
+import type { UiMessage } from "../../core/types.js";
+import { MessageList } from "../MessageList.js";
 
 class ResizeObserverStub {
 	observe(): void {}

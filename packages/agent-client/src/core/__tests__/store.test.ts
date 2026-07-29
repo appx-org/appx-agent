@@ -5,9 +5,9 @@
  * `AgentClientConfig` hooks exist for.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AgentClient } from "../client";
-import { SessionStore } from "../store";
-import { FakeEventSource, makeMockFetch, type RecordedRequest } from "./helpers";
+import { AgentClient } from "../client.js";
+import { SessionStore } from "../store.js";
+import { FakeEventSource, makeMockFetch, type RecordedRequest } from "./helpers.js";
 
 const PROJECT = "proj";
 const SESSION = "sess";
