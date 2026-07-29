@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.gen/
+.env
+.env.local
+*.log
+*.tsbuildinfo
+.DS_Store
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Agents
+.pi/todos

@@ -25,11 +25,12 @@
 	},
 	"files": {
 		"includes": [
-			"src/**/*.ts",
-			"test/**/*.ts",
-			"scripts/**/*.ts",
+			"packages/*/src/**/*.ts",
+			"packages/*/src/**/*.tsx",
+			"packages/*/test/**/*.ts",
+			"packages/*/scripts/**/*.ts",
 			"!**/node_modules/**/*",
-			"!dist/**/*",
+			"!**/dist/**/*",
 			"!**/*.generated.*"
 		]
 	}

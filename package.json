@@ -1,0 +1,24 @@
+{
+  "name": "appx-agent",
+  "private": true,
+  "description": "Monorepo for the appx agent stack: agent-protocol (published contract), agent-server (docker image), agent-client (React UI package).",
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build -w packages/agent-protocol && npm run build -w packages/agent-server && npm run build -w packages/agent-client",
+    "typecheck": "npm run build -w packages/agent-protocol && npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "check": "biome check --write --error-on-warnings .",
+    "check:ci": "biome check --error-on-warnings .",
+    "gen:contract": "npm run gen:event-schema -w packages/agent-server && npm run openapi -w packages/agent-server && npm run gen:types -w packages/agent-protocol",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.5",
+    "@changesets/cli": "^2.29.5",
+    "husky": "^9.1.7"
+  }
+}
