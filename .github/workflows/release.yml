@@ -47,6 +47,15 @@ jobs:
       - name: Create release PR or publish
         uses: changesets/action@v1
         with:
+          # `changeset version` only rewrites package.json files and changelogs,
+          # but two committed artifacts derive from those versions: the lockfile
+          # (which records each workspace package's version) and openapi.json
+          # (whose info.version IS agent-protocol's version). Left stale, the
+          # first breaks the build mid-publish and the second ships a contract
+          # that misreports its own version — both happened on 0.1.1. The
+          # changeset:version script refreshes them in the same commit, so the
+          # release PR arrives already passing the ci.yml + contract.yml gates.
+          version: npm run changeset:version
           publish: npx changeset publish
         env:
           # RELEASE_TOKEN is a fine-grained PAT scoped to this repo with

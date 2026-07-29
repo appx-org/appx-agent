@@ -14,6 +14,7 @@
     "check": "biome check --write --error-on-warnings .",
     "check:ci": "biome check --error-on-warnings .",
     "gen:contract": "npm run gen:event-schema -w packages/agent-server && npm run openapi -w packages/agent-server && npm run gen:types -w packages/agent-protocol",
+    "changeset:version": "changeset version && npm install --package-lock-only --ignore-scripts && npm run gen:contract",
     "prepare": "husky || true"
   },
   "devDependencies": {

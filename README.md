@@ -59,24 +59,31 @@ agent-server's `/openapi.json` reports it, and consumers pin against it.
 > package whose local version isn't in the registry. Always land a changeset
 > with a change you intend to release, so the version bump is deliberate.
 
-#### Before merging a Version Packages PR
+#### Derived artifacts in a release
 
-`changeset version` only rewrites `package.json` files and changelogs. Two
-committed artifacts derive from those versions and must be refreshed in the
-same PR, or the merge publishes from a stale tree:
+`changeset version` rewrites `package.json` files and changelogs, but two
+committed artifacts derive from those versions and would otherwise go stale:
 
-```bash
-git checkout changeset-release/main
-npm install --package-lock-only   # lockfile records workspace versions
-npm run gen:contract              # openapi.json embeds agent-protocol's version
-git commit -am "Refresh lockfile + contract for the release"
+| Artifact            | Why it depends on the version                        |
+| ------------------- | ---------------------------------------------------- |
+| `package-lock.json` | Records each workspace package's version; if stale, the workspace link is unsatisfied and the build fails **mid-publish** |
+| `openapi.json`      | Its `info.version` **is** agent-protocol's version, so a stale copy ships a contract that misreports itself |
+
+Both are refreshed automatically: `release.yml` runs the workspace's
+`changeset:version` script instead of bare `changeset version`, so the release
+PR arrives already consistent.
+
+```jsonc
+"changeset:version": "changeset version && npm install --package-lock-only --ignore-scripts && npm run gen:contract"
 ```
 
-Both are enforced in CI (`ci.yml` lockfile check, `contract.yml` freshness
-gate), so a forgotten refresh fails the PR rather than reaching the registry.
-Note that `npm ci` alone does **not** catch lockfile drift for workspace
-packages — they're symlinks, so it installs happily and the unsatisfied link
-only surfaces later, mid-publish.
+CI verifies it independently — `ci.yml` checks that refreshing the lockfile is a
+no-op, and `contract.yml` regenerates the contract and fails on any diff — so a
+stale release is caught at the PR rather than in the registry. Note `npm ci`
+alone does **not** catch lockfile drift for workspace packages: they're
+symlinks, so it installs happily and the unsatisfied link only surfaces later.
+
+To version locally (rarely needed): `npm run changeset:version`.
 
 #### The `RELEASE_TOKEN` secret
 
