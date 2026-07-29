@@ -1,6 +1,6 @@
 {
   "name": "@appx-org/agent-client",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Customizable React UI for the appx agent-server (chat, sessions, tool calls, model/thinking controls). Transport-agnostic and themeable.",
   "type": "module",
   "license": "MIT",
@@ -39,7 +39,7 @@
     "react-dom": ">=18"
   },
   "dependencies": {
-    "@appx-org/agent-protocol": "0.1.1",
+    "@appx-org/agent-protocol": "0.1.2",
     "dompurify": "^3.3.3",
     "marked": "^18.0.0",
     "openapi-fetch": "^0.17.0",

@@ -1,6 +1,6 @@
 {
   "name": "@appx-org/agent-protocol",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Published API contract for the appx agent-server: OpenAPI document, SSE wire-event schema, and generated TypeScript types for the REST + SSE surface.",
   "type": "module",
   "license": "MIT",
