@@ -17,9 +17,10 @@ readonly IMAGE="builder-outer"
 readonly NAME="builder-outer"
 readonly SECCOMP="$(pwd)/seccomp-builder.json"
 
-# Build from the REPO ROOT (..) so the Node build stage can compile agent-server;
-# the Dockerfile lives in container/. .dockerignore keeps the context lean.
-docker build -f Dockerfile -t "$IMAGE" ..
+# Build from the MONOREPO ROOT (../../..) so the Node build stage sees the root
+# lockfile + the agent-protocol workspace; the Dockerfile lives in container/.
+# The root .dockerignore keeps the context lean.
+docker build -f Dockerfile -t "$IMAGE" ../../..
 docker rm -f "$NAME" 2>/dev/null || true
 
 # Secrets are passed by NAME (-e VAR with no =value): docker forwards the host's

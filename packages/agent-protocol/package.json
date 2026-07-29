@@ -1,0 +1,38 @@
+{
+  "name": "@appx-org/agent-protocol",
+  "version": "0.1.0",
+  "description": "Published API contract for the appx agent-server: OpenAPI document, SSE wire-event schema, and generated TypeScript types for the REST + SSE surface.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/appx-org/appx-agent.git",
+    "directory": "packages/agent-protocol"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./openapi.json": "./openapi.json",
+    "./eventSchema.generated.json": "./eventSchema.generated.json",
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "src", "openapi.json", "eventSchema.generated.json"],
+  "scripts": {
+    "prebuild": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "gen:types": "openapi-typescript openapi.json -o src/schema.generated.ts",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "typescript": "~5.9.3"
+  }
+}

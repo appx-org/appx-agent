@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Virtuoso, type Components } from "react-virtuoso";
+import { type Components, Virtuoso } from "react-virtuoso";
 import type { UiMessage } from "../core/types";
 
 /**
@@ -12,16 +12,16 @@ const ListHeader = () => <div aria-hidden className="agent-chat-messages-spacer-
 const ListFooter = () => <div aria-hidden className="agent-chat-messages-spacer-bottom" />;
 
 const VIRTUOSO_COMPONENTS: Components<UiMessage> = {
-  Header: ListHeader,
-  Footer: ListFooter,
+	Header: ListHeader,
+	Footer: ListFooter,
 };
 
 export interface MessageListProps {
-  /** Full, already-reduced transcript. Only the visible window is mounted. */
-  messages: UiMessage[];
-  /** Render one message; receives the message and its index in `messages`. */
-  renderItem: (message: UiMessage, index: number) => ReactNode;
-  className?: string;
+	/** Full, already-reduced transcript. Only the visible window is mounted. */
+	messages: UiMessage[];
+	/** Render one message; receives the message and its index in `messages`. */
+	renderItem: (message: UiMessage, index: number) => ReactNode;
+	className?: string;
 }
 
 /**
@@ -41,19 +41,17 @@ export interface MessageListProps {
  *    the `MessageItem`/`MessagePart` memoization across re-renders.
  */
 export function MessageList({ messages, renderItem, className }: MessageListProps) {
-  return (
-    <Virtuoso<UiMessage>
-      className={["agent-chat-messages", className].filter(Boolean).join(" ")}
-      data={messages}
-      components={VIRTUOSO_COMPONENTS}
-      computeItemKey={(_index, message) => message.id}
-      itemContent={(index, message) => (
-        <div className="agent-chat-msg-row">{renderItem(message, index)}</div>
-      )}
-      followOutput="auto"
-      alignToBottom
-      initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-      increaseViewportBy={{ top: 600, bottom: 600 }}
-    />
-  );
+	return (
+		<Virtuoso<UiMessage>
+			className={["agent-chat-messages", className].filter(Boolean).join(" ")}
+			data={messages}
+			components={VIRTUOSO_COMPONENTS}
+			computeItemKey={(_index, message) => message.id}
+			itemContent={(index, message) => <div className="agent-chat-msg-row">{renderItem(message, index)}</div>}
+			followOutput="auto"
+			alignToBottom
+			initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+			increaseViewportBy={{ top: 600, bottom: 600 }}
+		/>
+	);
 }

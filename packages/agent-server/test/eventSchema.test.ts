@@ -15,7 +15,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { KNOWN_AGENT_SESSION_EVENT_TYPES, validateAgentSessionEvent } from "../src/contract/eventValidation.js";
 
 const generated = JSON.parse(
-	readFileSync(new URL("../src/contract/eventSchema.generated.json", import.meta.url), "utf8"),
+	readFileSync(new URL("../../agent-protocol/eventSchema.generated.json", import.meta.url), "utf8"),
 );
 
 const ajv = new Ajv2020({ strict: false, allErrors: true });

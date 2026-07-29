@@ -1,17 +1,9 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2023"],
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
-    "verbatimModuleSyntax": true,
-    "resolveJsonModule": true
+    "verbatimModuleSyntax": true
   }
 }

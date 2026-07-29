@@ -1,10 +1,10 @@
 /**
- * Build-time OpenAPI dump — emits openapi.json next to package.json so
- * downstream consumers (eventx-backend) can run `openapi-typescript`
- * against a stable file rather than having to spin up the live server
- * during their build.
+ * Build-time OpenAPI dump — emits openapi.json into packages/agent-protocol,
+ * the package that publishes the contract, so downstream consumers codegen
+ * against a stable, versioned file rather than having to spin up the live
+ * server during their build.
  *
- * Usage: `npm run openapi` (writes ./openapi.json).
+ * Usage: `npm run openapi` (writes ../agent-protocol/openapi.json).
  *
  * The document is built by the shared `buildOpenApiDocument` so it can't drift
  * from what the live server publishes at `/openapi.json`; the only difference is
@@ -41,6 +41,6 @@ root.route("/v1/projects/:projectId", createSessionsApp(stubResolver));
 
 const doc = buildOpenApiDocument(root);
 
-const outPath = resolve(process.cwd(), "openapi.json");
+const outPath = resolve(process.cwd(), "../agent-protocol/openapi.json");
 writeFileSync(outPath, `${JSON.stringify(doc, null, 2)}\n`);
 console.log(`[openapi] wrote ${outPath}`);

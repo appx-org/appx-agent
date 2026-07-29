@@ -9,49 +9,46 @@
  * Virtuoso scaffolding. The data → UiMessage mapping is covered by the reducer
  * tests; the prop contract is enforced by `tsc`.
  */
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { render, cleanup } from "@testing-library/react";
-import { MessageList } from "../MessageList";
+
+import { cleanup, render } from "@testing-library/react";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { UiMessage } from "../../core/types";
+import { MessageList } from "../MessageList";
 
 class ResizeObserverStub {
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
+	observe(): void {}
+	unobserve(): void {}
+	disconnect(): void {}
 }
 
 beforeAll(() => {
-  globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
-  Element.prototype.scrollTo = () => {};
+	globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
+	Element.prototype.scrollTo = () => {};
 });
 
 afterEach(cleanup);
 
 const messages: UiMessage[] = [
-  { id: "h0", role: "user", parts: [{ type: "text", text: "first" }], streaming: false, timestamp: "t0" },
-  { id: "h1", role: "assistant", parts: [{ type: "text", text: "second" }], streaming: false, timestamp: "t1" },
+	{ id: "h0", role: "user", parts: [{ type: "text", text: "first" }], streaming: false, timestamp: "t0" },
+	{ id: "h1", role: "assistant", parts: [{ type: "text", text: "second" }], streaming: false, timestamp: "t1" },
 ];
 
 describe("MessageList", () => {
-  it("mounts and applies the agent-chat-messages class to the scroller", () => {
-    const { container } = render(
-      <MessageList messages={messages} renderItem={(m) => <span>{m.id}</span>} />,
-    );
-    expect(container.querySelector(".agent-chat-messages")).toBeTruthy();
-  });
+	it("mounts and applies the agent-chat-messages class to the scroller", () => {
+		const { container } = render(<MessageList messages={messages} renderItem={(m) => <span>{m.id}</span>} />);
+		expect(container.querySelector(".agent-chat-messages")).toBeTruthy();
+	});
 
-  it("merges a custom className onto the scroller", () => {
-    const { container } = render(
-      <MessageList messages={messages} className="custom-x" renderItem={(m) => <span>{m.id}</span>} />,
-    );
-    const scroller = container.querySelector(".agent-chat-messages");
-    expect(scroller?.classList.contains("custom-x")).toBe(true);
-  });
+	it("merges a custom className onto the scroller", () => {
+		const { container } = render(
+			<MessageList messages={messages} className="custom-x" renderItem={(m) => <span>{m.id}</span>} />,
+		);
+		const scroller = container.querySelector(".agent-chat-messages");
+		expect(scroller?.classList.contains("custom-x")).toBe(true);
+	});
 
-  it("renders the Virtuoso list scaffolding", () => {
-    const { container } = render(
-      <MessageList messages={messages} renderItem={(m) => <span>{m.id}</span>} />,
-    );
-    expect(container.querySelector('[data-testid="virtuoso-item-list"]')).toBeTruthy();
-  });
+	it("renders the Virtuoso list scaffolding", () => {
+		const { container } = render(<MessageList messages={messages} renderItem={(m) => <span>{m.id}</span>} />);
+		expect(container.querySelector('[data-testid="virtuoso-item-list"]')).toBeTruthy();
+	});
 });

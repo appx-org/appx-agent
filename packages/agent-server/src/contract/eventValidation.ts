@@ -17,6 +17,7 @@
  * from the contract.
  */
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 
 type JsonSchema = {
 	$ref?: string;
@@ -31,8 +32,12 @@ type GeneratedCollection = {
 	schemas: Array<{ $ref: string }>;
 };
 
+// The published schema ships with @appx-org/agent-protocol — agent-server
+// validates its own outgoing events against the same artifact consumers
+// codegen from, so runtime and contract can't drift.
+const require = createRequire(import.meta.url);
 const generated = JSON.parse(
-	readFileSync(new URL("./eventSchema.generated.json", import.meta.url), "utf8"),
+	readFileSync(require.resolve("@appx-org/agent-protocol/eventSchema.generated.json"), "utf8"),
 ) as GeneratedCollection;
 
 const componentName = (ref: string): string => ref.split("/").pop() ?? "";

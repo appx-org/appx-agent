@@ -7,8 +7,8 @@
 # This builds the outer image, starts agent-server inside it, and runs the
 # deploy-app skill's literal command sequence end-to-end (build the seeded Vite
 # template under nested podman, run DEV + PROD, redeploy, survive a restart) —
-# all WITHOUT an LLM. See scripts/container-smoke.sh and
-# docs/plans/builder-containers-plan.md (Stage 2).
+# all WITHOUT an LLM. See packages/agent-server/scripts/container-smoke.sh
+# and packages/agent-server/docs/plans/builder-containers-plan.md (Stage 2).
 #
 # Manual (workflow_dispatch) + nightly so it never blocks normal PRs (the build
 # is heavy) but still catches infra drift on the proven recipe.
@@ -43,7 +43,7 @@ jobs:
       - name: Run the Stage 2 container smoke
         # No ANTHROPIC_API_KEY needed: the agent never runs an LLM here — the
         # smoke executes the deploy skill's literal bash commands directly.
-        run: ./scripts/container-smoke.sh
+        run: ./packages/agent-server/scripts/container-smoke.sh
 
       - name: Outer container logs on failure
         if: failure()

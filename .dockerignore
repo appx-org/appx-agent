@@ -1,0 +1,30 @@
+# Build context for packages/agent-server/container/Dockerfile (built from the
+# MONOREPO root so the Node build stage sees the root lockfile + the
+# agent-protocol workspace). Keep the context lean: the build stage runs
+# `npm ci` itself, so host node_modules/dist must never be shipped (stale
+# artifacts + huge context). Docs/git history are irrelevant to the image.
+**/node_modules
+**/dist
+**/.gen
+.git
+.github
+.husky
+.changeset
+docs
+**/docs
+**/test
+*.log
+.env
+.env.local
+.DS_Store
+# agent-client never ships in the image, but its package.json must stay in the
+# context: `npm ci` refuses to run unless every workspace manifest referenced
+# by the root lockfile is present.
+packages/agent-client/*
+!packages/agent-client/package.json
+# container/ runtime artefacts that are NOT baked into the image (the host
+# passes seccomp by absolute path at `docker run` time; scripts/md are docs).
+packages/agent-server/container/*.md
+packages/agent-server/container/run-outer.sh
+packages/agent-server/container/smoke.sh
+packages/agent-server/container/gen-seccomp.sh

@@ -6,9 +6,11 @@ model/thinking controls. Transport-agnostic and themeable, so the same package
 powers different apps (lanquest, quest, appx, …) with project-specific styling
 and layout.
 
-This is the **standalone source of truth** for the package. Consumers depend on
-it by version from the registry (CI/prod), and link it locally for live editing
-during development (see **Local development across repos** below).
+Lives in the **appx-agent monorepo** next to [agent-server](../agent-server)
+and [@appx-org/agent-protocol](../agent-protocol) (the published contract this
+package's types come from). Consumers depend on it by version from the
+registry (CI/prod), and link it locally for live editing during development
+(see **Local development across repos** below).
 
 ## Install
 
@@ -23,14 +25,15 @@ then `npm i @appx-org/agent-client`. Peer deps: `react >=18`, `react-dom >=18`.
 
 ## Local development across repos
 
-The package ships its TypeScript **source** (`exports` → `src`), so a consuming
-Vite/bundler app compiles it directly. To edit it live from a sibling app
-(e.g. lanquest) without publishing, point the app at this checkout with a
-`file:` dependency and let its bundler follow the symlink:
+The package builds to `dist/` (`exports` → `dist`, types included) but still
+ships `src/` in the tarball for source maps and IDE navigation. To edit it live
+from a sibling app (e.g. lanquest) without publishing, point the app at this
+checkout with a `file:` dependency (run `npm run build` here after edits, or
+`tsc -w`):
 
 ```jsonc
 // consumer app package.json (path relative to that package.json)
-"@appx-org/agent-client": "file:../../../../appx-dir/agent-client"
+"@appx-org/agent-client": "file:../../../../appx-dir/appx-agent/packages/agent-client"
 ```
 
 Because `react`/`react-dom` are **peer** deps, the consumer must dedupe React so
@@ -73,9 +76,10 @@ Two layers:
   bodies, path params, and response types are inferred from the contract),
   `SessionStore` (shared SSE pool + reducer dispatch), and the pure
   `sessionReducer` that turns SSE events / REST history into `UiMessage[]`.
-  Contract types live in `core/types.ts` and are derived from
-  `core/agent-server.generated.ts` — **generated** from agent-server's
-  `openapi.json`, never hand-written.
+  Contract types come from
+  [`@appx-org/agent-protocol`](../agent-protocol) — **generated** from
+  agent-server's `openapi.json`, never hand-written — and are re-exported via
+  `core/types.ts` alongside the UI-derived types.
 - **`react/`** — `AgentChatProvider` (DI for client + store + theme),
   `useAgentSession` hook, and components: `AgentChat`, `ChatPanel`,
   `SessionList`, `ToolCallCard`, `ExtensionRequestPanel`, `Markdown`.
@@ -83,17 +87,13 @@ Two layers:
 ## Regenerating the agent-server types
 
 The REST DTOs and the SSE event/message types (`WireEvent`, `ToolCall`,
-`AssistantMessage`, …) are codegen'd from agent-server's `openapi.json`, so they
-stay in sync with the contract and there's no field-name guessing in the reducer.
+`AssistantMessage`, …) come from `@appx-org/agent-protocol`, codegen'd from
+agent-server's `openapi.json`, so they stay in sync with the contract and
+there's no field-name guessing in the reducer. After an agent-server contract
+change, regenerate from the repo root:
 
 ```bash
-# 1. refresh the vendored contract snapshot (after agent-server changes)
-# 1. refresh the vendored contract snapshot (after agent-server changes)
-cp ../agent-server/openapi.json openapi/agent-server.json
-#    (or: curl -s http://127.0.0.1:4001/openapi.json -o openapi/agent-server.json)
-
-# 2. regenerate src/core/agent-server.generated.ts
-npm run gen:api
+npm run gen:contract   # typia event schema → openapi.json → openapi-typescript types
 ```
 
 If a committed contract field changed, the generated types shift and

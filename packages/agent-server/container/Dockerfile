@@ -5,8 +5,9 @@
 # keeping itself alive for `docker exec`) to actually RUN agent-server, with the
 # deploy-app skill + app template baked in.
 #
-# Built from the REPO ROOT (not container/) so the Node build stage can compile
-# agent-server. `run-outer.sh` invokes: docker build -f container/Dockerfile .
+# Built from the MONOREPO ROOT (not container/) so the Node build stage sees
+# the root lockfile plus the agent-protocol workspace agent-server depends on.
+# `run-outer.sh` invokes: docker build -f packages/agent-server/container/Dockerfile .
 #
 # HARD SECURITY INVARIANTS (transcribed verbatim from the deletion-tested Stage 0
 # recipe — see container/SPIKE-FINDINGS.md). Do NOT weaken any of these:
@@ -25,16 +26,27 @@
 # so none of that tooling reaches the final unprivileged image.
 FROM node:22-bookworm-slim AS server-build
 WORKDIR /build
-# Install deps first (cache anchor) — only re-runs when the lockfile changes.
+# Install deps first (cache anchor) — only re-runs when a manifest changes.
+# Workspace install: the root lockfile drives versions. Every workspace
+# manifest must be present for `npm ci` to validate against the lockfile
+# (agent-client's is copied for that validation only; -w limits the actual
+# install to agent-server's tree, which includes the agent-protocol link).
 COPY package.json package-lock.json ./
-RUN npm ci
-# Compile TypeScript → dist/ (the build script also copies the generated event
-# schema into dist/contract/).
-COPY tsconfig.json ./
-COPY src ./src
-RUN npm run build
+COPY packages/agent-protocol/package.json packages/agent-protocol/
+COPY packages/agent-server/package.json packages/agent-server/
+COPY packages/agent-client/package.json packages/agent-client/
+RUN npm ci -w packages/agent-server
+# The protocol package: agent-server resolves eventSchema.generated.json from
+# it at runtime (via the node_modules workspace symlink). No build needed —
+# the server only consumes the committed JSON artifacts.
+COPY packages/agent-protocol packages/agent-protocol
+# Compile TypeScript → dist/ (tsconfig extends the root tsconfig.base.json).
+COPY tsconfig.base.json ./
+COPY packages/agent-server/tsconfig.json packages/agent-server/
+COPY packages/agent-server/src packages/agent-server/src
+RUN npm run build -w packages/agent-server
 # Prune to production dependencies in place; node_modules is now runtime-only.
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev -w packages/agent-server
 
 # ── Stage B: the rootless-podman outer image (Stage 0 recipe, UNCHANGED) ──────
 FROM ubuntu:24.04
@@ -111,19 +123,22 @@ RUN mkdir -p /workspace /home/builder/.local/share/containers \
  && chown -R builder:builder /workspace /home/builder/.local
 
 # ── agent-server runtime + baked builder assets (Stage 2 additions) ───────────
-# Pruned runtime from the build stage (dist/ + production node_modules +
-# package.json so Node resolves "type": "module" and node_modules). Root-owned
-# is fine — the unprivileged builder process only READS these.
-COPY --from=server-build /build/dist /opt/agent-server/dist
+# Pruned runtime from the build stage, preserving the workspace layout so the
+# hoisted node_modules' relative symlink to packages/agent-protocol still
+# resolves. Root-owned is fine — the unprivileged builder process only READS
+# these.
 COPY --from=server-build /build/node_modules /opt/agent-server/node_modules
 COPY --from=server-build /build/package.json /opt/agent-server/package.json
+COPY --from=server-build /build/packages/agent-protocol /opt/agent-server/packages/agent-protocol
+COPY --from=server-build /build/packages/agent-server/dist /opt/agent-server/packages/agent-server/dist
+COPY --from=server-build /build/packages/agent-server/package.json /opt/agent-server/packages/agent-server/package.json
 
 # Bake the deploy skill + app template at fixed paths and point env at them
 # (D4 / D5). builder reads these read-only.
-COPY builder-agent/skills/deploy-app /opt/builder-agent/skills/deploy-app
-COPY builder-agent/templates/vite-spa /opt/builder-agent/templates/vite-spa
+COPY packages/agent-server/builder-agent/skills/deploy-app /opt/builder-agent/skills/deploy-app
+COPY packages/agent-server/builder-agent/templates/vite-spa /opt/builder-agent/templates/vite-spa
 
-COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY packages/agent-server/container/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh
 
 # agent-server env contract (see src/config.ts). Secrets (ANTHROPIC_API_KEY,
@@ -147,4 +162,4 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Stage 2: agent-server is the container's main process. The entrypoint warms
 # up rootless podman then `exec`s this (so signals reach Node directly). Node
 # resolves /opt/agent-server/node_modules by walking up from the script dir.
-CMD ["node", "/opt/agent-server/dist/server.js"]
+CMD ["node", "/opt/agent-server/packages/agent-server/dist/server.js"]

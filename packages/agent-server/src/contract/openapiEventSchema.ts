@@ -13,6 +13,7 @@
  * avoid depending on pi and propagating breaking changes
  */
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 
 type GeneratedCollection = {
@@ -20,8 +21,12 @@ type GeneratedCollection = {
 	schemas?: Array<{ $ref: string }>;
 };
 
+// The generated schema lives in (and ships with) @appx-org/agent-protocol;
+// agent-server is a consumer of its own published contract. Resolved via
+// createRequire because ESM JSON imports still need import attributes.
+const require = createRequire(import.meta.url);
 const generated = JSON.parse(
-	readFileSync(new URL("./eventSchema.generated.json", import.meta.url), "utf8"),
+	readFileSync(require.resolve("@appx-org/agent-protocol/eventSchema.generated.json"), "utf8"),
 ) as GeneratedCollection;
 
 /** Component schemas generated from `WireEvent` (keyed by sanitized type name). */
@@ -110,11 +115,16 @@ export function mergeEventSchema<T>(doc: T): T {
 /**
  * Canonical, version-bearing metadata for the published contract. Defined once
  * here so the live server and the build-time dump can never disagree on title,
- * version, or description.
+ * version, or description. The version IS @appx-org/agent-protocol's package
+ * version — the contract is versioned by the package that publishes it.
  */
+const protocolVersion = (
+	JSON.parse(readFileSync(require.resolve("@appx-org/agent-protocol/package.json"), "utf8")) as { version: string }
+).version;
+
 export const OPENAPI_INFO = {
 	title: "Appx Agent Server",
-	version: "0.1.0",
+	version: protocolVersion,
 	description:
 		"Pi-SDK-based agent orchestration. Shared auth/model state with explicit, persisted project-scoped session runtimes.",
 } as const;

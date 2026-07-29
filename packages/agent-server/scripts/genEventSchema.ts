@@ -2,7 +2,8 @@
  * Build-time generator for the SSE wire-event JSON Schema.
  *
  * Runs typia over the `WireEvent` TypeScript type and emits an OpenAPI 3.1
- * schema collection to `src/contract/eventSchema.generated.json` (committed). The
+ * schema collection to `packages/agent-protocol/eventSchema.generated.json`
+ * (committed — the artifact ships with @appx-org/agent-protocol). The
  * normal `tsc` build, the `openapi` dump, and the server runtime all read that
  * committed JSON, so typia/ts-patch are only needed here, when regenerating
  * (e.g. after a pi upgrade).
@@ -77,6 +78,6 @@ function sanitize(collection: JsonSchemaCollection): JsonSchemaCollection {
 const collection = typia.json.schemas<[WireEvent, ExtensionUiRequest], "3.1">() as unknown as JsonSchemaCollection;
 const sanitized = sanitize(collection);
 
-const outPath = resolve(process.cwd(), "src/contract/eventSchema.generated.json");
+const outPath = resolve(process.cwd(), "../agent-protocol/eventSchema.generated.json");
 writeFileSync(outPath, `${JSON.stringify(sanitized, null, 2)}\n`);
 console.log(`[gen:event-schema] wrote ${outPath} (${Object.keys(sanitized.components.schemas).length} components)`);

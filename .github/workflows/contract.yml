@@ -1,13 +1,15 @@
 #
-# Contract gate for the agent-server OpenAPI surface.
+# Contract gate for the published agent-server OpenAPI surface
+# (packages/agent-protocol).
 #
 # Two checks, both aimed at the one risk that matters here: pi (the upstream
 # engine whose types we forward) drifting silently into our published contract.
 #
 #   (1) Freshness  — regenerate the committed contract artifacts
-#                    (eventSchema.generated.json + openapi.json) and fail if the
-#                    working tree changed. Catches "bumped pi / edited a route
-#                    but forgot to regenerate + commit the contract".
+#                    (eventSchema.generated.json + openapi.json + the
+#                    openapi-typescript output in packages/agent-protocol) and
+#                    fail if the working tree changed. Catches "bumped pi /
+#                    edited a route but forgot to regenerate + commit".
 #
 #   (2) Breaking   — diff this PR's openapi.json against the base branch with
 #                    oasdiff and fail on breaking changes. Turns silent drift
@@ -47,16 +49,14 @@ jobs:
         run: npm ci
 
       - name: Regenerate contract artifacts
-        # Order matters: the typia-generated event schema must be refreshed
-        # before the OpenAPI dump, which merges it in.
-        run: |
-          npm run gen:event-schema
-          npm run openapi
+        # gen:contract runs the pipeline in dependency order: the typia event
+        # schema, then the OpenAPI dump that merges it, then openapi-typescript.
+        run: npm run gen:contract
 
       - name: Verify committed artifacts are up to date
         run: |
-          if ! git diff --exit-code -- openapi.json src/contract/eventSchema.generated.json; then
-            echo "::error::Contract artifacts are stale. Run 'npm run gen:event-schema && npm run openapi' and commit the result."
+          if ! git diff --exit-code -- packages/agent-protocol; then
+            echo "::error::Contract artifacts are stale. Run 'npm run gen:contract' and commit the result."
             exit 1
           fi
 
@@ -75,8 +75,8 @@ jobs:
   #     - name: Detect breaking changes (oasdiff)
   #       uses: oasdiff/oasdiff-action/breaking@v0.0.56
   #       with:
-  #         base: origin/${{ github.base_ref }}:openapi.json
-  #         revision: HEAD:openapi.json
+  #         base: origin/${{ github.base_ref }}:packages/agent-protocol/openapi.json
+  #         revision: HEAD:packages/agent-protocol/openapi.json
   #         # Fail only on definite breaking changes (ERR). Intentional breaks can
   #         # be acknowledged via a `.oasdiff.yaml` err-ignore entry + a contract
   #         # version bump in src/openapi.ts.

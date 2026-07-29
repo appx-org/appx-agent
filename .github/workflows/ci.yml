@@ -1,0 +1,43 @@
+#
+# Repo-wide CI: lint/format (biome), typecheck, build, and tests for every
+# workspace. The contract-specific gates live in contract.yml; the heavy
+# nested-podman infra smoke lives in container-smoke.yml (nightly/manual).
+#
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, build, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Biome (format + lint, no writes)
+        run: npm run check:ci
+
+      - name: Typecheck all workspaces
+        run: npm run typecheck
+
+      - name: Build all workspaces
+        run: npm run build
+
+      - name: Test all workspaces
+        run: npm test

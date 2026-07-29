@@ -1,0 +1,46 @@
+#
+# Release via changesets: when changeset files land on main, this opens (or
+# updates) a "Version Packages" PR; when that PR merges, it publishes
+# @appx-org/agent-protocol and @appx-org/agent-client to GitHub Packages.
+# agent-server is private: true — changesets versions it (so the docker image
+# can be tagged from its package.json) but never publishes it to npm.
+#
+name: release
+
+on:
+  push:
+    branches: [main]
+
+concurrency: release-${{ github.ref }}
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
+jobs:
+  release:
+    name: Version or publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://npm.pkg.github.com
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build publishable packages
+        run: npm run build
+
+      - name: Create release PR or publish
+        uses: changesets/action@v1
+        with:
+          publish: npx changeset publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
