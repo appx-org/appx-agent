@@ -30,6 +30,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # changesets bumps package.json versions but never touches the lockfile,
+      # and `npm ci` does NOT fail on the resulting drift (workspace packages
+      # are symlinks, not registry fetches — it installs happily and only the
+      # unsatisfied workspace link bites later, mid-publish). So check the
+      # lockfile explicitly: refreshing it must be a no-op.
+      - name: Lockfile is in sync with the manifests
+        run: |
+          npm install --package-lock-only --no-audit --no-fund
+          if ! git diff --exit-code -- package-lock.json; then
+            echo "::error::package-lock.json is stale. Run 'npm install --package-lock-only' and commit it."
+            exit 1
+          fi
+
       - name: Biome (format + lint, no writes)
         run: npm run check:ci
 

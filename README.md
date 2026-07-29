@@ -59,6 +59,25 @@ agent-server's `/openapi.json` reports it, and consumers pin against it.
 > package whose local version isn't in the registry. Always land a changeset
 > with a change you intend to release, so the version bump is deliberate.
 
+#### Before merging a Version Packages PR
+
+`changeset version` only rewrites `package.json` files and changelogs. Two
+committed artifacts derive from those versions and must be refreshed in the
+same PR, or the merge publishes from a stale tree:
+
+```bash
+git checkout changeset-release/main
+npm install --package-lock-only   # lockfile records workspace versions
+npm run gen:contract              # openapi.json embeds agent-protocol's version
+git commit -am "Refresh lockfile + contract for the release"
+```
+
+Both are enforced in CI (`ci.yml` lockfile check, `contract.yml` freshness
+gate), so a forgotten refresh fails the PR rather than reaching the registry.
+Note that `npm ci` alone does **not** catch lockfile drift for workspace
+packages — they're symlinks, so it installs happily and the unsatisfied link
+only surfaces later, mid-publish.
+
 #### The `RELEASE_TOKEN` secret
 
 The org forbids GitHub Actions from creating pull requests, so opening the
