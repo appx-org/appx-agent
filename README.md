@@ -22,70 +22,29 @@ npm run build        # protocol → server → client
 npm run typecheck    # tsc --noEmit in every workspace
 npm test             # all workspace test suites
 npm run check        # biome format + lint (writes safe fixes)
+npm run gen:contract # regenerate the published contract from agent-server's schemas
 ```
 
-Run the server locally: see [packages/agent-server](packages/agent-server).
-
-## The contract pipeline
-
-agent-server's zod schemas + pi's TypeScript types are the source of truth.
-Generated artifacts land in `packages/agent-protocol` and are committed:
-
-```bash
-npm run gen:contract
-# = gen:event-schema (typia)     → packages/agent-protocol/eventSchema.generated.json
-#   openapi (zod-openapi dump)   → packages/agent-protocol/openapi.json
-#   gen:types (openapi-typescript) → packages/agent-protocol/src/schema.generated.ts
-```
-
-The pre-commit hook regenerates these when agent-server source is staged, and
-CI (`contract.yml`) fails if the committed artifacts are stale. Details in
+Run the server locally: see [packages/agent-server](packages/agent-server). How
+the contract is generated and versioned:
 [packages/agent-server/src/contract/README.md](packages/agent-server/src/contract/README.md).
 
 ## Releasing
 
-Versioning is driven by [changesets](https://github.com/changesets/changesets):
+Make a change, run `npx changeset`, commit both together. When you want to ship,
+merge the "Version Packages" PR the bot keeps updated and accumulates the
+changes into.
 
-```bash
-npx changeset        # describe the change, pick bump levels
-```
+Merging it publishes `agent-protocol` + `agent-client` to GitHub Packages and
+tags the agent-server image (`release.yml`, `docker.yml`).
+`agent-protocol`'s version **is** the wire-contract version — agent-server's
+`/openapi.json` reports it, and consumers pin against it.
 
-Merging to main with pending changesets opens a "Version Packages" PR; merging
-that publishes `agent-protocol` + `agent-client` to GitHub Packages
-(`release.yml`). `agent-protocol`'s version **is** the wire-contract version —
-agent-server's `/openapi.json` reports it, and consumers pin against it.
+> With no pending changesets, `release.yml` falls back to publishing any package
+> whose local version isn't in the registry. Always land a changeset with a
+> change you intend to release, so the version bump is deliberate.
 
-> Note: with no pending changesets, `release.yml` falls back to publishing any
-> package whose local version isn't in the registry. Always land a changeset
-> with a change you intend to release, so the version bump is deliberate.
-
-#### Derived artifacts in a release
-
-`changeset version` rewrites `package.json` files and changelogs, but two
-committed artifacts derive from those versions and would otherwise go stale:
-
-| Artifact            | Why it depends on the version                        |
-| ------------------- | ---------------------------------------------------- |
-| `package-lock.json` | Records each workspace package's version; if stale, the workspace link is unsatisfied and the build fails **mid-publish** |
-| `openapi.json`      | Its `info.version` **is** agent-protocol's version, so a stale copy ships a contract that misreports itself |
-
-Both are refreshed automatically: `release.yml` runs the workspace's
-`changeset:version` script instead of bare `changeset version`, so the release
-PR arrives already consistent.
-
-```jsonc
-"changeset:version": "changeset version && npm install --package-lock-only --ignore-scripts && npm run gen:contract"
-```
-
-CI verifies it independently — `ci.yml` checks that refreshing the lockfile is a
-no-op, and `contract.yml` regenerates the contract and fails on any diff — so a
-stale release is caught at the PR rather than in the registry. Note `npm ci`
-alone does **not** catch lockfile drift for workspace packages: they're
-symlinks, so it installs happily and the unsatisfied link only surfaces later.
-
-To version locally (rarely needed): `npm run changeset:version`.
-
-#### The `RELEASE_TOKEN` secret
+### The `RELEASE_TOKEN` secret
 
 The org forbids GitHub Actions from creating pull requests, so opening the
 "Version Packages" PR needs a token that acts as a *user*. `release.yml` uses
