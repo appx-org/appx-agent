@@ -55,13 +55,18 @@ describe("AgentSettings — credential controls", () => {
 
 	it("shows the subscription/API-key mode toggle for a subscription-capable provider", async () => {
 		renderWith(makeProviders());
-		// Default selection prefers anthropic (subscription-capable).
+		// Default selection prefers anthropic (subscription-capable). The mode is
+		// applied by an effect keyed on the *selected* provider, so it lands a
+		// render after the toggle itself becomes visible — every assertion about
+		// the resolved mode has to retry, or it samples the intermediate commit
+		// where the toggle exists but credentialMode is still the "api_key"
+		// initial value.
 		await waitFor(() => {
 			expect(screen.getByRole("button", { name: "Subscription" })).toBeTruthy();
 			expect(screen.getByRole("button", { name: "API key" })).toBeTruthy();
+			// Subscription login button is the active mode for anthropic.
+			expect(screen.getByRole("button", { name: /Subscription Login/i })).toBeTruthy();
 		});
-		// Subscription login button is the active mode for anthropic.
-		expect(screen.getByRole("button", { name: /Subscription Login/i })).toBeTruthy();
 	});
 
 	it("shows an API key input for an api-key-only provider with no toggle", async () => {
