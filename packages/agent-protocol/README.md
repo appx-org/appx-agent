@@ -1,5 +1,9 @@
 # @appx-org/agent-protocol
 
+> **Do not use `0.1.0` or `0.1.1`.** `0.1.0`'s tarball shipped without `dist/`,
+> so every import fails to resolve; `0.1.1` reports the wrong `info.version` in
+> `openapi.json`. Install `0.1.2` or later.
+
 The published API contract for [agent-server](../agent-server): the OpenAPI 3.1
 document, the SSE wire-event JSON schema, and TypeScript types generated from
 them. Anything that talks to agent-server over the wire — the React UI package

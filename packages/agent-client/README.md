@@ -1,5 +1,8 @@
 # @appx-org/agent-client
 
+> **Do not use `0.1.0`.** That tarball shipped without `dist/`, so every import
+> fails to resolve. Install `0.1.1` or later.
+
 A customizable React UI for the [appx **agent-server**](../agent-server)
 — streaming chat, session management, tool-call cards, extension-UI prompts, and
 model/thinking controls. Transport-agnostic and themeable, so the same package
