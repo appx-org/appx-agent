@@ -16,6 +16,7 @@
     "agent-server": "dist/server.js"
   },
   "scripts": {
+    "prebuild": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc && node -e \"require('fs').cpSync('src/contract/eventSchema.generated.json','dist/contract/eventSchema.generated.json')\"",
     "typecheck": "tsc --noEmit",
     "check": "biome check --write --error-on-warnings .",
