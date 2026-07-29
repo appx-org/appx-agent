@@ -49,5 +49,21 @@ jobs:
         with:
           publish: npx changeset publish
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # RELEASE_TOKEN is a fine-grained PAT scoped to this repo with
+          # contents:write + pull-requests:write. It exists for ONE reason: the
+          # org forbids GitHub Actions from creating pull requests, and that
+          # policy can't be overridden by the `permissions:` block above (which
+          # does otherwise work — the default GITHUB_TOKEN pushes the release
+          # branch and publishes to the registry just fine). A PAT acts as a
+          # user rather than as Actions, so it can open the PR. Nothing here
+          # grants PR *approval* rights, so branch review can't be self-served.
+          #
+          # Falls back to GITHUB_TOKEN when the secret is absent: version-mode
+          # then still commits and pushes changeset-release/main, and only the
+          # final "open a PR" API call fails — so a missing secret degrades to
+          # "open the PR by hand", not to a broken release.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # Registry auth stays on the default token — `packages: write` above
+          # is sufficient to publish, and scoping this narrowly means the PAT
+          # never needs package permissions.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
