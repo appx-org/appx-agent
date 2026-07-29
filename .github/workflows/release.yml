@@ -13,6 +13,13 @@ on:
 
 concurrency: release-${{ github.ref }}
 
+# The changesets bot commits the version bump. Local git hooks are a
+# developer-workstation convenience (format, typecheck, regenerate the
+# contract) and must not run against a bot commit in CI — the equivalent
+# checks already run as their own jobs in ci.yml / contract.yml.
+env:
+  HUSKY: 0
+
 permissions:
   contents: write
   pull-requests: write

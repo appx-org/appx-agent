@@ -39,7 +39,7 @@ if [ "$contract_touched" -eq 1 ]; then
 	npm run gen:contract
 	git add packages/agent-protocol/openapi.json \
 		packages/agent-protocol/eventSchema.generated.json \
-		packages/agent-protocol/src/generated.ts
+		packages/agent-protocol/src/schema.generated.ts
 fi
 
 # Re-stage the previously-staged files (now possibly reformatted by Biome).
