@@ -63,3 +63,5 @@ promotes an image from `edge` to a semver release.
 docker pull ghcr.io/appx-org/agent-server:edge      # trunk
 docker pull ghcr.io/appx-org/agent-server:0.1.3     # pinned release
 ```
+
+<!-- verifying docker paths-ignore -->
