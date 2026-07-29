@@ -17,6 +17,12 @@ name: docker
 on:
   push:
     branches: [main]
+    # A docs-only commit can't change the image, and rebuilding one would move
+    # the `edge` tag for nothing. Use workflow_dispatch to force a rebuild.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".changeset/**"
   workflow_dispatch:
 
 concurrency:

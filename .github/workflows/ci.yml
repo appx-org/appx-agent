@@ -1,7 +1,8 @@
 #
-# Repo-wide CI: lint/format (biome), typecheck, build, and tests for every
-# workspace. The contract-specific gates live in contract.yml; the heavy
-# nested-podman infra smoke lives in container-smoke.yml (nightly/manual).
+# Repo-wide CI: lint/format (biome), typecheck, build, tests, and the two
+# freshness gates over generated/derived files. One job, so a PR shows a single
+# check. The heavy nested-podman infra smoke lives in container-smoke.yml
+# (nightly/manual) and never runs here.
 #
 name: ci
 
@@ -40,6 +41,20 @@ jobs:
           npm install --package-lock-only --no-audit --no-fund
           if ! git diff --exit-code -- package-lock.json; then
             echo "::error::package-lock.json is stale. Run 'npm install --package-lock-only' and commit it."
+            exit 1
+          fi
+
+      # The committed contract must be a faithful regeneration of its sources
+      # (agent-server's zod schemas + pi's types). Guards against "bumped pi or
+      # edited a route but forgot to regenerate", and against a release bumping
+      # agent-protocol's version without refreshing openapi.json's info.version.
+      # gen:contract runs the pipeline in dependency order: typia event schema →
+      # OpenAPI dump that merges it → openapi-typescript.
+      - name: Contract artifacts are fresh
+        run: |
+          npm run gen:contract
+          if ! git diff --exit-code -- packages/agent-protocol; then
+            echo "::error::Contract artifacts are stale. Run 'npm run gen:contract' and commit the result."
             exit 1
           fi
 

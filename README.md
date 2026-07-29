@@ -44,38 +44,15 @@ tags the agent-server image (`release.yml`, `docker.yml`).
 > whose local version isn't in the registry. Always land a changeset with a
 > change you intend to release, so the version bump is deliberate.
 
-### The `RELEASE_TOKEN` secret
-
-The org forbids GitHub Actions from creating pull requests, so opening the
-"Version Packages" PR needs a token that acts as a *user*. `release.yml` uses
-the `RELEASE_TOKEN` repo secret: a **fine-grained PAT**, scoped to this
-repository only, with exactly two repository permissions:
-
-| Permission      | Access       | Why                                       |
-| --------------- | ------------ | ----------------------------------------- |
-| Contents        | Read & write | Commit + push the `changeset-release/main` branch |
-| Pull requests   | Read & write | Open and update the Version Packages PR   |
-
-Deliberately **not** granted: package write (the default `GITHUB_TOKEN` handles
-registry publishing), and anything resembling PR *approval* — so branch review
-can never be self-served by CI.
-
-If the secret is missing or expired, releases degrade gracefully rather than
-break: version-mode still pushes `changeset-release/main`, and only the PR
-creation fails, so you can open the PR by hand:
-
-```bash
-gh pr create --base main --head changeset-release/main --title "Version Packages"
-```
-
 ### The agent-server image
 
-`docker.yml` publishes `ghcr.io/appx-org/agent-server` on every push to main:
+`docker.yml` publishes `ghcr.io/appx-org/agent-server` on pushes to main that
+touch code (docs-only commits are skipped):
 
 | Tag             | When                                              |
 | --------------- | ------------------------------------------------- |
-| `edge`          | every push to main — the tip of trunk             |
-| `sha-<short>`   | every push — immutable, for rollback              |
+| `edge`          | every code push to main — the tip of trunk        |
+| `sha-<short>`   | every code push — immutable, for rollback         |
 | `X.Y.Z`, `X.Y`, `latest` | only when `packages/agent-server/package.json`'s version changes |
 
 agent-server is `private: true`, so changesets bumps its version (and writes its
@@ -84,5 +61,5 @@ promotes an image from `edge` to a semver release.
 
 ```bash
 docker pull ghcr.io/appx-org/agent-server:edge      # trunk
-docker pull ghcr.io/appx-org/agent-server:0.1.0     # pinned release
+docker pull ghcr.io/appx-org/agent-server:0.1.3     # pinned release
 ```

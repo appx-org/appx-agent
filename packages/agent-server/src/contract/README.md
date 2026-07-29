@@ -80,14 +80,17 @@ upgrade deliberately.
 
 ## CI gates
 
-`.github/workflows/contract.yml` protects `main` so drift is never silent:
+The **Contract artifacts are fresh** step in `.github/workflows/ci.yml`
+regenerates the artifacts and fails if the committed copies differ — catching
+both "bumped pi or edited a route but forgot to regenerate" and a release that
+bumps agent-protocol's version without refreshing `openapi.json`'s
+`info.version`.
 
-- **Freshness** — regenerates both artifacts and fails if the committed
-  `openapi.json` / `eventSchema.generated.json` are stale (i.e. you bumped pi or
-  edited a route but forgot to regenerate + commit).
-- **Breaking changes** — [`oasdiff`](https://github.com/oasdiff/oasdiff) diffs the
-  PR's `openapi.json` against the base branch and fails on breaking changes,
-  turning a pi-driven shape change into a reviewed, intentional event.
+Not yet enabled: a **breaking-change** gate using
+[`oasdiff`](https://github.com/oasdiff/oasdiff) to diff a PR's `openapi.json`
+against the base branch and fail on breaking changes (`fail-on: ERR`), turning a
+pi-driven shape change into a reviewed, intentional event. Worth adding once the
+contract has external consumers pinning against it.
 
 ## How downstream consumers use it
 

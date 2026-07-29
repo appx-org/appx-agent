@@ -58,8 +58,15 @@ jobs:
           version: npm run changeset:version
           publish: npx changeset publish
         env:
-          # RELEASE_TOKEN is a fine-grained PAT scoped to this repo with
-          # contents:write + pull-requests:write. It exists for ONE reason: the
+          # RELEASE_TOKEN is a fine-grained PAT owned by the appx-org org and
+          # scoped to THIS REPO ONLY, with exactly two repository permissions
+          # (grant these and nothing else when it expires and you regenerate it):
+          #   Contents      → read & write  (push the changeset-release/main branch)
+          #   Pull requests → read & write  (open + update the Version Packages PR)
+          # Deliberately NOT granted: packages (the default GITHUB_TOKEN below
+          # publishes), and anything resembling PR approval.
+          #
+          # It exists for ONE reason: the
           # org forbids GitHub Actions from creating pull requests, and that
           # policy can't be overridden by the `permissions:` block above (which
           # does otherwise work — the default GITHUB_TOKEN pushes the release
