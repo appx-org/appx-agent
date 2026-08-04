@@ -44,6 +44,23 @@ jobs:
             exit 1
           fi
 
+      # Each published package needs LICENSE + NOTICE in its own directory: npm
+      # only auto-includes them from the package root, not the repo root, so the
+      # tarballs would otherwise claim MIT without shipping its text. They are
+      # copies of the root files and must not drift.
+      - name: LICENSE and NOTICE copies match the root
+        run: |
+          status=0
+          for pkg in packages/*/; do
+            for file in LICENSE NOTICE; do
+              if ! cmp -s "$file" "$pkg$file"; then
+                echo "::error::$pkg$file differs from ./$file. Run 'npm run sync:legal'."
+                status=1
+              fi
+            done
+          done
+          exit $status
+
       # The committed contract must be a faithful regeneration of its sources
       # (agent-server's zod schemas + pi's types). Guards against "bumped pi or
       # edited a route but forgot to regenerate", and against a release bumping

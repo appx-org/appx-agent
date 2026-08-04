@@ -1,0 +1,56 @@
+appx-agent
+Copyright (c) 2026 appx-org
+
+This product includes third-party software. All runtime dependencies are
+permissively licensed; their copyright notices and license terms apply to the
+respective components.
+
+MIT is an attribution license, so the notices below are preserved as required.
+Regenerate this list after a dependency change with:
+
+    node -e "for (const pkg of ['agent-server','agent-client','agent-protocol']) { \
+      const d = require('./packages/'+pkg+'/package.json').dependencies || {}; \
+      for (const name of Object.keys(d)) { \
+        const p = require('./node_modules/'+name+'/package.json'); \
+        console.log((p.license||'UNKNOWN').padEnd(24), p.name+'@'+p.version); } }"
+
+--------------------------------------------------------------------------------
+agent-server runtime dependencies
+--------------------------------------------------------------------------------
+
+@earendil-works/pi-ai              MIT   The Pi AI SDK
+@earendil-works/pi-coding-agent    MIT   The Pi coding-agent SDK
+@hono/node-server                  MIT
+@hono/swagger-ui                   MIT
+@hono/zod-openapi                  MIT
+hono                               MIT
+zod                                MIT
+
+The Pi SDKs (https://github.com/earendil-works/pi) are the upstream agent
+engine this server wraps. They declare MIT in package.json but ship no LICENSE
+file in their tarballs; the MIT terms in that declaration apply.
+
+--------------------------------------------------------------------------------
+agent-client runtime dependencies
+--------------------------------------------------------------------------------
+
+dompurify                          MPL-2.0 OR Apache-2.0
+marked                             MIT
+openapi-fetch                      MIT
+react-virtuoso                     MIT
+
+react and react-dom are peer dependencies (MIT), supplied by the consuming
+application rather than bundled here.
+
+--------------------------------------------------------------------------------
+Container image
+--------------------------------------------------------------------------------
+
+The agent-server container image (packages/agent-server/container/Dockerfile)
+is built from ubuntu:24.04 and installs podman, uidmap, slirp4netns,
+fuse-overlayfs, and Node.js from NodeSource. Those components retain their own
+licenses; run a package-level license audit against the built image if you need
+a complete bill of materials for distribution.
+
+The tailored seccomp profile (container/seccomp-builder.json) is derived from
+podman's stock profile — see container/gen-seccomp.sh for provenance.
