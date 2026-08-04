@@ -1,5 +1,12 @@
 # @appx-org/agent-server
 
+## 0.1.4
+
+### Patch Changes
+
+- Updated dependencies [c3b2fb5]
+  - @appx-org/agent-protocol@0.1.4
+
 ## 0.1.3
 
 ### Patch Changes
