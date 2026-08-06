@@ -6,8 +6,8 @@ its published API contract, and a customizable React UI for it.
 | Package                                          | What it is                                                                                       | Ships as                              |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------- |
 | [`packages/agent-server`](packages/agent-server) | HTTP/SSE orchestration server wrapping the [pi coding agent SDK](https://github.com/earendil-works/pi) | Docker image (private npm package)    |
-| [`packages/agent-protocol`](packages/agent-protocol) | The published API contract: `openapi.json`, SSE event schema, generated TS types                 | `@appx-org/agent-protocol` (GitHub Packages) |
-| [`packages/agent-client`](packages/agent-client) | Customizable React chat UI for agent-server                                                       | `@appx-org/agent-client` (GitHub Packages) |
+| [`packages/agent-protocol`](packages/agent-protocol) | The published API contract: `openapi.json`, SSE event schema, generated TS types                 | `@appx-org/agent-protocol` (public npm)      |
+| [`packages/agent-client`](packages/agent-client) | Customizable React chat UI for agent-server                                                       | `@appx-org/agent-client` (public npm)      |
 
 Dependency direction: `agent-server → agent-protocol ← agent-client`. External
 consumers (the appx Go control plane, other appx-like services) depend on the
@@ -35,8 +35,10 @@ Make a change, run `npx changeset`, commit both together. When you want to ship,
 merge the "Version Packages" PR the bot keeps updated and accumulates the
 changes into.
 
-Merging it publishes `agent-protocol` + `agent-client` to GitHub Packages and
-tags the agent-server image (`release.yml`, `docker.yml`).
+Merging it publishes `agent-protocol` + `agent-client` to the public npm
+registry and tags the agent-server image (`release.yml`, `docker.yml`).
+Publishing uses npm trusted publishing (OIDC), so there is no publish token in
+this repo and each release carries a provenance attestation.
 `agent-protocol`'s version **is** the wire-contract version — agent-server's
 `/openapi.json` reports it, and consumers pin against it.
 

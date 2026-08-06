@@ -1,8 +1,20 @@
 # @appx-org/agent-protocol
 
+```
+npm i @appx-org/agent-protocol
+```
+
+Published to the public npm registry — no `.npmrc` scope mapping and no auth
+token.
+
 > **Do not use `0.1.0` or `0.1.1`.** `0.1.0`'s tarball shipped without `dist/`,
 > so every import fails to resolve; `0.1.1` reports the wrong `info.version` in
 > `openapi.json`. Install `0.1.2` or later.
+>
+> Versions up to and including `0.1.4` were published to GitHub Packages, which
+> required an auth token even though the package is public. From `0.1.5` onward
+> they come from `registry.npmjs.org`; if you still carry an
+> `@appx-org:registry=https://npm.pkg.github.com` line, delete it.
 
 The published API contract for [agent-server](../agent-server): the OpenAPI 3.1
 document, the SSE wire-event JSON schema, and TypeScript types generated from
