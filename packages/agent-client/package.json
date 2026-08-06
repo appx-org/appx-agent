@@ -10,7 +10,7 @@
     "directory": "packages/agent-client"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   },
   "sideEffects": [
     "*.css"
