@@ -17,14 +17,17 @@ registry (CI/prod), and link it locally for live editing during development
 
 ## Install
 
-Published to GitHub Packages under the `@appx-org` scope. Consumers add a scope
-registry mapping (`.npmrc`):
-
 ```
-@appx-org:registry=https://npm.pkg.github.com
+npm i @appx-org/agent-client
 ```
 
-then `npm i @appx-org/agent-client`. Peer deps: `react >=18`, `react-dom >=18`.
+Published to the public npm registry — no `.npmrc` scope mapping and no auth
+token. Peer deps: `react >=18`, `react-dom >=18`.
+
+> Versions up to and including `0.1.4` were published to GitHub Packages, which
+> required a token even though the package is public. From `0.1.5` onward the
+> packages come from `registry.npmjs.org`; if you still carry an
+> `@appx-org:registry=https://npm.pkg.github.com` line, delete it.
 
 ## Local development across repos
 
