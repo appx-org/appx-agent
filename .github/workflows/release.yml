@@ -1,7 +1,7 @@
 #
 # Release via changesets: when changeset files land on main, this opens (or
 # updates) a "Version Packages" PR; when that PR merges, it publishes
-# @appx-org/agent-protocol and @appx-org/agent-client to GitHub Packages.
+# @appx-org/agent-protocol and @appx-org/agent-client to the public npm registry.
 # agent-server is private: true — changesets versions it (so the docker image
 # can be tagged from its package.json) but never publishes it to npm.
 #
@@ -23,7 +23,11 @@ env:
 permissions:
   contents: write
   pull-requests: write
-  packages: write
+  # Mints the OIDC token npm trusted publishing exchanges for a short-lived,
+  # workflow-scoped publish credential. Replaces both `packages: write` (these
+  # packages no longer go to GitHub Packages) and a long-lived NPM_TOKEN — there
+  # is no publish secret in this repo. See the publish step's env below.
+  id-token: write
 
 jobs:
   release:
@@ -34,9 +38,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # npm trusted publishing (OIDC) requires npm >= 11.5.1 and Node >=
+          # 22.14.0. Node 24 ships a new enough npm; a bare "22" resolves to
+          # whatever 22.x is current and can land below that floor, which fails
+          # at publish time rather than here.
+          node-version: 24
           cache: npm
-          registry-url: https://npm.pkg.github.com
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: npm ci
@@ -79,7 +87,22 @@ jobs:
           # final "open a PR" API call fails — so a missing secret degrades to
           # "open the PR by hand", not to a broken release.
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-          # Registry auth stays on the default token — `packages: write` above
-          # is sufficient to publish, and scoping this narrowly means the PAT
-          # never needs package permissions.
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No NODE_AUTH_TOKEN, deliberately. Registry auth is npm trusted
+          # publishing (OIDC): the npm CLI detects the OIDC environment created
+          # by `id-token: write` above and exchanges it for a short-lived,
+          # workflow-scoped publish credential. Nothing long-lived to leak,
+          # rotate, or expire.
+          #
+          # Chosen over an NPM_TOKEN because npm is retiring bypass-2FA granular
+          # tokens: they lose admin rights around August 2026 and direct publish
+          # rights around January 2027, after which they can only stage a publish
+          # pending human 2FA approval.
+          #
+          # Each package is configured on npmjs.com against this repo and THIS
+          # WORKFLOW FILENAME (release.yml). Renaming this file breaks publishing
+          # until the trusted-publisher config is updated to match — npm does not
+          # validate that config when it is saved, so a mismatch only surfaces at
+          # publish time.
+          #
+          # Public packages from a public repo also gain provenance attestations
+          # automatically, proving which commit and workflow built each tarball.
