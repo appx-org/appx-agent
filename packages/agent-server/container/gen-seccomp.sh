@@ -15,6 +15,12 @@
 # (sethostname, setdomainname, setns). The genuinely dangerous gated syscalls
 # (bpf, perf_event_open, quotactl, fanotify_init, lookup_dcookie) stay denied.
 # Net result: a tailored profile that is strictly tighter than `unconfined`.
+#
+# The generated file is committed AND baked into the image at
+# /opt/appx/seccomp-builder.json (see the Dockerfile), because the profile is a
+# host-side `docker run --security-opt seccomp=<path>` argument. Consumers
+# extract it from the image rather than vendoring a copy, so after regenerating
+# here you must publish a new image for them to pick the change up.
 set -euo pipefail
 cd "$(dirname "$0")"
 # Built from the repo root (Stage 2 context change); the Dockerfile lives here.

@@ -141,6 +141,18 @@ COPY packages/agent-server/builder-agent/templates/vite-spa /opt/builder-agent/t
 COPY packages/agent-server/container/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh
 
+# Ship the tailored seccomp profile INSIDE the image so consumers can extract it
+# instead of vendoring a copy that silently drifts.
+#
+# The profile is a `docker run --security-opt seccomp=<host path>` argument, so
+# it must exist as a file on the HOST that starts this container — it is never
+# read from in here. Baking it anyway makes the image the single distribution
+# channel for the whole security boundary: a consumer (e.g. the appx control
+# plane) does `docker create` + `docker cp /opt/appx/seccomp-builder.json`, and
+# the profile it applies is by construction the one this image was built with.
+# See gen-seccomp.sh for how the profile is derived from podman's stock one.
+COPY packages/agent-server/container/seccomp-builder.json /opt/appx/seccomp-builder.json
+
 # agent-server env contract (see src/config.ts). Secrets (ANTHROPIC_API_KEY,
 # AGENT_SERVER_TOKEN) are NEVER baked — they arrive via `docker run -e`.
 #   AGENT_SERVER_HOST=0.0.0.0  the container boundary takes over loopback's
