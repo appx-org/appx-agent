@@ -49,4 +49,49 @@ describe("deploy-app skill", () => {
 		assert.match(skill, /networks, not pods/i);
 		assert.match(skill, /network create --label appx\.project=/);
 	});
+
+	test("never instructs a loopback-bound publish", () => {
+		// The skill previously said "Loopback only. Do not publish on 0.0.0.0",
+		// which reads as `-p 127.0.0.1:<host>:<container>`. Inside the builder
+		// container that binds ITS loopback, while requests arrive on its bridge
+		// address — so the app is unreachable for every real user while looking
+		// healthy from inside. Any example that publishes with an address prefix
+		// would reintroduce that.
+		const skill = readFileSync(SKILL_PATH, "utf8");
+		const lines = skill.split("\n");
+		// A mention is only safe when it is marked as wrong nearby — the prose is
+		// hard-wrapped, so the marker can sit on an adjacent line. Anything else
+		// reads as an instruction to the agent.
+		const marksItWrong = /❌|unreachable|never|FAILED|do not/i;
+		for (const [index, line] of lines.entries()) {
+			if (!/-p\s+\d{1,3}(?:\.\d{1,3}){3}:/.test(line)) continue;
+			const window = lines.slice(Math.max(0, index - 1), index + 2).join(" ");
+			assert.ok(
+				marksItWrong.test(window),
+				`SKILL.md line ${index + 1} shows an address-prefixed publish without marking it as wrong: ${line.trim()}`,
+			);
+		}
+		// And the correct form must appear as a runnable example.
+		assert.match(skill, /-p <devPort>:<containerPort>/);
+		assert.match(skill, /-p <prodPort>:<containerPort>/);
+	});
+
+	test("tells the agent to publish without an address prefix", () => {
+		// Whitespace-insensitive: the prose is hard-wrapped, so the phrase can
+		// straddle a newline.
+		const prose = readFileSync(SKILL_PATH, "utf8").replace(/\s+/g, " ");
+		assert.match(prose, /never prefix it with an address/i);
+		// The rule needs enough justification that an agent does not "harden" it
+		// back to loopback, without turning the skill into a design doc.
+		assert.match(prose, /a bare `-p` exposes nothing/i);
+	});
+
+	test("health check verifies the binding, not just a 200", () => {
+		// curl from inside the builder container reaches the app through the same
+		// loopback a wrongly-bound publish uses, so it returns 200 for an app no
+		// user can load. The binding needs its own assertion.
+		const skill = readFileSync(SKILL_PATH, "utf8");
+		assert.match(skill, /port <project>-app-dev/);
+		assert.match(skill, /FAILED: published on 127\.0\.0\.1/);
+	});
 });
