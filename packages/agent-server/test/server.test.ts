@@ -156,16 +156,18 @@ describe("agent-server: LiteLLM config", () => {
 	const envKeys = [
 		"LITELLM_BASE_URL",
 		"LITELLM_API_KEY",
-		"LITELLM_MODELS",
-		"LITELLM_MODELS_JSON",
+		"LITELLM_MODELS_PATH",
 		"LITELLM_DEFAULT_MODEL",
-		"LITELLM_DEFAULT_THINKING",
-		"LITELLM_COMPAT_JSON",
 		"LITELLM_API",
-		"LITELLM_REASONING",
-		"LITELLM_CONTEXT_WINDOW",
-		"LITELLM_MAX_TOKENS",
 	];
+
+	/** Write a models file and point LITELLM_MODELS_PATH at it. */
+	function writeModelsFile(dir: string, models: unknown[]): string {
+		const path = resolve(dir, "models.json");
+		writeFileSync(path, JSON.stringify(models), "utf8");
+		process.env.LITELLM_MODELS_PATH = path;
+		return path;
+	}
 
 	after(() => {
 		resetLiteLlmConfigForTests();
@@ -178,8 +180,7 @@ describe("agent-server: LiteLLM config", () => {
 			process.env.LITELLM_BASE_URL = "http://litellm.test/v1";
 			process.env.LITELLM_API_KEY = "test-key";
 			process.env.LITELLM_DEFAULT_MODEL = "openai/gpt-5.5";
-			process.env.LITELLM_DEFAULT_THINKING = "high";
-			process.env.LITELLM_MODELS_JSON = JSON.stringify([{ id: "openai/gpt-5.5" }]);
+			writeModelsFile(project.dir, [{ id: "openai/gpt-5.5" }]);
 			resetLiteLlmConfigForTests();
 
 			const agentDir = resolve(project.dir, ".pi-agent");
@@ -225,15 +226,14 @@ describe("agent-server: LiteLLM config", () => {
 		}
 	});
 
-	test("applies preset compat when only a default LiteLLM model is configured", () => {
+	test("applies preset compat to a bare model entry", () => {
 		const previous = new Map(envKeys.map((key) => [key, process.env[key]]));
+		const project = makeProject();
 		try {
 			process.env.LITELLM_BASE_URL = "http://litellm.test/v1";
 			process.env.LITELLM_API_KEY = "test-key";
 			process.env.LITELLM_DEFAULT_MODEL = "openai/gpt-5.5";
-			delete process.env.LITELLM_MODELS;
-			delete process.env.LITELLM_MODELS_JSON;
-			delete process.env.LITELLM_COMPAT_JSON;
+			writeModelsFile(project.dir, [{ id: "openai/gpt-5.5" }]);
 			resetLiteLlmConfigForTests();
 
 			const config = resolveLiteLlmConfig();
@@ -250,6 +250,7 @@ describe("agent-server: LiteLLM config", () => {
 				else process.env[key] = value;
 			}
 			resetLiteLlmConfigForTests();
+			project.cleanup();
 		}
 	});
 });

@@ -4,7 +4,23 @@
  * SDK session model selection happens before extension session_start handlers,
  * so dynamic provider registration has to happen directly on ProjectRuntime's
  * ModelRegistry before createAgentSession().
+ *
+ * ## Configuration
+ *
+ * The model list comes from ONE place: a JSON file named by
+ * `LITELLM_MODELS_PATH`, containing an array of model entries. Everything else
+ * is a scalar: `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `LITELLM_API` and
+ * `LITELLM_DEFAULT_MODEL`.
+ *
+ * A file rather than an env var because the list is structured, per-model
+ * config that a control plane generates from its own model catalogue — it wants
+ * to be diffable and reviewable, not a multi-kilobyte single-line env value.
+ *
+ * `modelPreset()` supplies thinking metadata (`thinkingLevelMap`,
+ * `defaultThinkingLevel`, `compat.thinkingFormat`) for models whose dialect we
+ * know; file entries override it field by field.
  */
+import { readFileSync } from "node:fs";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { ProjectRuntimeConfig } from "../runtime/projectRuntime.js";
 import {
@@ -34,7 +50,7 @@ type LiteLlmModel = {
 		cacheRead?: number;
 		cacheWrite?: number;
 	};
-	/** Model-level OpenAI-compatible provider quirks. Overrides LITELLM_COMPAT_JSON. */
+	/** Model-level OpenAI-compatible provider quirks. Overrides the conservative defaults. */
 	compat?: Record<string, unknown>;
 };
 
@@ -48,8 +64,6 @@ type ResolvedLiteLlmConfig = {
 	models: ProviderModel[];
 	defaultModelId: string;
 	defaultModel: ProviderModel;
-	/** Global fallback thinking level from LITELLM_DEFAULT_THINKING. */
-	globalThinkingLevel: ThinkingLevel | undefined;
 	/** Effective thinking level for the selected default model. */
 	thinkingLevel: ThinkingLevel | undefined;
 	/** Per-model defaults keyed as `${provider}/${modelId}` for ProjectRuntime. */
@@ -103,33 +117,8 @@ function parseApi(raw: string | undefined, fallback: ProviderApi): ProviderApi {
 	return fallback;
 }
 
-function parseBool(raw: string | undefined, fallback: boolean): boolean {
-	if (raw === undefined) return fallback;
-	const value = raw.trim().toLowerCase();
-	if (["1", "true", "yes", "on"].includes(value)) return true;
-	if (["0", "false", "no", "off"].includes(value)) return false;
-	return fallback;
-}
-
-function parsePositiveInt(raw: string | undefined, fallback: number): number {
-	const n = Number(raw);
-	return Number.isInteger(n) && n > 0 ? n : fallback;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function parseJsonObject(raw: string, name: string): Record<string, unknown> {
-	const parsed = JSON.parse(raw) as unknown;
-	if (!isRecord(parsed)) throw new Error(`${name} must be a JSON object`);
-	return parsed;
-}
-
-function parseCompat(): Record<string, unknown> {
-	const raw = process.env.LITELLM_COMPAT_JSON?.trim();
-	if (!raw) return { ...conservativeOpenAiCompat };
-	return { ...conservativeOpenAiCompat, ...parseJsonObject(raw, "LITELLM_COMPAT_JSON") };
 }
 
 function modelPreset(id: string): Partial<LiteLlmModel> {
@@ -189,13 +178,18 @@ function modelKey(modelId: string): string {
 	return `litellm/${modelId}`;
 }
 
-function modelFromId(id: string): LiteLlmModel {
+/**
+ * Baseline for a model entry: the values used for any field the file (and then
+ * the preset) leaves unset. Costs default to zero, so a consumer that wants a
+ * meaningful in-UI spend estimate has to supply real figures per model.
+ */
+function modelBaseline(id: string): LiteLlmModel {
 	return {
 		id,
 		name: id,
 		input: ["text"],
-		contextWindow: parsePositiveInt(process.env.LITELLM_CONTEXT_WINDOW, DEFAULT_CONTEXT_WINDOW),
-		maxTokens: parsePositiveInt(process.env.LITELLM_MAX_TOKENS, DEFAULT_MAX_TOKENS),
+		contextWindow: DEFAULT_CONTEXT_WINDOW,
+		maxTokens: DEFAULT_MAX_TOKENS,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 	};
 }
@@ -206,7 +200,7 @@ function modelCompat(
 	presetCompat: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
 	if (model.compat !== undefined && !isRecord(model.compat)) {
-		throw new Error(`LITELLM_MODELS_JSON model ${model.id || "<unknown>"} compat must be a JSON object`);
+		throw new Error(`LiteLLM model ${model.id || "<unknown>"} compat must be a JSON object`);
 	}
 	return { ...providerCompat, ...(presetCompat ?? {}), ...(model.compat ?? {}) };
 }
@@ -216,14 +210,14 @@ function normaliseThinkingLevelMap(
 	map: LiteLlmModel["thinkingLevelMap"],
 ): LiteLlmModel["thinkingLevelMap"] {
 	if (map === undefined) return undefined;
-	if (!isRecord(map)) throw new Error(`LITELLM_MODELS_JSON model ${modelId} thinkingLevelMap must be a JSON object`);
+	if (!isRecord(map)) throw new Error(`LiteLLM model ${modelId} thinkingLevelMap must be a JSON object`);
 	const result: Partial<Record<ThinkingLevel, string | null>> = {};
 	for (const [key, value] of Object.entries(map)) {
 		if (!thinkingValues.has(key as ThinkingLevel)) {
-			throw new Error(`LITELLM_MODELS_JSON model ${modelId} has unsupported thinkingLevelMap key ${key}`);
+			throw new Error(`LiteLLM model ${modelId} has unsupported thinkingLevelMap key ${key}`);
 		}
 		if (value !== null && typeof value !== "string") {
-			throw new Error(`LITELLM_MODELS_JSON model ${modelId} thinkingLevelMap.${key} must be a string or null`);
+			throw new Error(`LiteLLM model ${modelId} thinkingLevelMap.${key} must be a string or null`);
 		}
 		result[key as ThinkingLevel] = value;
 	}
@@ -242,13 +236,12 @@ function mergeThinkingLevelMaps(
 }
 
 function normaliseModel(model: LiteLlmModel, providerCompat: Record<string, unknown>): NormalisedLiteLlmModel {
-	if (!isRecord(model)) throw new Error("LITELLM_MODELS_JSON entries must be JSON objects");
+	if (!isRecord(model)) throw new Error("LiteLLM model entries must be JSON objects");
 	if (!model.id?.trim()) throw new Error("LiteLLM model entry is missing id");
 	const id = model.id.trim();
-	const base = modelFromId(id);
+	const base = modelBaseline(id);
 	const preset = modelPreset(id);
 	const fallbackApi = parseApi(process.env.LITELLM_API, "openai-completions");
-	const fallbackReasoning = parseBool(process.env.LITELLM_REASONING, false);
 	const { defaultThinkingLevel: presetDefaultThinkingLevel, ...presetForProvider } = preset;
 	const { defaultThinkingLevel: modelDefaultThinkingLevel, ...modelForProvider } = model;
 	const thinkingLevelMap = mergeThinkingLevelMaps(id, preset.thinkingLevelMap, model.thinkingLevelMap);
@@ -260,7 +253,7 @@ function normaliseModel(model: LiteLlmModel, providerCompat: Record<string, unkn
 		id,
 		name: model.name ?? preset.name ?? id,
 		api: model.api ? parseApi(model.api, fallbackApi) : (preset.api ?? fallbackApi),
-		reasoning: model.reasoning ?? preset.reasoning ?? fallbackReasoning,
+		reasoning: model.reasoning ?? preset.reasoning ?? false,
 		thinkingLevelMap,
 		input: model.input ?? preset.input ?? base.input!,
 		contextWindow: model.contextWindow ?? preset.contextWindow ?? base.contextWindow!,
@@ -280,36 +273,70 @@ function normaliseModel(model: LiteLlmModel, providerCompat: Record<string, unkn
 		defaultThinkingLevel: defaultThinkingLevel
 			? clampThinkingLevelForModel(
 					providerModel,
-					parseThinkingLevelValue(defaultThinkingLevel, `LITELLM_MODELS_JSON model ${id} defaultThinkingLevel`)!,
+					parseThinkingLevelValue(defaultThinkingLevel, `LiteLLM model ${id} defaultThinkingLevel`)!,
 				)
 			: undefined,
 	};
 }
 
-function parseModels(providerCompat: Record<string, unknown>): NormalisedLiteLlmModel[] {
-	const json = process.env.LITELLM_MODELS_JSON?.trim();
-	if (json) {
-		const parsed = JSON.parse(json) as unknown;
-		if (!Array.isArray(parsed)) throw new Error("LITELLM_MODELS_JSON must be a JSON array");
-		return parsed.map((entry) => normaliseModel(entry as LiteLlmModel, providerCompat));
-	}
+/**
+ * Env vars removed in 0.2.0. They are rejected rather than ignored: a stale
+ * value would otherwise leave the provider silently unregistered, which reads
+ * as "the agent has no models" with nothing pointing at the cause.
+ */
+const REMOVED_ENV_VARS: ReadonlyArray<[string, string]> = [
+	["LITELLM_MODELS_JSON", "write the same JSON array to a file and set LITELLM_MODELS_PATH"],
+	["LITELLM_MODELS", "list the models in the LITELLM_MODELS_PATH file"],
+	["LITELLM_CONTEXT_WINDOW", "set contextWindow per model in the LITELLM_MODELS_PATH file"],
+	["LITELLM_MAX_TOKENS", "set maxTokens per model in the LITELLM_MODELS_PATH file"],
+	["LITELLM_REASONING", "set reasoning per model in the LITELLM_MODELS_PATH file"],
+	["LITELLM_COMPAT_JSON", "set compat per model in the LITELLM_MODELS_PATH file"],
+	["LITELLM_DEFAULT_THINKING", "set defaultThinkingLevel on the default model entry"],
+];
 
-	const csv = process.env.LITELLM_MODELS?.trim();
-	if (csv) {
-		return csv
-			.split(",")
-			.map((id) => id.trim())
-			.filter(Boolean)
-			.map((id) => modelFromId(id))
-			.map((model) => normaliseModel(model, providerCompat));
-	}
-
-	const fallback = process.env.LITELLM_DEFAULT_MODEL?.trim();
-	return fallback ? [normaliseModel(modelFromId(fallback), providerCompat)] : [];
+function assertNoRemovedEnvVars(): void {
+	const present = REMOVED_ENV_VARS.filter(([name]) => process.env[name]?.trim());
+	if (present.length === 0) return;
+	const detail = present.map(([name, hint]) => `${name} (${hint})`).join("; ");
+	throw new Error(
+		`${LOG_PREFIX} these environment variables were removed in agent-server 0.2.0: ${detail}. ` +
+			`The model list now comes only from the JSON file named by LITELLM_MODELS_PATH.`,
+	);
 }
 
-function defaultThinkingLevel(): ThinkingLevel | undefined {
-	return parseThinkingLevelValue(process.env.LITELLM_DEFAULT_THINKING, "LITELLM_DEFAULT_THINKING", true);
+/**
+ * Read the model list from `LITELLM_MODELS_PATH`.
+ *
+ * Returns an empty list when the variable is unset, so a deployment that has
+ * not configured models yet registers no provider (the caller warns). A path
+ * that IS set but unreadable or malformed throws: that is a misconfiguration,
+ * and failing loudly at boot beats an agent that silently has no models.
+ */
+function parseModels(providerCompat: Record<string, unknown>): NormalisedLiteLlmModel[] {
+	assertNoRemovedEnvVars();
+
+	const path = process.env.LITELLM_MODELS_PATH?.trim();
+	if (!path) return [];
+
+	let contents: string;
+	try {
+		contents = readFileSync(path, "utf8");
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		throw new Error(`LITELLM_MODELS_PATH ${path} could not be read: ${reason}`);
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(contents) as unknown;
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		throw new Error(`LITELLM_MODELS_PATH ${path} is not valid JSON: ${reason}`);
+	}
+	if (!Array.isArray(parsed)) {
+		throw new Error(`LITELLM_MODELS_PATH ${path} must contain a JSON array of model entries`);
+	}
+	return parsed.map((entry) => normaliseModel(entry as LiteLlmModel, providerCompat));
 }
 
 function resolvedEffort(model: ProviderModel, thinkingLevel: ThinkingLevel): string {
@@ -370,9 +397,7 @@ function logResolvedConfig(config: ResolvedLiteLlmConfig, phase: "startup" | "ru
 	);
 	for (const entry of config.models) {
 		const levels = supportedThinkingLevelsForModel(entry);
-		const defaultThinking =
-			config.modelThinkingDefaults[modelKey(entry.id)] ??
-			(config.globalThinkingLevel ? clampThinkingLevelForModel(entry, config.globalThinkingLevel) : undefined);
+		const defaultThinking = config.modelThinkingDefaults[modelKey(entry.id)];
 		const hints =
 			levels
 				.filter((level) => level !== "off")
@@ -398,11 +423,16 @@ export function resolveLiteLlmConfig(): ResolvedLiteLlmConfig | null {
 	}
 
 	const providerApi = parseApi(process.env.LITELLM_API, "openai-completions");
-	const providerCompat = parseCompat();
+	// Provider-wide compat is now a fixed conservative baseline; per-model
+	// `compat` in the models file is the only override.
+	const providerCompat: Record<string, unknown> = { ...conservativeOpenAiCompat };
 	const modelEntries = parseModels(providerCompat);
 	const models = modelEntries.map((entry) => entry.model);
 	if (models.length === 0) {
-		console.warn(`${LOG_PREFIX} LITELLM_BASE_URL is set but no models were provided`);
+		console.warn(
+			`${LOG_PREFIX} LITELLM_BASE_URL is set but no models were provided; ` +
+				`set LITELLM_MODELS_PATH to a JSON file listing the models this deployment serves`,
+		);
 		cachedConfig = null;
 		return cachedConfig;
 	}
@@ -411,10 +441,9 @@ export function resolveLiteLlmConfig(): ResolvedLiteLlmConfig | null {
 	const defaultEntry = modelEntries.find((entry) => entry.model.id === defaultModelId);
 	const defaultModel = defaultEntry?.model;
 	if (!defaultModel) {
-		throw new Error(`LITELLM_DEFAULT_MODEL ${defaultModelId} is not present in LITELLM_MODELS/LITELLM_MODELS_JSON`);
+		throw new Error(`LITELLM_DEFAULT_MODEL ${defaultModelId} is not present in the LITELLM_MODELS_PATH file`);
 	}
 
-	const globalThinkingLevel = defaultThinkingLevel();
 	const modelThinkingDefaults = Object.fromEntries(
 		modelEntries
 			.filter((entry): entry is NormalisedLiteLlmModel & { defaultThinkingLevel: ThinkingLevel } =>
@@ -430,10 +459,7 @@ export function resolveLiteLlmConfig(): ResolvedLiteLlmConfig | null {
 		models,
 		defaultModelId,
 		defaultModel,
-		globalThinkingLevel,
-		thinkingLevel:
-			defaultEntry.defaultThinkingLevel ??
-			(globalThinkingLevel ? clampThinkingLevelForModel(defaultModel, globalThinkingLevel) : undefined),
+		thinkingLevel: defaultEntry.defaultThinkingLevel,
 		modelThinkingDefaults,
 	};
 	return cachedConfig;
@@ -473,7 +499,7 @@ export function litellmRuntimeConfig(): Partial<ProjectRuntimeConfig> {
 		},
 		defaultModelProvider: "litellm",
 		defaultModelId: config.defaultModelId,
-		defaultThinkingLevel: config.globalThinkingLevel,
+		defaultThinkingLevel: config.thinkingLevel,
 		modelThinkingDefaults: config.modelThinkingDefaults,
 	};
 }
