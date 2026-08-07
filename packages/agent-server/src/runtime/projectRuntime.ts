@@ -159,6 +159,12 @@ export type ProjectRuntimeConfig = {
 	 */
 	deployment?: Deployment;
 	/**
+	 * The project's canonical id (its registry key and working-dir name). Stated
+	 * in the generated prompt section as the `appx.project` label value the agent
+	 * must stamp on every resource it creates, so project deletion can reap them.
+	 */
+	projectId?: string;
+	/**
 	 * Container runtime the deploy skill + prompt reference (default `"podman"`).
 	 * Env config, never hardcoded, so Stage 1 host dev (docker) and the nested
 	 * outer container (podman) share one skill.
@@ -232,7 +238,11 @@ export class ProjectRuntime {
 
 		// Append the generated Deployment section after .pi/AGENTS.md (never
 		// replacing it) when the project carries control-plane metadata.
-		const deploymentSection = buildDeploymentPromptSection(config.deployment, config.appContainerRuntime ?? "podman");
+		const deploymentSection = buildDeploymentPromptSection(
+			config.deployment,
+			config.appContainerRuntime ?? "podman",
+			config.projectId,
+		);
 		const systemPrompt = composeSystemPrompt(agentsPrompt, deploymentSection);
 
 		// Caller may share an AuthStorage across projects; otherwise build a

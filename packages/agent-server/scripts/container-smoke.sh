@@ -203,6 +203,51 @@ check "podman start --all resurrects the inner apps" outer_exec podman start --a
 check "host curl DEV reachable after restart+recovery" curl_app "$DEV_PORT"
 check "host curl PROD reachable after restart+recovery" curl_app "$PROD_PORT"
 
+# ── 9. delete reaps the app containers and frees the ports ───────────────────
+# The bug this guards (issue #10): DELETE removed metadata + working dir but left
+# the containers running with their ports bound. Because the control plane
+# gap-fills freed ports, the next project could be handed a port an orphan still
+# held. Deliberately placed AFTER the restart step, so the containers being
+# reaped are ones that survived a restart — the durable-orphan case.
+#
+# The containers here were started WITHOUT the appx.project label (step 5 runs
+# the raw commands, not the labelled skill), so this also exercises the
+# name-convention fallback.
+
+echo "[9] DELETE /v1/projects reaps the app containers + frees the ports"
+check "DELETE /v1/projects/${PROJECT} succeeds" api DELETE "/v1/projects/${PROJECT}"
+
+check "no ${PROJECT} containers remain (podman ps -a)" \
+	bash -c "! docker exec $NAME podman ps -a --format '{{.Names}}' | grep -q '^${PROJECT}-app-'"
+
+# The ports must be genuinely free, not merely unanswered: curl has to be
+# *refused*, which is what a later project's deploy needs in order to bind.
+check "DEV port ${DEV_PORT} refuses connections" \
+	bash -c "! curl -fsS --max-time 5 http://127.0.0.1:${DEV_PORT}/ > /dev/null 2>&1"
+check "PROD port ${PROD_PORT} refuses connections" \
+	bash -c "! curl -fsS --max-time 5 http://127.0.0.1:${PROD_PORT}/ > /dev/null 2>&1"
+
+check "project metadata + working dir are gone" \
+	bash -c "! curl -fsS -H 'Authorization: Bearer ${TOKEN}' http://127.0.0.1:4001/v1/projects | grep -q ${PROJECT} \
+	         && ! docker exec $NAME test -d /workspace/${PROJECT}"
+
+# A second project can now take the freed DEV port — the failure mode the orphan
+# caused, reproduced positively.
+check "a new project can bind the freed DEV port" \
+	api POST /v1/projects \
+	"{\"name\":\"reuse-app\",\"deployment\":{\"dev\":{\"port\":${DEV_PORT}}}}"
+# Reuses smoke-app's image: it was built by the raw commands in step 5, so it
+# carries no label and the delete above left it in the store.
+check "run a container on the reclaimed port" \
+	outer_exec podman run -d --name reuse-app-app-dev \
+	--label appx.project=reuse-app -p "${DEV_PORT}:${APP_PORT}" "${PROJECT}-app:prod"
+check "host curl reaches the new app on the reclaimed port" curl_app "$DEV_PORT"
+
+# And the labelled path reaps too (this container carries appx.project).
+check "DELETE reuse-app reaps its labelled container" api DELETE /v1/projects/reuse-app
+check "no reuse-app containers remain" \
+	bash -c "! docker exec $NAME podman ps -a --format '{{.Names}}' | grep -q '^reuse-app-'"
+
 # ── summary ──────────────────────────────────────────────────────────────────
 
 echo

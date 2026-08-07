@@ -3189,7 +3189,7 @@
         "tags": [
           "projects"
         ],
-        "summary": "Remove a project: evict runtime, drop metadata, delete working dir + transcripts.",
+        "summary": "Remove a project: reap its app containers/networks/volumes/images, evict runtime, drop metadata, delete working dir + transcripts.",
         "parameters": [
           {
             "schema": {

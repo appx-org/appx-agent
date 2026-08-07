@@ -205,7 +205,7 @@ export interface paths {
         get: operations["getProject"];
         put?: never;
         post?: never;
-        /** Remove a project: evict runtime, drop metadata, delete working dir + transcripts. */
+        /** Remove a project: reap its app containers/networks/volumes/images, evict runtime, drop metadata, delete working dir + transcripts. */
         delete: operations["deleteProject"];
         options?: never;
         head?: never;
