@@ -6,11 +6,12 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { describe, test } from "node:test";
 import { ProjectRegistry } from "../src/runtime/projectRegistry.js";
 import { ProjectStore } from "../src/runtime/projectStore.js";
 import { isValidProjectSlug, RESERVED_PROJECT_SLUGS, slugify, withCollisionSuffix } from "../src/utils/slug.js";
+import { callStartingWith, makeStubRuntime } from "./stubRuntime.js";
 
 const silentLogger = { log: () => {}, error: () => {} };
 
@@ -206,16 +207,117 @@ describe("ProjectRegistry lifecycle", () => {
 			await registry.getRuntime(project.id); // materialise sessions dir
 			writeFileSync(join(project.projectDir, "marker.txt"), "x");
 
-			assert.equal(registry.removeProject(project.id), true);
+			assert.equal(await registry.removeProject(project.id), true);
 			assert.equal(registry.getProject(project.id), null);
 			assert.equal(existsSync(project.projectDir), false);
 			assert.equal(existsSync(join(ws.dir, ".pi-global", "sessions", project.id)), false);
 			// Removing an unknown project is a no-op false.
-			assert.equal(registry.removeProject("nope"), false);
+			assert.equal(await registry.removeProject("nope"), false);
 
 			// Persisted registry reflects the removal.
 			const registryFile = readFileSync(join(ws.dir, ".pi-global", "projects.json"), "utf8");
 			assert.equal(registryFile.includes("ephemeral"), false);
+		} finally {
+			ws.cleanup();
+		}
+	});
+
+	test("removeProject reaps the app containers the agent deployed", async () => {
+		// Regression guard for issue #10: deleting a project used to leave its
+		// containers running with their published ports still bound, and the
+		// control plane hands those ports to the next project.
+		const ws = makeWorkspace();
+		const stub = makeStubRuntime({ responses: { "ps -aq*": "deadbeef\n" } });
+		try {
+			const registry = await ProjectRegistry.create({
+				workspaceDir: ws.dir,
+				appContainerRuntime: stub.path,
+				logger: silentLogger,
+			});
+			const project = registry.createProject({ name: "deployed" });
+
+			assert.equal(await registry.removeProject(project.id), true);
+
+			const removal = callStartingWith(stub.calls(), "rm");
+			assert.ok(removal, "the runtime was asked to remove the project's containers");
+			assert.ok(removal.includes("deadbeef"));
+		} finally {
+			stub.cleanup();
+			ws.cleanup();
+		}
+	});
+
+	test("removeProject reaps containers before deleting the working dir", async () => {
+		// A container may hold a bind mount into the working dir, so the reap has
+		// to happen while that dir still exists. The stub records the dir's
+		// existence at the moment it is invoked.
+		const ws = makeWorkspace();
+		const probe = join(ws.dir, "dir-existed-at-reap");
+		const stub = makeStubRuntime({
+			responses: { "ps -aq*": "deadbeef\n" },
+			// The stub's cwd is inherited from the test process, so reference the
+			// project dir by absolute path.
+			probeScript: `[ -d ${JSON.stringify(join(ws.dir, "ordered"))} ] && touch ${JSON.stringify(probe)}`,
+		});
+		try {
+			const registry = await ProjectRegistry.create({
+				workspaceDir: ws.dir,
+				appContainerRuntime: stub.path,
+				logger: silentLogger,
+			});
+			const project = registry.createProject({ name: "ordered" });
+
+			await registry.removeProject(project.id);
+
+			assert.equal(existsSync(probe), true, "working dir still present when the runtime ran");
+			assert.equal(existsSync(project.projectDir), false, "working dir deleted afterwards");
+		} finally {
+			stub.cleanup();
+			ws.cleanup();
+		}
+	});
+
+	test("a container-runtime failure still removes the project", async () => {
+		// Leaving a project undeletable is worse than leaking a container, so the
+		// failure is logged and the delete proceeds.
+		const ws = makeWorkspace();
+		const stub = makeStubRuntime({
+			responses: { "ps -aq*": "deadbeef\n" },
+			exitCodes: { "rm -f*": 1 },
+		});
+		const errors: string[] = [];
+		try {
+			const registry = await ProjectRegistry.create({
+				workspaceDir: ws.dir,
+				appContainerRuntime: stub.path,
+				logger: { log: () => {}, error: (message: string) => errors.push(message) },
+			});
+			const project = registry.createProject({ name: "stubborn" });
+
+			assert.equal(await registry.removeProject(project.id), true, "delete still succeeds");
+			assert.equal(registry.getProject(project.id), null, "metadata still dropped");
+			assert.equal(existsSync(project.projectDir), false, "working dir still deleted");
+			assert.ok(
+				errors.some((message) => /exited 1/.test(message)),
+				"the failure is visible in the log",
+			);
+		} finally {
+			stub.cleanup();
+			ws.cleanup();
+		}
+	});
+
+	test("the project id is always the working dir's basename", async () => {
+		// The deploy-app skill derives the label value from this invariant, and the
+		// reaper matches on it. If the workspace layout ever stops deriving the dir
+		// name from the id, labelling and reaping silently stop agreeing.
+		const ws = makeWorkspace();
+		try {
+			const registry = await ProjectRegistry.create({ workspaceDir: ws.dir, logger: silentLogger });
+			for (const name of ["My Cool App", "eventx", "Café Münchén"]) {
+				const project = registry.createProject({ name });
+				assert.equal(basename(project.projectDir), project.id);
+			}
 		} finally {
 			ws.cleanup();
 		}
@@ -244,8 +346,9 @@ describe("ProjectRegistry deployment metadata", () => {
 
 			const file = deploymentFile(created.projectDir);
 			assert.ok(existsSync(file), ".pi/deployment.json materialised");
-			// Pretty-printed, stable key order (dev before prod, port before url).
-			assert.equal(readFileSync(file, "utf8"), `${JSON.stringify(deployment, null, 2)}\n`);
+			// Pretty-printed, stable key order (project, then dev before prod, port
+			// before url).
+			assert.equal(readFileSync(file, "utf8"), `${JSON.stringify({ project: "eventx", ...deployment }, null, 2)}\n`);
 
 			// Survives a fresh registry (rehydrated from projects.json).
 			const reopened = await ProjectRegistry.create({ workspaceDir: ws.dir, logger: silentLogger });
@@ -272,20 +375,43 @@ describe("ProjectRegistry deployment metadata", () => {
 			assert.equal(registry.listProjects().length, 1);
 			assert.equal(
 				readFileSync(deploymentFile(again.projectDir), "utf8"),
-				`${JSON.stringify(updatedDeployment, null, 2)}\n`,
+				`${JSON.stringify({ project: "eventx", ...updatedDeployment }, null, 2)}\n`,
 			);
 		} finally {
 			ws.cleanup();
 		}
 	});
 
-	test("absent metadata writes no deployment.json", async () => {
+	test("deployment.json carries the canonical project id", async () => {
+		// The deploy-app skill reads this to label everything it creates, and the
+		// reaper matches on the same string (issue #10). Shell-extracted from the
+		// file rather than transcribed by the model, so it cannot drift.
+		const ws = makeWorkspace();
+		try {
+			const registry = await ProjectRegistry.create({ workspaceDir: ws.dir, logger: silentLogger });
+			const created = registry.createProject({ name: "My Cool App", deployment });
+
+			const parsed = JSON.parse(readFileSync(deploymentFile(created.projectDir), "utf8"));
+			assert.equal(parsed.project, created.id);
+			assert.deepEqual(parsed.dev, deployment.dev);
+		} finally {
+			ws.cleanup();
+		}
+	});
+
+	test("absent deployment metadata still writes deployment.json with the project id", async () => {
+		// A project without ports can still be deployed if the user asks, and
+		// whatever it creates has to be reapable — so the id is always available.
 		const ws = makeWorkspace();
 		try {
 			const registry = await ProjectRegistry.create({ workspaceDir: ws.dir, logger: silentLogger });
 			const created = registry.createProject({ name: "plain" });
 			assert.equal(created.deployment, undefined);
-			assert.equal(existsSync(deploymentFile(created.projectDir)), false);
+
+			const parsed = JSON.parse(readFileSync(deploymentFile(created.projectDir), "utf8"));
+			assert.equal(parsed.project, "plain");
+			assert.equal(parsed.dev, undefined);
+			assert.equal(parsed.prod, undefined);
 		} finally {
 			ws.cleanup();
 		}

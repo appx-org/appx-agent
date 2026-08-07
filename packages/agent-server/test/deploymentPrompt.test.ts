@@ -7,6 +7,25 @@ import { describe, test } from "node:test";
 import { buildDeploymentJson, buildDeploymentPromptSection, isDeploymentEmpty } from "../src/runtime/deployment.js";
 
 describe("buildDeploymentPromptSection", () => {
+	test("states the canonical project id as the resource label value", () => {
+		// The agent stamps this label on everything it creates and the server reaps
+		// by it on delete, so the two must agree on one exact string (issue #10).
+		const section = buildDeploymentPromptSection({ dev: { port: 10006 } }, "podman", "my-cool-app");
+		assert.ok(section);
+		assert.match(section, /my-cool-app/);
+		assert.match(section, /appx\.project/);
+	});
+
+	test("emits the project id even when there is no deployment metadata", () => {
+		// A project created without ports still deploys (the agent can be told to),
+		// and whatever it creates must still be reapable.
+		const section = buildDeploymentPromptSection(undefined, "podman", "bare-project");
+		assert.ok(section, "a section is produced for the id alone");
+		assert.match(section, /bare-project/);
+		assert.doesNotMatch(section, /- DEV/);
+		assert.doesNotMatch(section, /- PROD/);
+	});
+
 	test("renders both dev and prod when present", () => {
 		const section = buildDeploymentPromptSection(
 			{
@@ -14,6 +33,7 @@ describe("buildDeploymentPromptSection", () => {
 				prod: { port: 10007, url: "https://eventx.example.com" },
 			},
 			"podman",
+			"eventx",
 		);
 		assert.ok(section);
 		assert.match(section, /## Deployment/);
@@ -25,7 +45,7 @@ describe("buildDeploymentPromptSection", () => {
 	});
 
 	test("dev-only metadata omits the PROD line", () => {
-		const section = buildDeploymentPromptSection({ dev: { port: 10006, url: "https://d.example" } }, "docker");
+		const section = buildDeploymentPromptSection({ dev: { port: 10006, url: "https://d.example" } }, "docker", "d");
 		assert.ok(section);
 		assert.match(section, /- DEV/);
 		assert.doesNotMatch(section, /- PROD/);
@@ -33,7 +53,7 @@ describe("buildDeploymentPromptSection", () => {
 	});
 
 	test("prod-only metadata omits the DEV line", () => {
-		const section = buildDeploymentPromptSection({ prod: { port: 10007 } }, "podman");
+		const section = buildDeploymentPromptSection({ prod: { port: 10007 } }, "podman", "p");
 		assert.ok(section);
 		assert.match(section, /PROD/);
 		assert.doesNotMatch(section, /- DEV/);
@@ -41,10 +61,11 @@ describe("buildDeploymentPromptSection", () => {
 		assert.match(section, /host port 10007/);
 	});
 
-	test("absent / empty metadata yields no section", () => {
-		assert.equal(buildDeploymentPromptSection(undefined, "podman"), undefined);
-		assert.equal(buildDeploymentPromptSection({}, "podman"), undefined);
-		assert.equal(buildDeploymentPromptSection({ dev: {}, prod: {} }, "podman"), undefined);
+	test("no metadata and no project id yields no section", () => {
+		// Nothing to say at all — callers skip injection entirely.
+		assert.equal(buildDeploymentPromptSection(undefined, "podman", undefined), undefined);
+		assert.equal(buildDeploymentPromptSection({}, "podman", undefined), undefined);
+		assert.equal(buildDeploymentPromptSection({ dev: {}, prod: {} }, "podman", undefined), undefined);
 	});
 });
 

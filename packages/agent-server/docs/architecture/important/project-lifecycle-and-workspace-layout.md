@@ -81,7 +81,7 @@ Mounted under `/v1`:
 | `POST` | `/v1/projects` | Create-or-get a project. Body `{ "name": string }`. Returns `{ id, name, projectDir, createdAt }`. Idempotent on the derived slug. |
 | `GET` | `/v1/projects` | List registered projects. |
 | `GET` | `/v1/projects/{id}` | Get one project's metadata. 404 if unknown. |
-| `DELETE` | `/v1/projects/{id}` | Evict the runtime, drop the metadata entry, and remove `WORKSPACE_DIR/{id}/` + `.pi-global/sessions/{id}/`. |
+| `DELETE` | `/v1/projects/{id}` | Reap the app resources the agent deployed (containers, networks, volumes, images carrying `appx.project={id}`), evict the runtime, drop the metadata entry, and remove `WORKSPACE_DIR/{id}/` + `.pi-global/sessions/{id}/`. |
 | `*` | `/v1/projects/{id}/sessions...` | Session routes. Resolve the runtime by path `id` via a **pure lookup**; `404 project not registered` if the project was never created. No more `x-appx-*` headers, no lazy creation. |
 
 ## Persistence & containers

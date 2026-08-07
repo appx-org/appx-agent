@@ -3,7 +3,8 @@ import { join, relative, resolve, sep } from "node:path";
 import { AuthStorage, ModelRegistry, type ModelRegistry as ModelRegistryType } from "@earendil-works/pi-coding-agent";
 import { AgentCredentialsService } from "../credentials/credentialsService.js";
 import { isValidProjectSlug, slugify, withCollisionSuffix } from "../utils/slug.js";
-import { buildDeploymentJson, type Deployment, isDeploymentEmpty } from "./deployment.js";
+import { DEFAULT_APP_CONTAINER_RUNTIME, reapProjectResources } from "./appContainers.js";
+import { buildDeploymentJson, type Deployment } from "./deployment.js";
 import { ProjectRuntime, type ProjectRuntimeConfig } from "./projectRuntime.js";
 import { type ProjectRecord, ProjectStore } from "./projectStore.js";
 
@@ -36,12 +37,13 @@ export type ProjectInfo = ProjectRecord & {
  * the shared Pi resource/runtime options (extensions, skills, model defaults).
  *
  * Shared services (authStorage / modelRegistry / credentials) are owned and
- * injected by the registry, so they are omitted here. `sessionsDir` and
- * `projectDir` are owned by the workspace convention and likewise omitted.
+ * injected by the registry, so they are omitted here. `sessionsDir`,
+ * `projectDir` and `projectId` are owned by the workspace convention and
+ * likewise omitted.
  */
 export type ProjectRegistryConfig = Omit<
 	ProjectRuntimeConfig,
-	"authStorage" | "modelRegistry" | "credentials" | "projectDir" | "sessionsDir" | "deployment"
+	"authStorage" | "modelRegistry" | "credentials" | "projectDir" | "projectId" | "sessionsDir" | "deployment"
 > & {
 	/** Absolute root holding every project dir plus `.pi-global/`. Must exist. */
 	workspaceDir: string;
@@ -226,7 +228,7 @@ export class ProjectRegistry {
 			createdAt: new Date().toISOString(),
 			...(deployment ? { deployment } : {}),
 		});
-		this.materialiseDeployment(projectDir, deployment);
+		this.materialiseDeployment(projectDir, id, deployment);
 		this.config.logger?.log(`[agent-server] created project id=${id} dir=${projectDir}`);
 		return this.toInfo(record);
 	}
@@ -234,23 +236,23 @@ export class ProjectRegistry {
 	/** Idempotent same-name re-POST: refresh deployment metadata + file, then return. */
 	private updateDeployment(existing: ProjectRecord, deployment?: Deployment): ProjectInfo {
 		const updated = this.store.setDeployment(existing.id, deployment) ?? existing;
-		this.materialiseDeployment(this.projectDir(existing.id), deployment);
+		this.materialiseDeployment(this.projectDir(existing.id), existing.id, deployment);
 		return this.toInfo(updated);
 	}
 
 	/**
-	 * Write (or remove) `<projectDir>/.pi/deployment.json`. Present metadata is
-	 * written pretty-printed with a stable key order; absent/empty metadata leaves
-	 * no file behind (and clears a stale one on a re-POST that drops it).
+	 * Write `<projectDir>/.pi/deployment.json`, pretty-printed with a stable key
+	 * order.
+	 *
+	 * Always written, even with no deployment metadata, because the file also
+	 * carries the canonical project id the deploy-app skill needs to label the
+	 * resources it creates — a project with no allocated ports can still be
+	 * deployed, and whatever it creates must stay reapable (issue #10).
 	 */
-	private materialiseDeployment(projectDir: string, deployment?: Deployment): void {
+	private materialiseDeployment(projectDir: string, id: string, deployment?: Deployment): void {
 		const filePath = join(projectDir, PROJECT_PI_DIR, DEPLOYMENT_FILE_NAME);
-		if (isDeploymentEmpty(deployment)) {
-			rmSync(filePath, { force: true });
-			return;
-		}
 		mkdirSync(join(projectDir, PROJECT_PI_DIR), { recursive: true });
-		writeFileSync(filePath, buildDeploymentJson(deployment as Deployment), { mode: 0o644 });
+		writeFileSync(filePath, buildDeploymentJson(deployment, id), { mode: 0o644 });
 	}
 
 	/**
@@ -303,6 +305,9 @@ export class ProjectRegistry {
 		const runtime = await ProjectRuntime.create({
 			...this.config,
 			projectDir,
+			// The canonical id: stated in the prompt as the resource label value, so
+			// the agent and the reaper agree on one exact string.
+			projectId: id,
 			// Per-project deployment metadata drives the injected prompt section.
 			deployment: record.deployment,
 			// Centralise transcripts under .pi-global/sessions/{id} so the project's
@@ -322,13 +327,26 @@ export class ProjectRegistry {
 	}
 
 	/**
-	 * Remove a project: evict the cached runtime, drop the metadata record, and
-	 * delete both on-disk locations — the working dir `WORKSPACE_DIR/{id}/` and
-	 * the centralised transcripts `.pi-global/sessions/{id}/`. Returns false if
-	 * the project was unknown.
+	 * Remove a project: reap the runtime resources the agent deployed, evict the
+	 * cached runtime, drop the metadata record, and delete both on-disk locations
+	 * — the working dir `WORKSPACE_DIR/{id}/` and the centralised transcripts
+	 * `.pi-global/sessions/{id}/`. Returns false if the project was unknown.
+	 *
+	 * Async because reaping shells out to the container runtime, and `rm -f` on a
+	 * running container sends SIGTERM and waits for it to exit — doing that
+	 * synchronously would stall every other in-flight request.
+	 *
+	 * Container reaping comes first: a container may hold a bind mount into the
+	 * working dir this method is about to delete. Its failures are logged, never
+	 * thrown — an undeletable project is worse than a leaked container.
 	 */
-	removeProject(id: string): boolean {
+	async removeProject(id: string): Promise<boolean> {
 		if (!this.store.has(id)) return false;
+		await reapProjectResources({
+			runtime: this.config.appContainerRuntime ?? DEFAULT_APP_CONTAINER_RUNTIME,
+			projectId: id,
+			logger: this.config.logger ?? console,
+		});
 		this.runtimes.delete(id);
 		this.store.remove(id);
 		rmSync(this.projectDir(id), { recursive: true, force: true });

@@ -5,7 +5,7 @@
  *   POST   /projects          create-or-get a project (idempotent on name)
  *   GET    /projects          list registered projects
  *   GET    /projects/{id}     get one project's metadata
- *   DELETE /projects/{id}     remove a project (runtime + metadata + on-disk dirs)
+ *   DELETE /projects/{id}     remove a project (app resources + runtime + metadata + on-disk dirs)
  *
  * These replace the old header-driven, lazily-created project model: a project
  * is now an explicit, persisted resource owned by the ProjectRegistry. Session
@@ -122,7 +122,8 @@ export function createProjectsApp(registry: ProjectRegistry): OpenAPIHono {
 			path: "/projects/{id}",
 			operationId: "deleteProject",
 			tags: ["projects"],
-			summary: "Remove a project: evict runtime, drop metadata, delete working dir + transcripts.",
+			summary:
+				"Remove a project: reap its app containers/networks/volumes/images, evict runtime, drop metadata, delete working dir + transcripts.",
 			request: { params: ProjectIdParamSchema },
 			responses: {
 				200: {
@@ -135,9 +136,9 @@ export function createProjectsApp(registry: ProjectRegistry): OpenAPIHono {
 				},
 			},
 		}),
-		(c) => {
+		async (c) => {
 			const { id } = c.req.valid("param");
-			const removed = registry.removeProject(id);
+			const removed = await registry.removeProject(id);
 			if (!removed) return c.json({ error: "project not found" }, 404);
 			return c.json({ ok: true } as const, 200);
 		},

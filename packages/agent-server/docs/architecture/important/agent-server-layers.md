@@ -137,9 +137,19 @@ POST /v1/projects { name: "My App" }
 - **Boot reconciliation.** On startup the registry rehydrates the project list
   from `projects.json`. Runtimes are still built lazily, so rehydration is cheap
   (no filesystem walks until a project is actually used).
-- **`DELETE /v1/projects/{id}`** evicts the cached runtime, drops the metadata
-  record, and removes both on-disk locations — the working dir
-  `WORKSPACE_DIR/{id}/` and the transcripts `.pi-global/sessions/{id}/`.
+- **`DELETE /v1/projects/{id}`** reaps the app resources the *agent* deployed,
+  evicts the cached runtime, drops the metadata record, and removes both on-disk
+  locations — the working dir `WORKSPACE_DIR/{id}/` and the transcripts
+  `.pi-global/sessions/{id}/`.
+
+  Reaping exists because the deploy-app skill creates containers by shelling out
+  to `$APP_CONTAINER_RUNTIME`, so no server code knows they exist. They are found
+  by the `appx.project={id}` label the skill stamps on everything it creates (with
+  a fallback to the `{id}-app-{dev,prod}` naming convention, for containers that
+  predate the label or whose label the agent omitted), then removed in dependency
+  order: containers → networks → volumes → images. Failures are logged and the
+  delete proceeds — an undeletable project is worse than a leaked container. See
+  `src/runtime/appContainers.ts`.
 
 ## How a session request reaches a Runtime
 

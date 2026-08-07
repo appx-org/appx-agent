@@ -18,6 +18,12 @@ never hardcode `podman` or `docker`.
 
 - **dev = prod.** One Dockerfile, one build target, **no `--target`**. DEV and
   PROD differ only by image tag, container name, and host port.
+- **Label everything you create.** Every container, image, network and volume
+  gets `--label appx.project="$PROJECT"`. Deleting the project reaps resources by
+  this label; anything unlabelled survives the delete, keeps its published port
+  bound, and breaks the next project that is allocated that port.
+- **Use networks, not pods.** `pod create` is podman-only and a pod outlives the
+  containers in it, so it cannot be reaped.
 - **The app listens on a container port** (a template detail, e.g. `8080`) that
   is **not** the reserved host port. Always map `-p <reservedHostPort>:<containerPort>`.
 - **Never pass secrets into app containers.** Do not forward `ANTHROPIC_API_KEY`,
@@ -37,6 +43,7 @@ It looks like:
 
 ```json
 {
+  "project": "eventx",
   "dev":  { "port": 10006, "url": "https://eventx-dev.example.com" },
   "prod": { "port": 10007, "url": "https://eventx.example.com" }
 }
@@ -46,15 +53,23 @@ Use `dev.port`/`dev.url` for DEV and `prod.port`/`prod.url` for PROD. Find the
 container port the app listens on in the project's Dockerfile (`EXPOSE` / the
 server's bind port).
 
+`project` is this project's canonical id — the value every label must carry.
+Read it out once and reuse it; never retype or guess it:
+
+```bash
+PROJECT=$(node -p "require('./.pi/deployment.json').project")
+```
+
 ## 2. Deploy / redeploy DEV (the iterate loop)
 
 Rebuild the image and replace the DEV container. This is idempotent — stop and
 remove any existing instance first so containers never accumulate.
 
 ```bash
-$APP_CONTAINER_RUNTIME build -t <project>-app:dev .
+$APP_CONTAINER_RUNTIME build --label appx.project="$PROJECT" -t <project>-app:dev .
 $APP_CONTAINER_RUNTIME rm -f <project>-app-dev 2>/dev/null || true
 $APP_CONTAINER_RUNTIME run -d --name <project>-app-dev \
+  --label appx.project="$PROJECT" \
   -p <devPort>:<containerPort> <project>-app:dev
 ```
 
@@ -67,9 +82,10 @@ When the user is happy with DEV, rebuild PROD from the current source so it
 matches what they approved:
 
 ```bash
-$APP_CONTAINER_RUNTIME build -t <project>-app:prod .
+$APP_CONTAINER_RUNTIME build --label appx.project="$PROJECT" -t <project>-app:prod .
 $APP_CONTAINER_RUNTIME rm -f <project>-app-prod 2>/dev/null || true
 $APP_CONTAINER_RUNTIME run -d --name <project>-app-prod \
+  --label appx.project="$PROJECT" \
   -p <prodPort>:<containerPort> <project>-app:prod
 ```
 
@@ -91,7 +107,17 @@ Then report the relevant **public URL** (`dev.url` after a DEV deploy,
 ## Multi-container apps (db, cache, etc.)
 
 If the app needs a database or other service, run them as sibling containers
-named `<project>-db` etc. on a shared `<project>` network
-(`$APP_CONTAINER_RUNTIME network create <project>`). **Only the app container
-publishes the reserved host port(s);** inter-container traffic stays on the
-network. Secrets for those services are app config, never LLM keys.
+named `<project>-db` etc. on a shared `<project>` network. **Only the app
+container publishes the reserved host port(s);** inter-container traffic stays on
+the network. Secrets for those services are app config, never LLM keys.
+
+Label the network and any named volume as well, so they are reaped with the
+project:
+
+```bash
+$APP_CONTAINER_RUNTIME network create --label appx.project="$PROJECT" <project>
+$APP_CONTAINER_RUNTIME volume create --label appx.project="$PROJECT" <project>-db-data
+$APP_CONTAINER_RUNTIME run -d --name <project>-db \
+  --label appx.project="$PROJECT" \
+  --network <project> -v <project>-db-data:/var/lib/postgresql/data <image>
+```
