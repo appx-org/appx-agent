@@ -25,15 +25,15 @@ never hardcode `podman` or `docker`.
 - **Use networks, not pods.** `pod create` is podman-only and a pod outlives the
   containers in it, so it cannot be reaped.
 - **The app listens on a container port** (a template detail, e.g. `8080`) that
-  is **not** the reserved host port. Always map `-p <reservedHostPort>:<containerPort>`.
+  is **not** the reserved host port.
+- **Publish it as exactly two numbers:** `-p <reservedHostPort>:<containerPort>`,
+  so the port is reachable on every interface of this container. The control plane
+  restricts it to loopback on the host, which is what keeps it private.
+- **Give each app container its own network** (`--network <project>`), or the
+  default one.
 - **Never pass secrets into app containers.** Do not forward `ANTHROPIC_API_KEY`,
   `OPENAI_API_KEY`, or any `*_API_KEY` into `run` with `-e`. The app does not
   need LLM credentials.
-- **Publish with a bare `-p <hostPort>:<containerPort>` — never prefix it with an
-  address.** `-p 127.0.0.1:<hostPort>:...` binds this container's own loopback and
-  makes the app unreachable. The control plane already restricts the port to
-  loopback on the host, so a bare `-p` exposes nothing.
-- **Never use `--network=host`.**
 - **Use fully-qualified image refs** in Dockerfiles (`docker.io/library/...`).
 
 ## 1. Read the deployment metadata
@@ -94,9 +94,9 @@ $APP_CONTAINER_RUNTIME run -d --name <project>-app-prod \
 
 ## 4. Health-check before declaring success
 
-Do not tell the user the app is live until both checks pass. A `curl` alone is not
-enough: it succeeds even when the publish is bound to loopback, which real users
-cannot reach.
+Tell the user the app is live once it responds **and** the publish covers every
+interface. Both matter: a response alone can come back from a port only this
+container can reach.
 
 ```bash
 for i in $(seq 1 10); do
@@ -105,13 +105,14 @@ for i in $(seq 1 10); do
 done
 curl -fsS "127.0.0.1:<port>" >/dev/null || { echo "FAILED: app not responding"; exit 1; }
 
-$APP_CONTAINER_RUNTIME port <project>-app-dev | grep -q '127\.0\.0\.1' \
-  && echo "FAILED: published on 127.0.0.1 — re-run with a bare -p <hostPort>:<containerPort>" \
-  || echo "up"
+# Expect "<containerPort>/tcp -> 0.0.0.0:<port>".
+$APP_CONTAINER_RUNTIME port <project>-app-dev | grep -q '0\.0\.0\.0:' \
+  && echo "up" \
+  || echo "FAILED: re-run the container with -p <hostPort>:<containerPort>"
 ```
 
-A failed second check needs the container removed and re-run; the binding cannot
-be changed in place.
+If the second check fails, remove the container and run it again with that exact
+`-p` form; a published binding cannot be changed in place.
 
 Then report the relevant **public URL** (`dev.url` after a DEV deploy,
 `prod.url` after a promote) — not the loopback address.
@@ -120,10 +121,9 @@ Then report the relevant **public URL** (`dev.url` after a DEV deploy,
 
 If the app needs a database or other service, run them as sibling containers
 named `<project>-db` etc. on a shared `<project>` network. **Only the app
-container publishes the reserved host port(s)** — and it publishes them with a
-bare `-p`, exactly as above. Sibling services publish nothing at all;
-inter-container traffic reaches them by container name on the shared network.
-Secrets for those services are app config, never LLM keys.
+container publishes a host port**, in the same two-number form as above; siblings
+are reached by container name over the shared network. Secrets for those services
+are app config, never LLM keys.
 
 Label the network and any named volume as well, so they are reaped with the
 project:
