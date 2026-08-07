@@ -5,6 +5,7 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
+  "fixed": [["@appx-org/agent-protocol", "@appx-org/agent-client", "@appx-org/agent-server"]],
   "privatePackages": {
     "version": true,
     "tag": false

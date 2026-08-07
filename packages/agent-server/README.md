@@ -209,12 +209,55 @@ model's supported set and returns the effective level.
 ### LiteLLM
 
 When `LITELLM_BASE_URL` is set, the server registers a Pi provider named
-`litellm`. Useful envs: `LITELLM_API_KEY`, `LITELLM_DEFAULT_MODEL`,
-`LITELLM_MODELS` (comma-separated ids), `LITELLM_MODELS_JSON` (full per-model
-config: `reasoning`, `thinkingLevelMap`, `defaultThinkingLevel`, `compat`, `api`,
-token limits), `LITELLM_DEFAULT_THINKING`, and `LITELLM_API`
-(`openai-completions` | `openai-responses` | `anthropic-messages`). Presets exist
-for `openai/gpt-5.5`, `deepseek/deepseek-v4-pro`, and `deepseek/deepseek-v4-flash`.
+`litellm`. The model list comes from **one** place — a JSON file:
+
+| Env | Purpose |
+| --- | --- |
+| `LITELLM_BASE_URL` | Proxy base URL. Unset ⇒ no `litellm` provider. |
+| `LITELLM_API_KEY` | Virtual key for the proxy. |
+| `LITELLM_MODELS_PATH` | Path to a JSON **array** of model entries. Unset ⇒ no models, so no provider. |
+| `LITELLM_DEFAULT_MODEL` | Id of the default model. Must appear in the file. Defaults to the first entry. |
+| `LITELLM_API` | Provider-wide fallback: `openai-completions` \| `openai-responses` \| `anthropic-messages`. |
+
+Each entry accepts `id` (required), `name`, `api`, `reasoning`,
+`thinkingLevelMap`, `defaultThinkingLevel`, `input`, `contextWindow`,
+`maxTokens`, `cost` and `compat`:
+
+```json
+[
+  {
+    "id": "openai/gpt-5.5",
+    "name": "GPT 5.5",
+    "reasoning": true,
+    "contextWindow": 270000,
+    "maxTokens": 128000,
+    "cost": { "input": 5, "output": 30, "cacheRead": 0.5, "cacheWrite": 0 }
+  }
+]
+```
+
+A file rather than an env var because the list is structured per-model config
+that a control plane generates from its own model catalogue — it should be
+diffable and reviewable, not a multi-kilobyte single-line env value. Costs
+default to zero, so supply real figures for a meaningful in-UI spend estimate.
+
+Presets supply the dialect for models whose quirks are known —
+`openai/gpt-5.5`, `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`
+(`thinkingLevelMap`, `defaultThinkingLevel`, `compat.thinkingFormat`). File
+entries override presets field by field, so a bare `{"id": "openai/gpt-5.5"}`
+gets the full preset.
+
+Failures are loud: an unreadable path, malformed JSON, a non-array, or an entry
+without an `id` all throw at startup. Silently registering no provider would
+present as "the agent has no models" with nothing pointing at the cause.
+
+> **Removed in 0.2.0.** `LITELLM_MODELS_JSON`, `LITELLM_MODELS`,
+> `LITELLM_CONTEXT_WINDOW`, `LITELLM_MAX_TOKENS`, `LITELLM_REASONING`,
+> `LITELLM_COMPAT_JSON` and `LITELLM_DEFAULT_THINKING` are rejected with a
+> message naming the replacement, rather than ignored. Move the same JSON array
+> into a file and set `LITELLM_MODELS_PATH`; per-model fields replace the scalar
+> defaults, and `defaultThinkingLevel` on the default entry replaces
+> `LITELLM_DEFAULT_THINKING`.
 
 The same shape can be managed at runtime via `PUT /v1/custom/providers`; records
 are written to `.pi-global/models.json` with `0600` perms and reloaded

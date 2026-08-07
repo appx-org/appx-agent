@@ -46,6 +46,30 @@ this repo and each release carries a provenance attestation.
 > whose local version isn't in the registry. Always land a changeset with a
 > change you intend to release, so the version bump is deliberate.
 
+### All three versions move together
+
+`.changeset/config.json` declares the packages as a `fixed` group, so every
+release gives all three the same version — and the agent-server image carries
+that number too (`docker.yml` tags from its manifest). A consumer pins one
+version for the whole stack, and "does the npm version match the image tag?" is
+a meaningful check.
+
+This is enforced rather than conventional because it is not what changesets does
+by default. `updateInternalDependencies` only propagates **downward**, to
+packages that depend on the changed one:
+
+```
+agent-server ──▶ agent-protocol ◀── agent-client
+```
+
+Touching `agent-protocol` cascades to both dependents, which is why releases up
+to `0.1.7` looked locked together. But `agent-server` is a **leaf** — nothing
+depends on it — so an agent-server-only changeset used to bump only
+`agent-server`, silently skewing the image tag away from the npm versions. The
+`fixed` group closes that gap; the cost is a no-op version bump for packages
+whose code did not change, which is the right trade for one number identifying
+the stack.
+
 ### The agent-server image
 
 `docker.yml` publishes `ghcr.io/appx-org/agent-server` on pushes to main that
