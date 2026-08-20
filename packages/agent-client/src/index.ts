@@ -32,6 +32,7 @@ export type {
 	AgentModel,
 	AgentOAuthFlowState,
 	AgentProject,
+	AgentProjectDeploymentStatus,
 	AgentSessionInfo,
 	AgentSessionModelSettings,
 	AssistantMessageEvent,

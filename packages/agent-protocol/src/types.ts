@@ -23,6 +23,8 @@ type Schemas = components["schemas"];
 export type ThinkingLevel = Schemas["ThinkingLevel"];
 /** A project as returned by `GET/POST /v1/projects`. */
 export type AgentProject = Schemas["ProjectInfo"];
+/** Actual DEV/PROD app-container state for a project. */
+export type AgentProjectDeploymentStatus = Schemas["ProjectDeploymentStatus"];
 /** A session row as returned by `GET /v1/projects/{id}/sessions`. */
 export type AgentSessionInfo = Schemas["SessionRow"];
 /** Non-secret model metadata from `GET /v1/sessions/models`. */

@@ -11,10 +11,136 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { PROJECT_LABEL_KEY, reapProjectResources } from "../src/runtime/appContainers.js";
+import {
+	inspectProjectDeployments,
+	PROJECT_LABEL_KEY,
+	RuntimeInspectionError,
+	reapProjectResources,
+} from "../src/runtime/appContainers.js";
 import { callStartingWith, makeStubRuntime } from "./stubRuntime.js";
 
 const silentLogger = { log: () => {}, error: () => {} };
+
+function inspectFixture({
+	id,
+	image = "sha256:image-a",
+	running = true,
+	projectId = "my-app",
+}: {
+	id: string;
+	image?: string;
+	running?: boolean;
+	projectId?: string;
+}): string {
+	return JSON.stringify([
+		{
+			Id: id,
+			Image: image,
+			Created: "2026-08-20T12:34:56.000Z",
+			Config: { Labels: { [PROJECT_LABEL_KEY]: projectId } },
+			State: { Running: running },
+		},
+	]);
+}
+
+describe("inspectProjectDeployments", () => {
+	test("reports running and stopped deployments without exposing runtime ids", async () => {
+		const stub = makeStubRuntime({
+			responses: {
+				"ps -a --format*": "my-app-app-dev\nmy-app-app-prod\n",
+				"inspect my-app-app-dev": inspectFixture({ id: "container-dev" }),
+				"inspect my-app-app-prod": inspectFixture({ id: "container-prod", running: false }),
+			},
+		});
+		try {
+			const status = await inspectProjectDeployments({
+				runtime: stub.path,
+				projectId: "my-app",
+				logger: silentLogger,
+			});
+
+			assert.equal(status.dev.running, true);
+			assert.equal(status.prod.running, false);
+			assert.equal(status.dev.deployedAt, "2026-08-20T12:34:56.000Z");
+			assert.match(status.dev.revision ?? "", /^[a-f0-9]{64}$/);
+			assert.ok(!JSON.stringify(status).includes("container-dev"));
+		} finally {
+			stub.cleanup();
+		}
+	});
+
+	test("returns an empty state when neither environment has been deployed", async () => {
+		const stub = makeStubRuntime({ responses: {} });
+		try {
+			const status = await inspectProjectDeployments({
+				runtime: stub.path,
+				projectId: "my-app",
+				logger: silentLogger,
+			});
+			assert.deepEqual(status, {
+				dev: { running: false, revision: null, deployedAt: null },
+				prod: { running: false, revision: null, deployedAt: null },
+			});
+			assert.equal(stub.calls().filter((call) => call[0] === "inspect").length, 0);
+		} finally {
+			stub.cleanup();
+		}
+	});
+
+	test("does not report an exact-name container owned by another project", async () => {
+		const stub = makeStubRuntime({
+			responses: {
+				"ps -a --format*": "my-app-app-dev\n",
+				"inspect my-app-app-dev": inspectFixture({ id: "foreign", projectId: "other-app" }),
+			},
+		});
+		try {
+			const status = await inspectProjectDeployments({
+				runtime: stub.path,
+				projectId: "my-app",
+				logger: silentLogger,
+			});
+			assert.deepEqual(status.dev, { running: false, revision: null, deployedAt: null });
+		} finally {
+			stub.cleanup();
+		}
+	});
+
+	test("changes the opaque revision when the deployed container changes", async () => {
+		const first = makeStubRuntime({
+			responses: {
+				"ps -a --format*": "my-app-app-dev\n",
+				"inspect my-app-app-dev": inspectFixture({ id: "first" }),
+			},
+		});
+		const second = makeStubRuntime({
+			responses: {
+				"ps -a --format*": "my-app-app-dev\n",
+				"inspect my-app-app-dev": inspectFixture({ id: "second" }),
+			},
+		});
+		try {
+			const a = await inspectProjectDeployments({ runtime: first.path, projectId: "my-app", logger: silentLogger });
+			const b = await inspectProjectDeployments({ runtime: second.path, projectId: "my-app", logger: silentLogger });
+			assert.notEqual(a.dev.revision, b.dev.revision);
+		} finally {
+			first.cleanup();
+			second.cleanup();
+		}
+	});
+
+	test("fails closed when the runtime cannot be inspected", async () => {
+		const stub = makeStubRuntime({ exitCodes: { "ps -a --format*": 1 } });
+		try {
+			await assert.rejects(
+				inspectProjectDeployments({ runtime: stub.path, projectId: "my-app", logger: silentLogger }),
+				RuntimeInspectionError,
+			);
+		} finally {
+			stub.cleanup();
+		}
+	});
+});
 
 describe("reapProjectResources", () => {
 	test("removes the containers carrying the project's label", async () => {

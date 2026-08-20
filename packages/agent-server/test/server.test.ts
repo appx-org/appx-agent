@@ -745,6 +745,7 @@ describe("agent-server: REST surface", () => {
 			"/v1/custom/providers/{provider}",
 			"/v1/projects",
 			"/v1/projects/{id}",
+			"/v1/projects/{id}/deployments",
 			"/v1/sessions/models",
 			"/v1/projects/{projectId}/sessions",
 			"/v1/projects/{projectId}/sessions/{id}",

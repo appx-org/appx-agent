@@ -586,6 +586,49 @@
           "name"
         ]
       },
+      "AppDeploymentStatus": {
+        "type": "object",
+        "properties": {
+          "running": {
+            "type": "boolean",
+            "description": "Whether the deployed app container is currently running."
+          },
+          "revision": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque revision that changes when the app container is replaced; null when not deployed."
+          },
+          "deployedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISO-8601 container creation time; null when not deployed or unavailable."
+          }
+        },
+        "required": [
+          "running",
+          "revision",
+          "deployedAt"
+        ]
+      },
+      "ProjectDeploymentStatus": {
+        "type": "object",
+        "properties": {
+          "dev": {
+            "$ref": "#/components/schemas/AppDeploymentStatus"
+          },
+          "prod": {
+            "$ref": "#/components/schemas/AppDeploymentStatus"
+          }
+        },
+        "required": [
+          "dev",
+          "prod"
+        ]
+      },
       "ListProjectsResponse": {
         "type": "object",
         "properties": {
@@ -3136,6 +3179,58 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListProjectsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{id}/deployments": {
+      "get": {
+        "operationId": "getProjectDeployments",
+        "tags": [
+          "projects"
+        ],
+        "summary": "Inspect the actual DEV and PROD app-container state for a project.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current app-container state. Runtime identifiers and configuration are not exposed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDeploymentStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The app container runtime could not be inspected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

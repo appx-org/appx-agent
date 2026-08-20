@@ -27,6 +27,7 @@ import type {
 	AgentModel,
 	AgentOAuthFlowState,
 	AgentProject,
+	AgentProjectDeploymentStatus,
 	AgentSessionInfo,
 	AgentSessionModelSettings,
 	ExtensionUiRequest,
@@ -163,6 +164,15 @@ export class AgentClient {
 	/** Create-or-get a project; idempotent on name. */
 	async createProject(name: string): Promise<AgentProject> {
 		return this.unwrap(await this.http.POST("/v1/projects", { body: { name } }));
+	}
+
+	/** Inspect the project's actual DEV and PROD app-container state. */
+	async getProjectDeployments(projectId: string): Promise<AgentProjectDeploymentStatus> {
+		return this.unwrap(
+			await this.http.GET("/v1/projects/{id}/deployments", {
+				params: { path: { id: projectId } },
+			}),
+		);
 	}
 
 	// --- Models -------------------------------------------------------------

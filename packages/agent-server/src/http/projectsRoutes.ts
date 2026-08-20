@@ -5,6 +5,7 @@
  *   POST   /projects          create-or-get a project (idempotent on name)
  *   GET    /projects          list registered projects
  *   GET    /projects/{id}     get one project's metadata
+ *   GET    /projects/{id}/deployments inspect actual DEV/PROD app-container state
  *   DELETE /projects/{id}     remove a project (app resources + runtime + metadata + on-disk dirs)
  *
  * These replace the old header-driven, lazily-created project model: a project
@@ -19,9 +20,11 @@ import {
 	ErrorResponseSchema,
 	ListProjectsResponseSchema,
 	OkResponseSchema,
+	ProjectDeploymentStatusSchema,
 	ProjectIdParamSchema,
 	ProjectInfoSchema,
 } from "../contract/schemas.js";
+import { RuntimeInspectionError } from "../runtime/appContainers.js";
 import { InvalidProjectNameError, type ProjectRegistry } from "../runtime/projectRegistry.js";
 
 /**
@@ -63,6 +66,45 @@ export function createProjectsApp(registry: ProjectRegistry): OpenAPIHono {
 			} catch (err) {
 				if (err instanceof InvalidProjectNameError) {
 					return c.json({ error: err.message }, 400);
+				}
+				throw err;
+			}
+		},
+	);
+
+	// ── GET /projects/{id}/deployments ──────────────────────────────
+	app.openapi(
+		createRoute({
+			method: "get",
+			path: "/projects/{id}/deployments",
+			operationId: "getProjectDeployments",
+			tags: ["projects"],
+			summary: "Inspect the actual DEV and PROD app-container state for a project.",
+			request: { params: ProjectIdParamSchema },
+			responses: {
+				200: {
+					description: "Current app-container state. Runtime identifiers and configuration are not exposed.",
+					content: { "application/json": { schema: ProjectDeploymentStatusSchema } },
+				},
+				404: {
+					description: "Unknown project id.",
+					content: { "application/json": { schema: ErrorResponseSchema } },
+				},
+				503: {
+					description: "The app container runtime could not be inspected.",
+					content: { "application/json": { schema: ErrorResponseSchema } },
+				},
+			},
+		}),
+		async (c) => {
+			const { id } = c.req.valid("param");
+			try {
+				const status = await registry.getDeploymentStatus(id);
+				if (!status) return c.json({ error: "project not found" }, 404);
+				return c.json(status, 200);
+			} catch (err) {
+				if (err instanceof RuntimeInspectionError) {
+					return c.json({ error: "container runtime unavailable" }, 503);
 				}
 				throw err;
 			}
