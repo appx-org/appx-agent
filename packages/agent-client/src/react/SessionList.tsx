@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import type { AgentSessionInfo } from "../core/types.js";
 import { useAgentChatContext } from "./context.js";
+import { type AgentSessionsController, sessionLabel, useAgentSessions } from "./useAgentSessions.js";
 
 export interface SessionListProps {
 	projectId: string;
@@ -13,55 +12,40 @@ export interface SessionListProps {
 	 * active session or switch to another one when the deleted session was open.
 	 */
 	onDeleteSession?: (id: string) => void;
+	/** Reuse a controller owned by a parent layout to avoid duplicate requests. */
+	controller?: AgentSessionsController;
+	id?: string;
 	className?: string;
 }
 
-function labelFor(session: AgentSessionInfo): string {
-	return session.firstMessage?.trim() || "Untitled";
+/** Sidebar listing a project's sessions with create + delete actions. */
+export function SessionList({ controller, refreshTick, ...props }: SessionListProps) {
+	return controller ? (
+		<SessionListView {...props} controller={controller} />
+	) : (
+		<ManagedSessionList {...props} refreshTick={refreshTick} />
+	);
 }
 
-/** Sidebar listing a project's sessions with create + delete actions. */
-export function SessionList({
-	projectId,
+function ManagedSessionList(props: Omit<SessionListProps, "controller">) {
+	const controller = useAgentSessions(props.projectId, { refreshTick: props.refreshTick });
+	return <SessionListView {...props} controller={controller} />;
+}
+
+function SessionListView({
 	activeSessionId,
-	refreshTick = 0,
 	onSelectSession,
 	onDeleteSession,
+	controller,
+	id,
 	className,
-}: SessionListProps) {
-	const { store, client, classNames, labels } = useAgentChatContext();
-	const [sessions, setSessions] = useState<AgentSessionInfo[]>([]);
-	const [creating, setCreating] = useState(false);
-	const [deletingId, setDeletingId] = useState<string | null>(null);
-	const [error, setError] = useState("");
-
-	const fetchSessions = useCallback(async () => {
-		try {
-			const res = await client.listSessions(projectId);
-			setSessions(res.sessions);
-			setError("");
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to load sessions");
-		}
-	}, [client, projectId]);
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies(refreshTick): `refreshTick` is a caller-owned counter prop whose only job is to force a refetch.
-	useEffect(() => {
-		void fetchSessions();
-	}, [fetchSessions, refreshTick]);
+}: Omit<SessionListProps, "refreshTick"> & { controller: AgentSessionsController }) {
+	const { classNames, labels } = useAgentChatContext();
+	const { sessions, creating, deletingId, error, createSession, deleteSession } = controller;
 
 	const handleCreate = async () => {
-		setCreating(true);
-		setError("");
-		try {
-			const session = await client.createSession(projectId);
-			await fetchSessions();
-			onSelectSession(session.id);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to create session");
-		} finally {
-			setCreating(false);
-		}
+		const sessionId = await createSession();
+		if (sessionId) onSelectSession(sessionId);
 	};
 
 	const handleDelete = async (sessionId: string) => {
@@ -69,23 +53,11 @@ export function SessionList({
 		// before the destructive call. `window.confirm` keeps the SDK dependency-free;
 		// hosts wanting a custom dialog can build their own list against the client.
 		if (typeof window !== "undefined" && !window.confirm(labels.confirmDeleteSession)) return;
-		setDeletingId(sessionId);
-		setError("");
-		try {
-			// Go through the store so the live SSE stream + cached state are torn down,
-			// not just the server-side record.
-			await store.deleteSession(projectId, sessionId);
-			await fetchSessions();
-			onDeleteSession?.(sessionId);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to delete session");
-		} finally {
-			setDeletingId(null);
-		}
+		if (await deleteSession(sessionId)) onDeleteSession?.(sessionId);
 	};
 
 	return (
-		<div className={["agent-chat-session-list", classNames.sessionList, className].filter(Boolean).join(" ")}>
+		<div id={id} className={["agent-chat-session-list", classNames.sessionList, className].filter(Boolean).join(" ")}>
 			<div className="agent-chat-session-header">
 				<span className="agent-chat-session-title">{labels.sessionsTitle}</span>
 				<button
@@ -115,9 +87,9 @@ export function SessionList({
 								type="button"
 								className="agent-chat-session-item-select"
 								onClick={() => onSelectSession(session.id)}
-								title={labelFor(session)}
+								title={sessionLabel(session)}
 							>
-								<span className="agent-chat-session-item-title">{labelFor(session)}</span>
+								<span className="agent-chat-session-item-title">{sessionLabel(session)}</span>
 								<span className="agent-chat-session-item-meta">
 									{session.id.slice(0, 8)} · {session.messageCount} msg
 								</span>

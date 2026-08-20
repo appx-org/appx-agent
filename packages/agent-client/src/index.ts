@@ -93,3 +93,5 @@ export type { UsageBarLabels, UsageBarProps } from "./react/UsageBar.js";
 export { UsageBar } from "./react/UsageBar.js";
 export type { UseAgentSessionResult } from "./react/useAgentSession.js";
 export { useAgentSession } from "./react/useAgentSession.js";
+export type { AgentSessionsController, UseAgentSessionsOptions } from "./react/useAgentSessions.js";
+export { sessionLabel, useAgentSessions } from "./react/useAgentSessions.js";
