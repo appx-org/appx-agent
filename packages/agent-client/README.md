@@ -87,7 +87,7 @@ Two layers:
   agent-server's `openapi.json`, never hand-written — and are re-exported via
   `core/types.ts` alongside the UI-derived types.
 - **`react/`** — `AgentChatProvider` (DI for client + store + theme),
-  `useAgentSession` hook, and components: `AgentChat`, `ChatPanel`,
+  `useAgentSession` / `useAgentSessions` hooks, and components: `AgentChat`, `ChatPanel`,
   `SessionList`, `ToolCallCard`, `ExtensionRequestPanel`, `Markdown`.
 
 ## Regenerating the agent-server types
@@ -121,9 +121,31 @@ stable, human-readable names.
 2. **`classNames` / `labels`** — pass per-slot class names and string overrides
    to `AgentChatProvider`.
 3. **Render slots** — `ChatPanel` accepts `renderMessage`, `renderEmpty`,
-   `showHeader`, `showModelControls`.
+   `headerStart`, `showHeader`, `showModelControls`.
 4. **Composition** — for fully bespoke layouts, drop `AgentChat` and compose
-   `SessionList` + `ChatPanel`, or build directly on `useAgentSession`.
+   `SessionList` + `ChatPanel`, or build directly on `useAgentSession` and
+   `useAgentSessions`.
+
+### Session workspace state
+
+`AgentChat` keeps selection and session-list visibility uncontrolled by default.
+The list starts open and can be folded from the chat header. Hosts that need to
+remember workspace state can control it and persist it in their own preferred
+store:
+
+```tsx
+<AgentChat
+  projectId="my-project"
+  activeSessionId={activeSessionId}
+  onActiveSessionChange={setActiveSessionId}
+  sessionListOpen={sessionListOpen}
+  onSessionListOpenChange={setSessionListOpen}
+  onTurnComplete={refreshPreview}
+/>
+```
+
+The package intentionally does not write `localStorage`: account scoping,
+cross-device persistence, and storage policy belong to the host application.
 
 ## Client config
 

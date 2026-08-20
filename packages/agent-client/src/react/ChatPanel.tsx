@@ -54,6 +54,8 @@ export interface ChatPanelProps {
 	renderEmpty?: () => ReactNode;
 	/** Extra controls rendered in the composer, just before the Send/Stop button. */
 	renderComposerActions?: () => ReactNode;
+	/** Content rendered before the built-in status block in the header. */
+	headerStart?: ReactNode;
 	className?: string;
 }
 
@@ -72,6 +74,7 @@ export function ChatPanel({
 	renderMessage,
 	renderEmpty,
 	renderComposerActions,
+	headerStart,
 	className,
 }: ChatPanelProps) {
 	const { classNames, labels, costRates } = useAgentChatContext();
@@ -162,17 +165,20 @@ export function ChatPanel({
 		<div className={["agent-chat-chat-panel", classNames.chatPanel, className].filter(Boolean).join(" ")}>
 			{showHeader && (
 				<div className="agent-chat-header">
-					<div className="agent-chat-header-status">
-						<span className="agent-chat-header-title">{labels.agentName}</span>
-						<span className={isRunning ? "agent-chat-status agent-chat-status-active" : "agent-chat-status"}>
-							{!state.connected ? "connecting" : isRunning ? state.status : "idle"}
-						</span>
-						{extensionStatus && <span className="agent-chat-ext-status">{extensionStatus}</span>}
-						{settingsError && (
-							<span className="agent-chat-settings-error" title={settingsError}>
-								model settings unavailable
+					<div className="agent-chat-header-start">
+						{headerStart}
+						<div className="agent-chat-header-status">
+							<span className="agent-chat-header-title">{labels.agentName}</span>
+							<span className={isRunning ? "agent-chat-status agent-chat-status-active" : "agent-chat-status"}>
+								{!state.connected ? "connecting" : isRunning ? state.status : "idle"}
 							</span>
-						)}
+							{extensionStatus && <span className="agent-chat-ext-status">{extensionStatus}</span>}
+							{settingsError && (
+								<span className="agent-chat-settings-error" title={settingsError}>
+									model settings unavailable
+								</span>
+							)}
+						</div>
 					</div>
 					{showModelControls && (
 						// biome-ignore lint/a11y/useSemanticElements: a fieldset would change the rendered DOM/styling contract; role="group" is valid ARIA here.

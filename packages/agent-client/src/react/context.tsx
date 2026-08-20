@@ -41,6 +41,7 @@ export function resolveCostRates(
 export interface AgentChatClassNames {
 	root?: string;
 	sessionList?: string;
+	sessionToggle?: string;
 	chatPanel?: string;
 	message?: string;
 	userMessage?: string;
@@ -63,6 +64,10 @@ export interface AgentChatLabels {
 	stopButton?: string;
 	inputPlaceholder?: string;
 	workingPlaceholder?: string;
+	showSessions?: string;
+	hideSessions?: string;
+	noSession?: string;
+	selectedSession?: string;
 	usageCost?: string;
 	usageCache?: string;
 	usageContext?: string;
@@ -81,6 +86,10 @@ const defaultLabels: Required<AgentChatLabels> = {
 	stopButton: "Stop",
 	inputPlaceholder: "Send a message...",
 	workingPlaceholder: "Agent is working...",
+	showSessions: "Show sessions",
+	hideSessions: "Hide sessions",
+	noSession: "No session",
+	selectedSession: "Selected session",
 	usageCost: "cost",
 	usageCache: "cache",
 	usageContext: "ctx",
