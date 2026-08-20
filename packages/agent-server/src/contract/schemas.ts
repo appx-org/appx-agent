@@ -394,6 +394,25 @@ export const ListProjectsResponseSchema = z
 	})
 	.openapi("ListProjectsResponse");
 
+export const AppDeploymentStatusSchema = z
+	.object({
+		running: z.boolean().openapi({ description: "Whether the deployed app container is currently running." }),
+		revision: z.string().nullable().openapi({
+			description: "Opaque revision that changes when the app container is replaced; null when not deployed.",
+		}),
+		deployedAt: z.string().nullable().openapi({
+			description: "ISO-8601 container creation time; null when not deployed or unavailable.",
+		}),
+	})
+	.openapi("AppDeploymentStatus");
+
+export const ProjectDeploymentStatusSchema = z
+	.object({
+		dev: AppDeploymentStatusSchema,
+		prod: AppDeploymentStatusSchema,
+	})
+	.openapi("ProjectDeploymentStatus");
+
 export const ProviderParamSchema = z.object({
 	provider: z
 		.string()

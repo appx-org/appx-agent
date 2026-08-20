@@ -3,7 +3,12 @@ import { join, relative, resolve, sep } from "node:path";
 import { AuthStorage, ModelRegistry, type ModelRegistry as ModelRegistryType } from "@earendil-works/pi-coding-agent";
 import { AgentCredentialsService } from "../credentials/credentialsService.js";
 import { isValidProjectSlug, slugify, withCollisionSuffix } from "../utils/slug.js";
-import { DEFAULT_APP_CONTAINER_RUNTIME, reapProjectResources } from "./appContainers.js";
+import {
+	DEFAULT_APP_CONTAINER_RUNTIME,
+	inspectProjectDeployments,
+	type ProjectDeploymentStatus,
+	reapProjectResources,
+} from "./appContainers.js";
 import { buildDeploymentJson, type Deployment } from "./deployment.js";
 import { ProjectRuntime, type ProjectRuntimeConfig } from "./projectRuntime.js";
 import { type ProjectRecord, ProjectStore } from "./projectStore.js";
@@ -286,6 +291,16 @@ export class ProjectRegistry {
 	/** All registered projects, newest first. */
 	listProjects(): ProjectInfo[] {
 		return this.store.list().map((record) => this.toInfo(record));
+	}
+
+	/** Inspect the project's actual DEV/PROD app containers. */
+	async getDeploymentStatus(id: string): Promise<ProjectDeploymentStatus | null> {
+		if (!this.store.has(id)) return null;
+		return inspectProjectDeployments({
+			runtime: this.config.appContainerRuntime ?? DEFAULT_APP_CONTAINER_RUNTIME,
+			projectId: id,
+			logger: this.config.logger ?? console,
+		});
 	}
 
 	/**

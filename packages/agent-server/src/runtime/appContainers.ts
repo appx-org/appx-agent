@@ -16,6 +16,7 @@
  * text, guarded by a test) so the convention cannot drift.
  */
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 
 /**
  * Label key stamped on every resource the deploy-app skill creates, with the
@@ -35,17 +36,119 @@ export const DEFAULT_APP_CONTAINER_RUNTIME = "podman";
 const RUNTIME_CALL_TIMEOUT_MS = 30_000;
 
 /** The two app-container environments the deploy-app skill deploys. */
-const APP_ENVIRONMENTS = ["dev", "prod"] as const;
+export const APP_ENVIRONMENTS = ["dev", "prod"] as const;
+export type AppEnvironment = (typeof APP_ENVIRONMENTS)[number];
+
+export type AppDeploymentStatus = {
+	running: boolean;
+	revision: string | null;
+	deployedAt: string | null;
+};
+
+export type ProjectDeploymentStatus = Record<AppEnvironment, AppDeploymentStatus>;
+
+/** Runtime inspection failed, so absence cannot be reported truthfully. */
+export class RuntimeInspectionError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "RuntimeInspectionError";
+	}
+}
 
 /**
  * Container name for one of a project's app instances, matching the deploy-app
  * skill's `<project>-app-{dev,prod}` convention.
  */
-export function appContainerName(projectId: string, environment: (typeof APP_ENVIRONMENTS)[number]): string {
+export function appContainerName(projectId: string, environment: AppEnvironment): string {
 	return `${projectId}-app-${environment}`;
 }
 
 type Logger = Pick<Console, "log" | "error">;
+
+/**
+ * Inspect the two app containers belonging to a project.
+ *
+ * The response deliberately exposes no runtime ids, image ids, labels, mounts,
+ * or environment values. `revision` is an opaque digest that changes when the
+ * exact app container is replaced, which is enough for hosts to refresh a
+ * preview without leaking runtime internals.
+ */
+export async function inspectProjectDeployments({
+	runtime,
+	projectId,
+	logger,
+	timeoutMs = RUNTIME_CALL_TIMEOUT_MS,
+}: {
+	runtime: string;
+	projectId: string;
+	logger: Logger;
+	/** Test seam; production callers use the bounded default. */
+	timeoutMs?: number;
+}): Promise<ProjectDeploymentStatus> {
+	const namesResult = await run(runtime, ["ps", "-a", "--format", "{{.Names}}"], logger, timeoutMs);
+	if (!namesResult.ok) throw new RuntimeInspectionError("container runtime is unavailable");
+
+	const existingNames = new Set(splitLines(namesResult.stdout));
+	const entries = await Promise.all(
+		APP_ENVIRONMENTS.map(async (environment) => {
+			const name = appContainerName(projectId, environment);
+			if (!existingNames.has(name)) return [environment, emptyDeploymentStatus()] as const;
+
+			const inspected = await run(runtime, ["inspect", name], logger, timeoutMs);
+			if (!inspected.ok) throw new RuntimeInspectionError(`failed to inspect ${environment} deployment`);
+			return [environment, parseDeploymentInspect(inspected.stdout, projectId)] as const;
+		}),
+	);
+
+	return Object.fromEntries(entries) as ProjectDeploymentStatus;
+}
+
+function emptyDeploymentStatus(): AppDeploymentStatus {
+	return { running: false, revision: null, deployedAt: null };
+}
+
+type RuntimeInspect = {
+	Id?: unknown;
+	Image?: unknown;
+	Created?: unknown;
+	Config?: { Labels?: Record<string, unknown> | null } | null;
+	State?: { Running?: unknown } | null;
+};
+
+function parseDeploymentInspect(stdout: string, projectId: string): AppDeploymentStatus {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(stdout);
+	} catch {
+		throw new RuntimeInspectionError("container runtime returned invalid inspect data");
+	}
+
+	const value = Array.isArray(parsed) ? parsed[0] : parsed;
+	if (!value || typeof value !== "object") {
+		throw new RuntimeInspectionError("container runtime returned incomplete inspect data");
+	}
+
+	const inspect = value as RuntimeInspect;
+	if (inspect.Config?.Labels?.[PROJECT_LABEL_KEY] !== projectId) {
+		// An exact-name collision without the ownership label is not this project's
+		// deployment and must not leak any information about the foreign container.
+		return emptyDeploymentStatus();
+	}
+
+	if (typeof inspect.Id !== "string" || typeof inspect.Image !== "string") {
+		throw new RuntimeInspectionError("container runtime returned incomplete inspect data");
+	}
+
+	const created = typeof inspect.Created === "string" ? new Date(inspect.Created) : null;
+	const deployedAt = created && !Number.isNaN(created.getTime()) ? created.toISOString() : null;
+	const revision = createHash("sha256").update(inspect.Id).update("\0").update(inspect.Image).digest("hex");
+
+	return {
+		running: inspect.State?.Running === true,
+		revision,
+		deployedAt,
+	};
+}
 
 /**
  * Remove every runtime resource belonging to a project.
@@ -121,7 +224,11 @@ async function appContainersByName(runtime: string, projectId: string, logger: L
 async function listIds(runtime: string, args: string[], logger: Logger): Promise<string[]> {
 	const result = await run(runtime, args, logger);
 	if (!result.ok) return [];
-	return result.stdout
+	return splitLines(result.stdout);
+}
+
+function splitLines(stdout: string): string[] {
+	return stdout
 		.split("\n")
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0);
@@ -134,7 +241,7 @@ type RunResult = { ok: boolean; stdout: string };
  * running container sends SIGTERM and waits for it to exit — blocking the event
  * loop there would stall every other in-flight request for seconds.
  */
-function run(runtime: string, args: string[], logger: Logger): Promise<RunResult> {
+function run(runtime: string, args: string[], logger: Logger, timeoutMs = RUNTIME_CALL_TIMEOUT_MS): Promise<RunResult> {
 	return new Promise((resolvePromise) => {
 		const child = spawn(runtime, args, { stdio: ["ignore", "pipe", "pipe"] });
 		let stdout = "";
@@ -143,7 +250,7 @@ function run(runtime: string, args: string[], logger: Logger): Promise<RunResult
 
 		const timer = setTimeout(() => {
 			child.kill("SIGKILL");
-		}, RUNTIME_CALL_TIMEOUT_MS);
+		}, timeoutMs);
 
 		const settle = (result: RunResult) => {
 			if (settled) return;

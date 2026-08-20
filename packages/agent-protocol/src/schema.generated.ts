@@ -194,6 +194,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{id}/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect the actual DEV and PROD app-container state for a project. */
+        get: operations["getProjectDeployments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{id}": {
         parameters: {
             query?: never;
@@ -525,6 +542,18 @@ export interface components {
              */
             name: string;
             deployment?: components["schemas"]["Deployment"] & unknown;
+        };
+        AppDeploymentStatus: {
+            /** @description Whether the deployed app container is currently running. */
+            running: boolean;
+            /** @description Opaque revision that changes when the app container is replaced; null when not deployed. */
+            revision: string | null;
+            /** @description ISO-8601 container creation time; null when not deployed or unavailable. */
+            deployedAt: string | null;
+        };
+        ProjectDeploymentStatus: {
+            dev: components["schemas"]["AppDeploymentStatus"];
+            prod: components["schemas"]["AppDeploymentStatus"];
         };
         ListProjectsResponse: {
             projects: components["schemas"]["ProjectInfo"][];
@@ -1495,6 +1524,46 @@ export interface operations {
             };
             /** @description Name does not yield a valid project id. */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getProjectDeployments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current app-container state. Runtime identifiers and configuration are not exposed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDeploymentStatus"];
+                };
+            };
+            /** @description Unknown project id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The app container runtime could not be inspected. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
