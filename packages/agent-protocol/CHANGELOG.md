@@ -1,5 +1,11 @@
 # @appx-org/agent-protocol
 
+## 0.3.0
+
+### Minor Changes
+
+- 91878a0: Expose a non-secret project deployment-status endpoint and typed client method so hosts can observe DEV and PROD container replacement and running state.
+
 ## 0.2.1
 
 ## 0.2.0
