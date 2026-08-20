@@ -1,5 +1,17 @@
 # @appx-org/agent-client
 
+## 0.3.0
+
+### Minor Changes
+
+- fe8226b: Add reusable session loading controls plus controlled or uncontrolled active-session and foldable-session-list state to AgentChat.
+- 91878a0: Expose a non-secret project deployment-status endpoint and typed client method so hosts can observe DEV and PROD container replacement and running state.
+
+### Patch Changes
+
+- Updated dependencies [91878a0]
+  - @appx-org/agent-protocol@0.3.0
+
 ## 0.2.1
 
 ### Patch Changes
