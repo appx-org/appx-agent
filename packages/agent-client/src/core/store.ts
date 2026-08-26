@@ -199,7 +199,7 @@ export class SessionStore {
 		return this.entries.get(SessionStore.key(projectId, sessionId))?.state ?? initialSessionState;
 	}
 
-	async sendPrompt(projectId: string, sessionId: string, text: string): Promise<void> {
+	async sendPrompt(projectId: string, sessionId: string, text: string, attachments?: string[]): Promise<void> {
 		const entryKey = SessionStore.key(projectId, sessionId);
 		this.attach(projectId, sessionId);
 		const entry = this.entries.get(entryKey);
@@ -209,7 +209,7 @@ export class SessionStore {
 		const promptId = newCorrelationId();
 		this.dispatch(entryKey, { type: "user_prompt_submitted", text, promptId });
 		try {
-			await this.client.sendPrompt(projectId, sessionId, text);
+			await this.client.sendPrompt(projectId, sessionId, text, attachments);
 			void this.refreshExtensionRequests(projectId, sessionId, entryKey);
 		} catch (err) {
 			this.dispatch(entryKey, {

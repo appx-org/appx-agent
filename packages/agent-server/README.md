@@ -149,11 +149,19 @@ generated from it (see "Consuming from another app").
 | `GET`   | `…/sessions/{id}/events`                            | SSE stream of pi `AgentSessionEvent`s   |
 | `GET`   | `…/sessions/{id}/extension-ui`                      | Pending extension UI requests           |
 | `POST`  | `…/sessions/{id}/extension-ui/{requestId}/response` | Resolve an extension UI request         |
-| `POST`  | `…/sessions/{id}/prompt`                            | `{ text }` — send a user prompt         |
+| `POST`  | `…/sessions/{id}/prompt`                            | `{ text, attachments? }` — send a user prompt |
 | `POST`  | `…/sessions/{id}/abort`                             | Abort the in-flight run (no-op if idle) |
+| `POST`  | `…/attachments`                                     | Upload an opaque attachment (JSON base64) |
 
 Session routes resolve their runtime by a pure lookup on the path `id`; a request
 for a project that was never created returns `404`.
+
+**Attachments**: `POST …/attachments` with `{ filename, contentBase64 }` stores
+the file at `attachments/<id>/<filename>` inside the project workspace and
+returns `{ id, filename, path, size, createdAt }`. The client never interprets
+the bytes. Passing the returned ids in a prompt's `attachments` array makes the
+server append their workspace paths to the prompt, so the agent can read the
+files with its own tools if the task needs their contents.
 
 Plus `GET /openapi.json` (OpenAPI 3.1) and `GET /docs` (Swagger UI).
 

@@ -21,6 +21,7 @@ import type {
 } from "@appx-org/agent-protocol";
 
 export type {
+	AgentAttachment,
 	AgentAuthProvider,
 	AgentCustomProvider,
 	AgentCustomProviderApi,

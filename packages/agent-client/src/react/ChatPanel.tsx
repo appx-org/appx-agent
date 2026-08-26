@@ -77,11 +77,17 @@ export function ChatPanel({
 	headerStart,
 	className,
 }: ChatPanelProps) {
-	const { classNames, labels, costRates } = useAgentChatContext();
+	const { classNames, labels, costRates, client } = useAgentChatContext();
 	const { state, sendPrompt, abort, respondExtensionRequest, loadModelSettings, updateModelSettings } =
 		useAgentSession(projectId, sessionId);
 	const [input, setInput] = useState("");
 	const [sending, setSending] = useState(false);
+	// Attachments are opaque to the client: files are uploaded as raw bytes and
+	// only their ids ride along with the next prompt.
+	const [attachments, setAttachments] = useState<{ id: string; filename: string }[]>([]);
+	const [uploadCount, setUploadCount] = useState(0);
+	const [attachError, setAttachError] = useState<string | null>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 	const prevStatusRef = useRef(state.status);
 
 	// Model/thinking settings are owned by the store (single source of truth),
@@ -130,16 +136,37 @@ export function ChatPanel({
 
 	const handleSend = async () => {
 		const text = input.trim();
-		if (!text || sending) return;
+		if (!text || sending || uploadCount > 0) return;
+		const attachmentIds = attachments.map((a) => a.id);
 		setInput("");
+		setAttachments([]);
 		setSending(true);
 		try {
-			await sendPrompt(text);
+			await sendPrompt(text, attachmentIds.length > 0 ? attachmentIds : undefined);
 		} catch (err) {
 			console.error("[agent-client] failed to send prompt:", err);
 		} finally {
 			setSending(false);
 		}
+	};
+
+	const handleFilesSelected = async (files: FileList | null) => {
+		if (!files || files.length === 0) return;
+		setAttachError(null);
+		const selected = Array.from(files);
+		setUploadCount((n) => n + selected.length);
+		await Promise.all(
+			selected.map(async (file) => {
+				try {
+					const info = await client.uploadAttachment(projectId, file.name, file);
+					setAttachments((prev) => [...prev, { id: info.id, filename: info.filename }]);
+				} catch (err) {
+					setAttachError(err instanceof Error ? err.message : String(err));
+				} finally {
+					setUploadCount((n) => n - 1);
+				}
+			}),
+		);
 	};
 
 	const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -271,7 +298,47 @@ export function ChatPanel({
 				<ExtensionRequestPanel request={activeExtensionRequest} onRespond={respondExtensionRequest} />
 			)}
 
+			{attachError && <div className="agent-chat-error-banner">{attachError}</div>}
+			{(attachments.length > 0 || uploadCount > 0) && (
+				<div className="agent-chat-attachments">
+					{attachments.map((a) => (
+						<span key={a.id} className="agent-chat-attachment-chip">
+							{a.filename}
+							<button
+								type="button"
+								className="agent-chat-attachment-remove"
+								aria-label={`Remove attachment ${a.filename}`}
+								onClick={() => setAttachments((prev) => prev.filter((p) => p.id !== a.id))}
+							>
+								×
+							</button>
+						</span>
+					))}
+					{uploadCount > 0 && <span className="agent-chat-attachment-chip">uploading…</span>}
+				</div>
+			)}
+
 			<div className={["agent-chat-input-bar", classNames.inputBar].filter(Boolean).join(" ")}>
+				<input
+					ref={fileInputRef}
+					type="file"
+					multiple
+					style={{ display: "none" }}
+					onChange={(e) => {
+						void handleFilesSelected(e.target.files);
+						e.target.value = "";
+					}}
+				/>
+				<button
+					type="button"
+					className="agent-chat-btn-attach"
+					aria-label="Attach files"
+					title="Attach files"
+					onClick={() => fileInputRef.current?.click()}
+					disabled={sending}
+				>
+					📎
+				</button>
 				<textarea
 					className="agent-chat-input"
 					value={input}
@@ -291,7 +358,7 @@ export function ChatPanel({
 						type="button"
 						className="agent-chat-btn-send"
 						onClick={() => void handleSend()}
-						disabled={sending || !input.trim()}
+						disabled={sending || uploadCount > 0 || !input.trim()}
 					>
 						{sending ? "..." : labels.sendButton}
 					</button>

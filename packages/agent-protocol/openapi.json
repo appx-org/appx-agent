@@ -837,10 +837,71 @@
             "type": "string",
             "minLength": 1,
             "example": "find me events this weekend"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 20,
+            "description": "Attachment ids (from POST /projects/{projectId}/attachments) to reference in this prompt. The server appends their workspace paths to the prompt so the agent can read them if needed."
           }
         },
         "required": [
           "text"
+        ]
+      },
+      "AttachmentInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string",
+            "description": "Sanitized filename the attachment was stored under."
+          },
+          "path": {
+            "type": "string",
+            "description": "Path relative to the project workspace root (what the agent sees).",
+            "example": "attachments/6f1e.../report.pdf"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "path",
+          "size",
+          "createdAt"
+        ]
+      },
+      "UploadAttachmentRequest": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "example": "report.pdf"
+          },
+          "contentBase64": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 34000000,
+            "description": "File content, standard base64 (max ~25 MB decoded)."
+          }
+        },
+        "required": [
+          "filename",
+          "contentBase64"
         ]
       },
       "WireEvent": {
@@ -3791,6 +3852,16 @@
               }
             }
           },
+          "400": {
+            "description": "A referenced attachment id was never uploaded to this project.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown session id.",
             "content": {
@@ -3896,6 +3967,59 @@
           },
           "404": {
             "description": "Unknown session id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{projectId}/attachments": {
+      "post": {
+        "operationId": "uploadAttachment",
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Upload an attachment into the project workspace.",
+        "description": "Stores the file under `attachments/<id>/<filename>` in the project directory. Reference the returned id in `POST /sessions/{id}/prompt` (`attachments`) so the agent knows where to find it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadAttachmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored attachment metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid base64 content.",
             "content": {
               "application/json": {
                 "schema": {

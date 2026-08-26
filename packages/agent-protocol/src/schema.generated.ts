@@ -371,6 +371,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an attachment into the project workspace.
+         * @description Stores the file under `attachments/<id>/<filename>` in the project directory. Reference the returned id in `POST /sessions/{id}/prompt` (`attachments`) so the agent knows where to find it.
+         */
+        post: operations["uploadAttachment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -609,6 +629,26 @@ export interface components {
         PromptRequest: {
             /** @example find me events this weekend */
             text: string;
+            /** @description Attachment ids (from POST /projects/{projectId}/attachments) to reference in this prompt. The server appends their workspace paths to the prompt so the agent can read them if needed. */
+            attachments?: string[];
+        };
+        AttachmentInfo: {
+            id: string;
+            /** @description Sanitized filename the attachment was stored under. */
+            filename: string;
+            /**
+             * @description Path relative to the project workspace root (what the agent sees).
+             * @example attachments/6f1e.../report.pdf
+             */
+            path: string;
+            size: number;
+            createdAt: string;
+        };
+        UploadAttachmentRequest: {
+            /** @example report.pdf */
+            filename: string;
+            /** @description File content, standard base64 (max ~25 MB decoded). */
+            contentBase64: string;
         };
         /** @description Every JSON event agent-server forwards on `GET …/sessions/{id}/events`. */
         WireEvent: {
@@ -1932,6 +1972,15 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            /** @description A referenced attachment id was never uploaded to this project. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Unknown session id. */
             404: {
                 headers: {
@@ -1998,6 +2047,41 @@ export interface operations {
             };
             /** @description Unknown session id. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    uploadAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadAttachmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Stored attachment metadata. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentInfo"];
+                };
+            };
+            /** @description Invalid base64 content. */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
