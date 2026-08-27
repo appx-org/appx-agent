@@ -119,19 +119,41 @@ Then report the relevant **public URL** (`dev.url` after a DEV deploy,
 
 ## Multi-container apps (db, cache, etc.)
 
-If the app needs a database or other service, run them as sibling containers
-named `<project>-db` etc. on a shared `<project>` network. **Only the app
-container publishes a host port**, in the same two-number form as above; siblings
-are reached by container name over the shared network. Secrets for those services
-are app config, never LLM keys.
+If the app needs a database or other service, run it as sibling containers on a
+shared `<project>` network — **one sidecar per environment**, mirroring the
+app's DEV/PROD split: `<project>-db-dev` and `<project>-db-prod`. **Only the
+app containers publish host ports**, in the same two-number form as above;
+siblings are reached by container name over the shared network (the DEV app
+connects to `<project>-db-dev`, the PROD app to `<project>-db-prod`). Secrets
+for those services are app config, never LLM keys.
 
-Label the network and any named volume as well, so they are reaped with the
+Label the network and every named volume as well, so they are reaped with the
 project:
 
 ```bash
 $APP_CONTAINER_RUNTIME network create --label appx.project="$PROJECT" <project>
-$APP_CONTAINER_RUNTIME volume create --label appx.project="$PROJECT" <project>-db-data
-$APP_CONTAINER_RUNTIME run -d --name <project>-db \
+$APP_CONTAINER_RUNTIME volume create --label appx.project="$PROJECT" <project>-db-dev-data
+$APP_CONTAINER_RUNTIME run -d --name <project>-db-dev \
   --label appx.project="$PROJECT" \
-  --network <project> -v <project>-db-data:/var/lib/postgresql/data <image>
+  --network <project> -v <project>-db-dev-data:/var/lib/postgresql/data <image>
 ```
+
+and the same for PROD with `<project>-db-prod` + `<project>-db-prod-data`. Run
+the app containers with `--network <project>` too, so they can reach their
+sidecars.
+
+### Persistent data rules
+
+- **DEV and PROD never share a database or a volume.** The user iterates
+  against DEV; a bad DEV migration or a data reset must not be able to touch
+  PROD's real data. That isolation is exactly why the volumes are
+  `<project>-db-dev-data` / `<project>-db-prod-data`, never one shared volume.
+- **Redeploy replaces containers, never data volumes.** A redeploy or promote
+  may `rm -f` and re-run the `-db-dev`/`-db-prod` *containers*, but must reuse
+  the existing named volume. Never run `volume rm` on a data volume when
+  redeploying or "cleaning up" — that is user data loss. Volumes are removed
+  only when the project itself is deleted (the reaper finds them by label).
+- **Schema changes are migrations, not resets.** Once data persists across
+  redeploys, never "drop and recreate" the database to apply a schema change —
+  apply migrations against the existing data. Prove a migration on DEV first,
+  then promote and run the same migration against PROD's volume.
