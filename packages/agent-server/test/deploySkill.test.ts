@@ -42,6 +42,25 @@ describe("deploy-app skill", () => {
 		assert.match(skill, /<project>-app-prod/);
 	});
 
+	test("isolates DEV and PROD data: per-env db containers and volumes", () => {
+		// One shared db would let a bad DEV migration corrupt PROD's real data.
+		// The per-env names are also what makes the reaper's label-based cleanup
+		// find them (they follow the same labelled-resource convention).
+		const skill = readFileSync(SKILL_PATH, "utf8");
+		assert.match(skill, /<project>-db-dev-data/);
+		assert.match(skill, /<project>-db-prod-data/);
+		const prose = skill.replace(/\s+/g, " ");
+		assert.match(prose, /DEV and PROD never share a database or a volume/i);
+	});
+
+	test("forbids removing data volumes outside project deletion", () => {
+		const prose = readFileSync(SKILL_PATH, "utf8").replace(/\s+/g, " ");
+		assert.match(prose, /Redeploy replaces containers, never data volumes/i);
+		assert.match(prose, /Never run `volume rm` on a data volume/i);
+		// And once data is durable, schema changes must be migrations.
+		assert.match(prose, /migrations, not resets/i);
+	});
+
 	test("steers multi-container apps to networks and away from pods", () => {
 		// Pods are podman-only and outlive the containers in them, so one would leak
 		// on podman and break the skill outright on docker.
