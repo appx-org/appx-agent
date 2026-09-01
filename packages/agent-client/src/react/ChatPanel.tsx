@@ -49,6 +49,13 @@ function PaperclipIcon() {
 	);
 }
 
+/**
+ * Mirrors `MAX_PROMPT_ATTACHMENTS` in agent-server's contract schemas: the
+ * prompt endpoint rejects more than this many ids, so cap the selection here
+ * rather than letting the user upload files the send will then bounce.
+ */
+const MAX_ATTACHMENTS_PER_PROMPT = 20;
+
 const thinkingLabels: Record<ThinkingLevel, string> = {
 	off: "Off",
 	minimal: "Minimal",
@@ -110,6 +117,7 @@ export function ChatPanel({
 	const [attachError, setAttachError] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const prevStatusRef = useRef(state.status);
+	const prevSessionIdRef = useRef(sessionId);
 
 	// Model/thinking settings are owned by the store (single source of truth),
 	// so the panel just reads the live slice instead of duplicating it locally.
@@ -144,6 +152,17 @@ export function ChatPanel({
 		if (showModelControls || showUsage) void loadModelSettings();
 	}, [showModelControls, showUsage, loadModelSettings]);
 
+	// The panel is not remounted when the active session changes, so pending
+	// attachments would otherwise follow the user into the next session and be
+	// silently sent with its first prompt. Reset during render (React's
+	// "adjusting state when a prop changes" pattern) so the chips never paint
+	// against the wrong session.
+	if (prevSessionIdRef.current !== sessionId) {
+		prevSessionIdRef.current = sessionId;
+		setAttachments([]);
+		setAttachError(null);
+	}
+
 	useEffect(() => {
 		if (prevStatusRef.current !== "idle" && state.status === "idle") {
 			onTurnComplete?.();
@@ -158,14 +177,22 @@ export function ChatPanel({
 	const handleSend = async () => {
 		const text = input.trim();
 		if (!text || sending || uploadCount > 0) return;
-		const attachmentIds = attachments.map((a) => a.id);
+		const pending = attachments;
+		const attachmentIds = pending.map((a) => a.id);
+		// Clear optimistically (the textarea is disabled while sending, so nothing
+		// can be typed over) and restore on failure — otherwise a rejected prompt
+		// silently discards both the text and the ids of the uploaded files.
 		setInput("");
 		setAttachments([]);
 		setSending(true);
 		try {
 			await sendPrompt(text, attachmentIds.length > 0 ? attachmentIds : undefined);
 		} catch (err) {
+			// The store already surfaces the failure in `state.error`, so only the
+			// composer needs restoring here.
 			console.error("[agent-client] failed to send prompt:", err);
+			setInput((current) => current || text);
+			setAttachments((current) => (current.length > 0 ? current : pending));
 		} finally {
 			setSending(false);
 		}
@@ -174,7 +201,12 @@ export function ChatPanel({
 	const handleFilesSelected = async (files: FileList | null) => {
 		if (!files || files.length === 0) return;
 		setAttachError(null);
-		const selected = Array.from(files);
+		const room = MAX_ATTACHMENTS_PER_PROMPT - attachments.length - uploadCount;
+		const selected = Array.from(files).slice(0, Math.max(room, 0));
+		if (selected.length < files.length) {
+			setAttachError(`At most ${MAX_ATTACHMENTS_PER_PROMPT} attachments per message.`);
+		}
+		if (selected.length === 0) return;
 		setUploadCount((n) => n + selected.length);
 		await Promise.all(
 			selected.map(async (file) => {

@@ -5,7 +5,10 @@ import { ToolCallCard } from "./ToolCallCard.js";
 
 /** Stable per-part key for React reconciliation within a message. */
 function partKey(part: UiMessagePart, index: number): string {
-	return part.type === "tool" ? `tool-${part.id || index}` : `text-${part.contentIndex ?? index}`;
+	if (part.type === "tool") return `tool-${part.id || index}`;
+	// A text part and the attachments part lifted out of it share a contentIndex,
+	// so the type has to be part of the key.
+	return `${part.type}-${part.contentIndex ?? index}`;
 }
 
 interface MessagePartProps {
@@ -23,6 +26,17 @@ interface MessagePartProps {
 const MessagePart = memo(function MessagePart({ part, streaming, toolCardClass }: MessagePartProps) {
 	if (part.type === "text") {
 		return part.text ? <Markdown text={part.text} streaming={streaming} /> : null;
+	}
+	if (part.type === "attachments") {
+		return (
+			<div className="agent-chat-attachments agent-chat-attachments-sent">
+				{part.files.map((file) => (
+					<span key={file.path} className="agent-chat-attachment-chip" title={file.path}>
+						{file.filename}
+					</span>
+				))}
+			</div>
+		);
 	}
 	return <ToolCallCard tool={part} className={toolCardClass} />;
 });

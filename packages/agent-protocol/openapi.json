@@ -894,9 +894,8 @@
           },
           "contentBase64": {
             "type": "string",
-            "minLength": 1,
             "maxLength": 34000000,
-            "description": "File content, standard base64 (max ~25 MB decoded)."
+            "description": "File content, standard base64 (max ~25 MB decoded). Empty for a zero-byte file."
           }
         },
         "required": [
@@ -4020,6 +4019,16 @@
           },
           "400": {
             "description": "Invalid base64 content.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body too large, or the project's attachment quota is exhausted.",
             "content": {
               "application/json": {
                 "schema": {

@@ -159,9 +159,14 @@ for a project that was never created returns `404`.
 **Attachments**: `POST …/attachments` with `{ filename, contentBase64 }` stores
 the file at `attachments/<id>/<filename>` inside the project workspace and
 returns `{ id, filename, path, size, createdAt }`. The client never interprets
-the bytes. Passing the returned ids in a prompt's `attachments` array makes the
-server append their workspace paths to the prompt, so the agent can read the
-files with its own tools if the task needs their contents.
+the bytes. Passing the returned ids in a prompt's `attachments` array (max 20)
+makes the server append their workspace paths to the prompt, so the agent can
+read the files with its own tools if the task needs their contents. Limits: one
+upload is capped at ~25 MB (enforced as an HTTP body limit, so an oversized
+request is refused without being buffered) and a project's attachments at 200 MB
+in total; both over-limit cases return `413`. Because the project directory is
+also the app's container build context, app `.dockerignore`s must exclude
+`attachments` (the bundled templates do).
 
 Plus `GET /openapi.json` (OpenAPI 3.1) and `GET /docs` (Swagger UI).
 

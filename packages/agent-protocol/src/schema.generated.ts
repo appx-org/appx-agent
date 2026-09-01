@@ -647,7 +647,7 @@ export interface components {
         UploadAttachmentRequest: {
             /** @example report.pdf */
             filename: string;
-            /** @description File content, standard base64 (max ~25 MB decoded). */
+            /** @description File content, standard base64 (max ~25 MB decoded). Empty for a zero-byte file. */
             contentBase64: string;
         };
         /** @description Every JSON event agent-server forwards on `GET …/sessions/{id}/events`. */
@@ -2082,6 +2082,15 @@ export interface operations {
             };
             /** @description Invalid base64 content. */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Body too large, or the project's attachment quota is exhausted. */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

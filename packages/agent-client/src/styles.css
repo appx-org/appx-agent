@@ -535,6 +535,13 @@
   border-top: none;
 }
 
+/* Same chips, but inside a sent message: no surface of their own, no divider. */
+.agent-chat-attachments-sent {
+  padding: 6px 0 0;
+  background: none;
+  border-top: none;
+}
+
 .agent-chat-attachment-chip {
   display: inline-flex;
   align-items: center;
