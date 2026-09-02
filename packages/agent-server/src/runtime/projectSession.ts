@@ -71,6 +71,8 @@ export type ProjectSessionDeps = {
 	credentials: AgentCredentialsService;
 	modelRegistry: Pick<ModelRegistry, "find">;
 	logger: Pick<Console, "log" | "error">;
+	withActorReceipt?: <T>(receipt: string | undefined, callback: () => T | Promise<T>) => Promise<T>;
+	clearActorReceipt?: () => void;
 };
 
 export class ProjectSession {
@@ -194,18 +196,25 @@ export class ProjectSession {
 	 * Send a user prompt. Events flow over SSE to subscribers. Returns once
 	 * the prompt has been queued; the agent runs asynchronously.
 	 */
-	async sendPrompt(text: string): Promise<void> {
-		await this.extensionsReady;
-		if (this.session.isStreaming) {
-			// While the agent is streaming, prompt() requires a streamingBehavior.
-			// "steer" queues the message for delivery as soon as the current
-			// assistant turn's tool calls finish — i.e. it actually interrupts
-			// the agent's plan rather than waiting for it to fully stop
-			// ("followUp"). Equivalent to session.steer(text).
-			await this.session.prompt(text, { streamingBehavior: "steer" });
+	async sendPrompt(text: string, actorReceipt?: string): Promise<void> {
+		const send = async () => {
+			await this.extensionsReady;
+			if (this.session.isStreaming) {
+				// While the agent is streaming, prompt() requires a streamingBehavior.
+				// "steer" queues the message for delivery as soon as the current
+				// assistant turn's tool calls finish — i.e. it actually interrupts
+				// the agent's plan rather than waiting for it to fully stop
+				// ("followUp"). Equivalent to session.steer(text).
+				await this.session.prompt(text, { streamingBehavior: "steer" });
+				return;
+			}
+			await this.session.prompt(text);
+		};
+		if (this.deps.withActorReceipt) {
+			await this.deps.withActorReceipt(actorReceipt, send);
 			return;
 		}
-		await this.session.prompt(text);
+		await send();
 	}
 
 	/**
@@ -243,6 +252,7 @@ export class ProjectSession {
 	async dispose(): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.deps.clearActorReceipt?.();
 		this.unsubscribeEvents();
 		for (const pending of this.pendingExtensionUi.values()) {
 			if (pending.timer) clearTimeout(pending.timer);
