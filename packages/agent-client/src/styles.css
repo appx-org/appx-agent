@@ -493,6 +493,24 @@
   background: var(--ac-surface);
 }
 
+/*
+ * The file input behind the paperclip. Clipped rather than `display: none`,
+ * because WebKit will not open the file chooser for a programmatic `.click()`
+ * on an input that has no rendered box — it silently does nothing.
+ */
+.agent-chat-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .agent-chat-composer {
   --ac-control-h: 28px;
   flex: 1;

@@ -48,6 +48,20 @@ function composer() {
 }
 
 describe("ChatPanel attachments", () => {
+	it("keeps the file input rendered and out of the tab order", async () => {
+		renderPanel(stubbedClient());
+		const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+		// WebKit silently refuses to open a file chooser for a programmatic
+		// .click() on an input with no rendered box, so this must never go back to
+		// `display: none` — it is clipped via .agent-chat-file-input instead.
+		expect(input.style.display).not.toBe("none");
+		expect(input.className).toContain("agent-chat-file-input");
+		// The paperclip button is the accessible control; the input is a duplicate.
+		expect(input.tabIndex).toBe(-1);
+		expect(input.getAttribute("aria-hidden")).toBe("true");
+	});
+
 	it("restores the prompt and its attachments when the send fails", async () => {
 		const client = stubbedClient();
 		vi.spyOn(client, "uploadAttachment").mockImplementation(async (_p, filename) => ({

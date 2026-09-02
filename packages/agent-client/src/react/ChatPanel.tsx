@@ -390,7 +390,13 @@ export function ChatPanel({
 					ref={fileInputRef}
 					type="file"
 					multiple
-					style={{ display: "none" }}
+					// Hidden by clipping, NOT `display: none`: WebKit refuses to open the
+					// file chooser for a programmatic .click() on an input with no
+					// rendered box. The paperclip button is the accessible control, so
+					// this one stays out of the tab order.
+					className="agent-chat-file-input"
+					tabIndex={-1}
+					aria-hidden="true"
 					onChange={(e) => {
 						void handleFilesSelected(e.target.files);
 						e.target.value = "";
