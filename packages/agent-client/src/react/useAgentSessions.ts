@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { stripAttachmentNote } from "../core/attachments.js";
 import type { AgentSessionInfo } from "../core/types.js";
 import { useAgentChatContext } from "./context.js";
 
@@ -14,7 +15,9 @@ export interface AgentSessionsController {
 }
 
 export function sessionLabel(session: AgentSessionInfo): string {
-	return session.firstMessage?.trim() || "Untitled";
+	// `firstMessage` is the *stored* prompt, so it carries the attachment note the
+	// server appended. Strip it, same as the transcript does.
+	return stripAttachmentNote(session.firstMessage ?? "").text.trim() || "Untitled";
 }
 
 export interface UseAgentSessionsOptions {
