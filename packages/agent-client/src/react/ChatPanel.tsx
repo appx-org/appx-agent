@@ -28,6 +28,34 @@ function modelLabel(model: AgentModel): string {
 		: `${model.provider}/${model.id}`;
 }
 
+/** Lucide `paperclip` icon (https://lucide.dev, ISC license), inlined to avoid an icon-library dependency. */
+function PaperclipIcon() {
+	return (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			width="1em"
+			height="1em"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+			aria-hidden="true"
+			focusable="false"
+		>
+			<path d="m16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551" />
+		</svg>
+	);
+}
+
+/**
+ * Mirrors `MAX_PROMPT_ATTACHMENTS` in agent-server's contract schemas: the
+ * prompt endpoint rejects more than this many ids, so cap the selection here
+ * rather than letting the user upload files the send will then bounce.
+ */
+const MAX_ATTACHMENTS_PER_PROMPT = 20;
+
 const thinkingLabels: Record<ThinkingLevel, string> = {
 	off: "Off",
 	minimal: "Minimal",
@@ -77,12 +105,20 @@ export function ChatPanel({
 	headerStart,
 	className,
 }: ChatPanelProps) {
-	const { classNames, labels, costRates } = useAgentChatContext();
+	const { classNames, labels, costRates, client } = useAgentChatContext();
 	const { state, sendPrompt, abort, respondExtensionRequest, loadModelSettings, updateModelSettings } =
 		useAgentSession(projectId, sessionId);
 	const [input, setInput] = useState("");
 	const [sending, setSending] = useState(false);
+	// Attachments are opaque to the client: files are uploaded as raw bytes and
+	// only their ids ride along with the next prompt.
+	const [attachments, setAttachments] = useState<{ id: string; filename: string }[]>([]);
+	const [uploadCount, setUploadCount] = useState(0);
+	const [attachError, setAttachError] = useState<string | null>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
+	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const prevStatusRef = useRef(state.status);
+	const prevSessionIdRef = useRef(sessionId);
 
 	// Model/thinking settings are owned by the store (single source of truth),
 	// so the panel just reads the live slice instead of duplicating it locally.
@@ -117,6 +153,30 @@ export function ChatPanel({
 		if (showModelControls || showUsage) void loadModelSettings();
 	}, [showModelControls, showUsage, loadModelSettings]);
 
+	// The panel is not remounted when the active session changes, so pending
+	// attachments would otherwise follow the user into the next session and be
+	// silently sent with its first prompt. Reset during render (React's
+	// "adjusting state when a prop changes" pattern) so the chips never paint
+	// against the wrong session.
+	if (prevSessionIdRef.current !== sessionId) {
+		prevSessionIdRef.current = sessionId;
+		setAttachments([]);
+		setAttachError(null);
+	}
+
+	// Grow the textarea with its content instead of scrolling a one-line window.
+	// The CSS caps it (`max-height`), after which it scrolls. Keyed on `input`
+	// rather than done in onChange so programmatic clears (send, session switch)
+	// shrink it too.
+	useEffect(() => {
+		const el = textareaRef.current;
+		if (!el) return;
+		// Reset first so the box shrinks as well as grows; with no text, drop the
+		// inline height entirely and let `min-height` hold it level with the buttons.
+		el.style.height = "auto";
+		if (input) el.style.height = `${el.scrollHeight}px`;
+	}, [input]);
+
 	useEffect(() => {
 		if (prevStatusRef.current !== "idle" && state.status === "idle") {
 			onTurnComplete?.();
@@ -130,16 +190,50 @@ export function ChatPanel({
 
 	const handleSend = async () => {
 		const text = input.trim();
-		if (!text || sending) return;
+		if (!text || sending || uploadCount > 0) return;
+		const pending = attachments;
+		const attachmentIds = pending.map((a) => a.id);
+		// Clear optimistically (the textarea is disabled while sending, so nothing
+		// can be typed over) and restore on failure — otherwise a rejected prompt
+		// silently discards both the text and the ids of the uploaded files.
 		setInput("");
+		setAttachments([]);
 		setSending(true);
 		try {
-			await sendPrompt(text);
+			await sendPrompt(text, attachmentIds.length > 0 ? attachmentIds : undefined);
 		} catch (err) {
+			// The store already surfaces the failure in `state.error`, so only the
+			// composer needs restoring here.
 			console.error("[agent-client] failed to send prompt:", err);
+			setInput((current) => current || text);
+			setAttachments((current) => (current.length > 0 ? current : pending));
 		} finally {
 			setSending(false);
 		}
+	};
+
+	const handleFilesSelected = async (files: FileList | null) => {
+		if (!files || files.length === 0) return;
+		setAttachError(null);
+		const room = MAX_ATTACHMENTS_PER_PROMPT - attachments.length - uploadCount;
+		const selected = Array.from(files).slice(0, Math.max(room, 0));
+		if (selected.length < files.length) {
+			setAttachError(`At most ${MAX_ATTACHMENTS_PER_PROMPT} attachments per message.`);
+		}
+		if (selected.length === 0) return;
+		setUploadCount((n) => n + selected.length);
+		await Promise.all(
+			selected.map(async (file) => {
+				try {
+					const info = await client.uploadAttachment(projectId, file.name, file);
+					setAttachments((prev) => [...prev, { id: info.id, filename: info.filename }]);
+				} catch (err) {
+					setAttachError(err instanceof Error ? err.message : String(err));
+				} finally {
+					setUploadCount((n) => n - 1);
+				}
+			}),
+		);
 	};
 
 	const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -271,31 +365,82 @@ export function ChatPanel({
 				<ExtensionRequestPanel request={activeExtensionRequest} onRespond={respondExtensionRequest} />
 			)}
 
+			{attachError && <div className="agent-chat-error-banner">{attachError}</div>}
+			{(attachments.length > 0 || uploadCount > 0) && (
+				<div className="agent-chat-attachments">
+					{attachments.map((a) => (
+						<span key={a.id} className="agent-chat-attachment-chip">
+							{a.filename}
+							<button
+								type="button"
+								className="agent-chat-attachment-remove"
+								aria-label={`Remove attachment ${a.filename}`}
+								onClick={() => setAttachments((prev) => prev.filter((p) => p.id !== a.id))}
+							>
+								×
+							</button>
+						</span>
+					))}
+					{uploadCount > 0 && <span className="agent-chat-attachment-chip">uploading…</span>}
+				</div>
+			)}
+
 			<div className={["agent-chat-input-bar", classNames.inputBar].filter(Boolean).join(" ")}>
-				<textarea
-					className="agent-chat-input"
-					value={input}
-					onChange={(e) => setInput(e.target.value)}
-					onKeyDown={handleKeyDown}
-					placeholder={isRunning ? labels.workingPlaceholder : labels.inputPlaceholder}
-					rows={1}
-					disabled={sending}
+				<input
+					ref={fileInputRef}
+					type="file"
+					multiple
+					// Hidden by clipping, NOT `display: none`: WebKit refuses to open the
+					// file chooser for a programmatic .click() on an input with no
+					// rendered box. The paperclip button is the accessible control, so
+					// this one stays out of the tab order.
+					className="agent-chat-file-input"
+					tabIndex={-1}
+					aria-hidden="true"
+					onChange={(e) => {
+						void handleFilesSelected(e.target.files);
+						e.target.value = "";
+					}}
 				/>
-				{renderComposerActions?.()}
-				{isRunning ? (
-					<button type="button" className="agent-chat-btn-stop" onClick={() => void abort()}>
-						{labels.stopButton}
-					</button>
-				) : (
+				{/* One bordered shell around the whole composer: the textarea and the
+				    buttons are controls *inside* the field, not boxes beside it. */}
+				<div className="agent-chat-composer">
 					<button
 						type="button"
-						className="agent-chat-btn-send"
-						onClick={() => void handleSend()}
-						disabled={sending || !input.trim()}
+						className="agent-chat-btn-attach"
+						aria-label="Attach files"
+						title="Attach files"
+						onClick={() => fileInputRef.current?.click()}
+						disabled={sending}
 					>
-						{sending ? "..." : labels.sendButton}
+						<PaperclipIcon />
 					</button>
-				)}
+					<textarea
+						ref={textareaRef}
+						className="agent-chat-input"
+						value={input}
+						onChange={(e) => setInput(e.target.value)}
+						onKeyDown={handleKeyDown}
+						placeholder={isRunning ? labels.workingPlaceholder : labels.inputPlaceholder}
+						rows={1}
+						disabled={sending}
+					/>
+					{renderComposerActions?.()}
+					{isRunning ? (
+						<button type="button" className="agent-chat-btn-stop" onClick={() => void abort()}>
+							{labels.stopButton}
+						</button>
+					) : (
+						<button
+							type="button"
+							className="agent-chat-btn-send"
+							onClick={() => void handleSend()}
+							disabled={sending || uploadCount > 0 || !input.trim()}
+						>
+							{sending ? "..." : labels.sendButton}
+						</button>
+					)}
+				</div>
 			</div>
 
 			{showUsageBar && (

@@ -1,3 +1,8 @@
 node_modules
 dist
 .git
+# Workspace metadata, not app source: the build context is the project root, so
+# without these the agent's own files (and every uploaded chat attachment) would
+# be copied into the app image on each rebuild.
+.pi
+attachments

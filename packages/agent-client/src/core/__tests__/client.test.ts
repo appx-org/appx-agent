@@ -46,6 +46,33 @@ describe("AgentClient — REST requests", () => {
 		expect((post.body as { text?: string }).text).toBe("hallo");
 	});
 
+	it("sends attachment ids with the prompt when provided", async () => {
+		const { instance, requests } = client({
+			"POST /v1/projects/p1/sessions/s1/prompt": () => ({ body: { ok: true } }),
+		});
+
+		await instance.sendPrompt("p1", "s1", "read it", ["att-1", "att-2"]);
+
+		const body = requests[0]!.body as { text?: string; attachments?: string[] };
+		expect(body.text).toBe("read it");
+		expect(body.attachments).toEqual(["att-1", "att-2"]);
+	});
+
+	it("uploads an attachment as base64 JSON", async () => {
+		const { instance, requests } = client({
+			"POST /v1/projects/p1/attachments": () => ({
+				body: { id: "a1", filename: "notes.txt", path: "attachments/a1/notes.txt", size: 5, createdAt: "now" },
+			}),
+		});
+
+		const result = await instance.uploadAttachment("p1", "notes.txt", new TextEncoder().encode("hello"));
+
+		expect(result.id).toBe("a1");
+		const body = requests[0]!.body as { filename?: string; contentBase64?: string };
+		expect(body.filename).toBe("notes.txt");
+		expect(body.contentBase64).toBe(Buffer.from("hello").toString("base64"));
+	});
+
 	it("sends a DELETE for deleteSession", async () => {
 		const { instance, requests } = client({
 			"DELETE /v1/projects/p1/sessions/s1": () => ({ body: { ok: true } }),

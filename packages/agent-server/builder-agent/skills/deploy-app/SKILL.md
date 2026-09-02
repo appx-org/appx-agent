@@ -35,6 +35,10 @@ never hardcode `podman` or `docker`.
   `OPENAI_API_KEY`, or any `*_API_KEY` into `run` with `-e`. The app does not
   need LLM credentials.
 - **Use fully-qualified image refs** in Dockerfiles (`docker.io/library/...`).
+- **Keep workspace metadata out of the image.** The build context is the project
+  root, so a `.dockerignore` must exclude `.pi` and `attachments` (files the user
+  uploaded to the chat) alongside `node_modules`, `dist`, and `.git`. Without it
+  every rebuild copies them into the image.
 
 ## 1. Read the deployment metadata
 

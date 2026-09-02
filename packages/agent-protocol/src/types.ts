@@ -33,6 +33,8 @@ export type AgentModel = Schemas["AgentModelRow"];
 export type AgentSessionModelSettings = Schemas["SessionModelSettingsResponse"];
 /** Body accepted by the extension-ui response endpoint. */
 export type ExtensionUiResponse = Schemas["ExtensionUiResponseRequest"];
+/** Stored attachment metadata from `POST /v1/projects/{id}/attachments`. */
+export type AgentAttachment = Schemas["AttachmentInfo"];
 
 // ---------------------------------------------------------------------------
 // Credential / provider-auth DTOs (generated from the /v1/auth + /v1/custom contract)
