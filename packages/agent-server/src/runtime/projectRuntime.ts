@@ -54,6 +54,7 @@ import type { AgentCredentialsService } from "../credentials/credentialsService.
 import type { ThinkingLevel } from "../shared/thinking.js";
 import { buildDeploymentPromptSection, type Deployment } from "./deployment.js";
 import { ProjectSession } from "./projectSession.js";
+import { ActorReceiptContext } from "./requestAttribution.js";
 
 type SessionModel = NonNullable<CreateAgentSessionOptions["model"]>;
 
@@ -261,6 +262,11 @@ export class ProjectRuntime {
 			);
 		}
 
+		// Receipt state is private to the host. Its extension is appended after
+		// caller extensions so request-controlled project code cannot replace the
+		// value forwarded by the authenticated HTTP boundary.
+		const actorReceipts = new ActorReceiptContext();
+
 		// Build the services bundle. Pi creates ResourceLoader +
 		// SettingsManager here, runs reload() exactly once, and registers
 		// extension-provided custom providers into the (shared)
@@ -275,7 +281,7 @@ export class ProjectRuntime {
 				additionalSkillPaths: config.skillPaths,
 				additionalPromptTemplatePaths: config.promptTemplatePaths,
 				additionalThemePaths: config.themePaths,
-				extensionFactories: config.extensionFactories,
+				extensionFactories: [...(config.extensionFactories ?? []), actorReceipts.extensionFactory],
 				noExtensions: config.noExtensions,
 				noSkills: config.noSkills,
 				noPromptTemplates: config.noPromptTemplates,
@@ -330,10 +336,15 @@ export class ProjectRuntime {
 				logger,
 			},
 			services,
+			actorReceipts,
 		);
 	}
 
-	private constructor(fields: ProjectRuntimeFields, services: AgentSessionServices) {
+	private constructor(
+		fields: ProjectRuntimeFields,
+		services: AgentSessionServices,
+		private readonly actorReceipts: ActorReceiptContext,
+	) {
 		this.projectDir = fields.projectDir;
 		this.sessionsDir = fields.sessionsDir;
 		this.credentials = fields.credentials;
@@ -368,6 +379,8 @@ export class ProjectRuntime {
 			credentials: this.credentials,
 			modelRegistry: this.services.modelRegistry,
 			logger: this.logger,
+			withActorReceipt: (receipt, callback) => this.actorReceipts.run(receipt, callback),
+			clearActorReceipt: () => this.actorReceipts.clear(session.sessionId),
 		});
 		this.sessions.set(ps.sessionId, ps);
 		return ps;

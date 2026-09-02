@@ -44,6 +44,7 @@ import {
 	SessionModelSettingsResponseSchema,
 } from "../contract/schemas.js";
 import type { ProjectRuntime } from "../runtime/projectRuntime.js";
+import { APPX_ACTOR_RECEIPT_HEADER } from "../runtime/requestAttribution.js";
 import { subscribe } from "./sseBroker.js";
 
 /** Heartbeat cadence for SSE keepalive. Keeps proxies / LBs from closing idle streams. */
@@ -383,8 +384,9 @@ export function createSessionsApp(runtime: ProjectRuntime | ProjectRuntimeResolv
 			const { text } = c.req.valid("json");
 			const session = await runtime.getSession(id);
 			if (!session) return c.json({ error: "session not found" }, 404);
+			const actorReceipt = normalizeActorReceipt(c.req.header(APPX_ACTOR_RECEIPT_HEADER));
 			// Fire-and-forget: events flow over SSE, errors surface there too.
-			session.sendPrompt(text).catch((err) => {
+			session.sendPrompt(text, actorReceipt).catch((err) => {
 				console.error("[agent-server] prompt failed:", err);
 			});
 			return c.json({ ok: true } as const, 200);
@@ -526,4 +528,10 @@ export function createSessionsApp(runtime: ProjectRuntime | ProjectRuntimeResolv
 	});
 
 	return app;
+}
+
+function normalizeActorReceipt(value: string | undefined): string | undefined {
+	const receipt = value?.trim();
+	if (!receipt || receipt.length > 4096) return undefined;
+	return receipt;
 }
