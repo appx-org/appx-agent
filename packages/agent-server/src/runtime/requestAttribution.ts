@@ -40,9 +40,11 @@ export class ActorReceiptContext {
 			else this.active.delete(sessionId);
 		});
 
-		pi.on("before_provider_request", (event, context) =>
-			applyActorReceipt(event.payload, this.active.get(context.sessionManager.getSessionId())),
-		);
+		pi.on("before_provider_request", (event, context) => {
+			const incoming = this.incoming.getStore();
+			const receipt = incoming ? incoming.receipt : this.active.get(context.sessionManager.getSessionId());
+			return applyActorReceipt(event.payload, receipt);
+		});
 
 		pi.on("session_shutdown", (_event, context) => {
 			this.clear(context.sessionManager.getSessionId());

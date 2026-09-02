@@ -46,6 +46,13 @@ function bindReceiptContext(context: ActorReceiptContext) {
 				},
 				extensionContext(sessionId),
 			),
+		providerDuringPrompt: (sessionId: string, receipt: string | undefined) =>
+			context.run(receipt, () =>
+				handlers.get("before_provider_request")!(
+					{ type: "before_provider_request", payload: { metadata: { keep: "yes" } } },
+					extensionContext(sessionId),
+				),
+			),
 	};
 }
 
@@ -107,6 +114,23 @@ describe("AppX actor receipt forwarding", () => {
 		assert.equal(
 			((await state.providerPayload("session-1")) as any).metadata[APPX_ACTOR_RECEIPT_METADATA_KEY],
 			"v1.second.signature",
+		);
+	});
+
+	test("uses the current prompt receipt for extension-command provider calls", async () => {
+		const state = bindReceiptContext(new ActorReceiptContext());
+		await state.input("session-1", "v1.active.signature");
+		await state.deliverUserMessage("session-1");
+
+		assert.equal(
+			((await state.providerDuringPrompt("session-1", "v1.command.signature")) as any).metadata[
+				APPX_ACTOR_RECEIPT_METADATA_KEY
+			],
+			"v1.command.signature",
+		);
+		assert.equal(
+			((await state.providerPayload("session-1")) as any).metadata[APPX_ACTOR_RECEIPT_METADATA_KEY],
+			"v1.active.signature",
 		);
 	});
 
