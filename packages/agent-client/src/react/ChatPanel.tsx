@@ -116,6 +116,7 @@ export function ChatPanel({
 	const [uploadCount, setUploadCount] = useState(0);
 	const [attachError, setAttachError] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const prevStatusRef = useRef(state.status);
 	const prevSessionIdRef = useRef(sessionId);
 
@@ -162,6 +163,19 @@ export function ChatPanel({
 		setAttachments([]);
 		setAttachError(null);
 	}
+
+	// Grow the textarea with its content instead of scrolling a one-line window.
+	// The CSS caps it (`max-height`), after which it scrolls. Keyed on `input`
+	// rather than done in onChange so programmatic clears (send, session switch)
+	// shrink it too.
+	useEffect(() => {
+		const el = textareaRef.current;
+		if (!el) return;
+		// Reset first so the box shrinks as well as grows; with no text, drop the
+		// inline height entirely and let `min-height` hold it level with the buttons.
+		el.style.height = "auto";
+		if (input) el.style.height = `${el.scrollHeight}px`;
+	}, [input]);
 
 	useEffect(() => {
 		if (prevStatusRef.current !== "idle" && state.status === "idle") {
@@ -382,40 +396,45 @@ export function ChatPanel({
 						e.target.value = "";
 					}}
 				/>
-				<button
-					type="button"
-					className="agent-chat-btn-attach"
-					aria-label="Attach files"
-					title="Attach files"
-					onClick={() => fileInputRef.current?.click()}
-					disabled={sending}
-				>
-					<PaperclipIcon />
-				</button>
-				<textarea
-					className="agent-chat-input"
-					value={input}
-					onChange={(e) => setInput(e.target.value)}
-					onKeyDown={handleKeyDown}
-					placeholder={isRunning ? labels.workingPlaceholder : labels.inputPlaceholder}
-					rows={1}
-					disabled={sending}
-				/>
-				{renderComposerActions?.()}
-				{isRunning ? (
-					<button type="button" className="agent-chat-btn-stop" onClick={() => void abort()}>
-						{labels.stopButton}
-					</button>
-				) : (
+				{/* One bordered shell around the whole composer: the textarea and the
+				    buttons are controls *inside* the field, not boxes beside it. */}
+				<div className="agent-chat-composer">
 					<button
 						type="button"
-						className="agent-chat-btn-send"
-						onClick={() => void handleSend()}
-						disabled={sending || uploadCount > 0 || !input.trim()}
+						className="agent-chat-btn-attach"
+						aria-label="Attach files"
+						title="Attach files"
+						onClick={() => fileInputRef.current?.click()}
+						disabled={sending}
 					>
-						{sending ? "..." : labels.sendButton}
+						<PaperclipIcon />
 					</button>
-				)}
+					<textarea
+						ref={textareaRef}
+						className="agent-chat-input"
+						value={input}
+						onChange={(e) => setInput(e.target.value)}
+						onKeyDown={handleKeyDown}
+						placeholder={isRunning ? labels.workingPlaceholder : labels.inputPlaceholder}
+						rows={1}
+						disabled={sending}
+					/>
+					{renderComposerActions?.()}
+					{isRunning ? (
+						<button type="button" className="agent-chat-btn-stop" onClick={() => void abort()}>
+							{labels.stopButton}
+						</button>
+					) : (
+						<button
+							type="button"
+							className="agent-chat-btn-send"
+							onClick={() => void handleSend()}
+							disabled={sending || uploadCount > 0 || !input.trim()}
+						>
+							{sending ? "..." : labels.sendButton}
+						</button>
+					)}
+				</div>
 			</div>
 
 			{showUsageBar && (
