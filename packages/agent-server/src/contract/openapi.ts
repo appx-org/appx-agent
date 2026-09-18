@@ -14,6 +14,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { createAttachmentsApp } from "../http/attachmentsRoutes.js";
 import { createCredentialsApp } from "../http/credentialsRoutes.js";
 import { createProjectsApp } from "../http/projectsRoutes.js";
 import { createSessionsApp } from "../http/sessionsRoutes.js";
@@ -38,6 +39,7 @@ const root = new OpenAPIHono();
 root.route("/v1", createCredentialsApp(registry.credentials));
 root.route("/v1", createProjectsApp(registry));
 root.route("/v1/projects/:projectId", createSessionsApp(stubResolver));
+root.route("/v1/projects/:projectId", createAttachmentsApp(stubResolver));
 
 const doc = buildOpenApiDocument(root);
 

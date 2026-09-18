@@ -3,6 +3,7 @@
  * renderable `UiMessage[]`
  * keep it framework-agnostic so it can be unit-tested in isolation.
  */
+import { stripAttachmentNote } from "./attachments.js";
 import type {
 	AgentEvent,
 	AgentMessage,
@@ -78,6 +79,25 @@ function partsFromContent(content: unknown): UiMessagePart[] {
 				status: "pending",
 			});
 		}
+	}
+	return parts;
+}
+
+/**
+ * Build UI parts for a **user** message: same as `partsFromContent`, but with
+ * agent-server's trailing attachment note lifted out of the text into an
+ * `attachments` part so the note is never rendered as words the user typed.
+ */
+function userPartsFromContent(content: unknown): UiMessagePart[] {
+	const parts: UiMessagePart[] = [];
+	for (const part of partsFromContent(content)) {
+		if (part.type !== "text") {
+			parts.push(part);
+			continue;
+		}
+		const { text, files } = stripAttachmentNote(part.text);
+		if (text) parts.push({ ...part, text });
+		if (files.length > 0) parts.push({ type: "attachments", files, contentIndex: part.contentIndex });
 	}
 	return parts;
 }
@@ -409,7 +429,7 @@ function loadHistory(state: SessionState, history: AgentMessage[]): SessionState
 	for (const m of history) {
 		if (isToolResultMessage(m)) continue;
 		if (m.role !== "user" && m.role !== "assistant") continue;
-		const parts = partsFromContent(m.content);
+		const parts = m.role === "user" ? userPartsFromContent(m.content) : partsFromContent(m.content);
 		if (parts.length === 0) continue;
 		messages.push({
 			// History is rebuilt deterministically from the server transcript, so a
@@ -466,7 +486,7 @@ function reduceEvent(state: SessionState, event: AgentEvent): SessionState {
 			// through and is appended as a new message.
 			if (event.message.role === "user" && state.pendingPromptIds.length > 0) {
 				const [promptId, ...restPending] = state.pendingPromptIds;
-				const serverParts = partsFromContent(event.message.content);
+				const serverParts = userPartsFromContent(event.message.content);
 				const messages = state.messages.map((message) =>
 					message.promptId === promptId
 						? {
@@ -482,7 +502,10 @@ function reduceEvent(state: SessionState, event: AgentEvent): SessionState {
 				return { ...state, pendingPromptIds: restPending, messages };
 			}
 
-			const initialParts = partsFromContent(event.message.content);
+			const initialParts =
+				event.message.role === "user"
+					? userPartsFromContent(event.message.content)
+					: partsFromContent(event.message.content);
 			const newMsg: UiMessage = {
 				id: `m${state.messageSeq}`,
 				role: event.message.role,
@@ -535,7 +558,10 @@ function reduceEvent(state: SessionState, event: AgentEvent): SessionState {
 				};
 			}
 			if (event.message.role !== "user" && event.message.role !== "assistant") return { ...state, rawMessages };
-			const finalisedParts = partsFromContent(event.message.content);
+			const finalisedParts =
+				event.message.role === "user"
+					? userPartsFromContent(event.message.content)
+					: partsFromContent(event.message.content);
 			let replaced = false;
 			const messages = state.messages.map((m) => {
 				if (replaced) return m;

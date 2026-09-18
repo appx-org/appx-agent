@@ -52,6 +52,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentCredentialsService } from "../credentials/credentialsService.js";
 import type { ThinkingLevel } from "../shared/thinking.js";
+import { type AttachmentInfo, resolveAttachmentPath, saveAttachment } from "./attachments.js";
 import { buildDeploymentPromptSection, type Deployment } from "./deployment.js";
 import { ProjectSession } from "./projectSession.js";
 
@@ -481,6 +482,26 @@ export class ProjectRuntime {
 
 		// No file on disk — it existed only if we had it live in memory.
 		return inMemory !== undefined;
+	}
+
+	// ── Attachments ──────────────────────────────────────────────────
+
+	/**
+	 * Persist an uploaded attachment inside this project's workspace
+	 * (`attachments/<id>/<filename>`) so the agent can read it with its file
+	 * tools. Returns the stored metadata including the workspace-relative path.
+	 */
+	saveAttachment(filename: string, data: Buffer): AttachmentInfo {
+		return saveAttachment(this.projectDir, filename, data);
+	}
+
+	/**
+	 * Resolve attachment ids to workspace-relative paths. Throws
+	 * `UnknownAttachmentError` (see ./attachments.ts) on any id that was never
+	 * uploaded to this project.
+	 */
+	resolveAttachments(ids: string[]): string[] {
+		return ids.map((id) => resolveAttachmentPath(this.projectDir, id));
 	}
 
 	// ── Resource refresh + diagnostics ───────────────────────────────

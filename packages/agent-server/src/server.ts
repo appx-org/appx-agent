@@ -20,6 +20,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { ConfigError, loadConfig, type ServerConfig } from "./config.js";
 import { buildOpenApiDocument } from "./contract/openapiEventSchema.js";
+import { createAttachmentsApp } from "./http/attachmentsRoutes.js";
 import { createCredentialsApp } from "./http/credentialsRoutes.js";
 import { createProjectsApp } from "./http/projectsRoutes.js";
 import { createSessionsApp } from "./http/sessionsRoutes.js";
@@ -119,6 +120,7 @@ root.onError((err, c) => {
 root.route("/v1", createCredentialsApp(projectRegistry.credentials));
 root.route("/v1", createProjectsApp(projectRegistry));
 root.route("/v1/projects/:projectId", createSessionsApp(projectRuntimeFromRequest));
+root.route("/v1/projects/:projectId", createAttachmentsApp(projectRuntimeFromRequest));
 
 // OpenAPI document + Swagger UI. Doc lives at /openapi.json so consumers
 // (eventx-backend) can fetch it for codegen at build time. Built via the shared

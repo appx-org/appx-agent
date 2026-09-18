@@ -43,6 +43,7 @@ import {
 	SessionMessagesResponseSchema,
 	SessionModelSettingsResponseSchema,
 } from "../contract/schemas.js";
+import { composePromptWithAttachments, UnknownAttachmentError } from "../runtime/attachments.js";
 import type { ProjectRuntime } from "../runtime/projectRuntime.js";
 import { subscribe } from "./sseBroker.js";
 
@@ -371,6 +372,10 @@ export function createSessionsApp(runtime: ProjectRuntime | ProjectRuntimeResolv
 					description: "Prompt accepted and queued.",
 					content: { "application/json": { schema: OkResponseSchema } },
 				},
+				400: {
+					description: "A referenced attachment id was never uploaded to this project.",
+					content: { "application/json": { schema: ErrorResponseSchema } },
+				},
 				404: {
 					description: "Unknown session id.",
 					content: { "application/json": { schema: ErrorResponseSchema } },
@@ -380,11 +385,22 @@ export function createSessionsApp(runtime: ProjectRuntime | ProjectRuntimeResolv
 		async (c) => {
 			const runtime = await getRuntime(c);
 			const { id } = c.req.valid("param");
-			const { text } = c.req.valid("json");
+			const { text, attachments } = c.req.valid("json");
 			const session = await runtime.getSession(id);
 			if (!session) return c.json({ error: "session not found" }, 404);
+			// Resolve attachment ids to workspace-relative paths and append them to
+			// the prompt so the agent can read the files with its own tools.
+			let promptText = text;
+			if (attachments && attachments.length > 0) {
+				try {
+					promptText = composePromptWithAttachments(text, runtime.resolveAttachments(attachments));
+				} catch (err) {
+					if (err instanceof UnknownAttachmentError) return c.json({ error: err.message }, 400);
+					throw err;
+				}
+			}
 			// Fire-and-forget: events flow over SSE, errors surface there too.
-			session.sendPrompt(text).catch((err) => {
+			session.sendPrompt(promptText).catch((err) => {
 				console.error("[agent-server] prompt failed:", err);
 			});
 			return c.json({ ok: true } as const, 200);

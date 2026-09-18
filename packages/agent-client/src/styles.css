@@ -475,20 +475,76 @@
 
 /* ---- Input bar ----------------------------------------------------------- */
 
+/*
+ * The composer is *one* control. The bar owns the divider and the page gutter;
+ * the shell inside it owns the border, background, and radius; the textarea and
+ * the buttons sit inside that shell with no chrome of their own.
+ *
+ * Previously the textarea, the attach button, and Send were three siblings each
+ * carrying their own border — same treatment, three different heights — so the
+ * attach button read as a second, shorter input field next to the real one.
+ * Sizing every control off one `--ac-control-h` is what keeps the row honest.
+ */
+
 .agent-chat-input-bar {
   display: flex;
-  gap: 8px;
   padding: 12px 20px;
   border-top: 1px solid var(--ac-border);
   background: var(--ac-surface);
 }
 
-.agent-chat-input {
+/*
+ * The file input behind the paperclip. Clipped rather than `display: none`,
+ * because WebKit will not open the file chooser for a programmatic `.click()`
+ * on an input that has no rendered box — it silently does nothing.
+ */
+.agent-chat-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.agent-chat-composer {
+  --ac-control-h: 28px;
   flex: 1;
+  min-width: 0;
+  display: flex;
+  /* Bottom, not centre: when the textarea grows the buttons stay beside the
+     last line the user typed instead of drifting to the middle of the box. */
+  align-items: flex-end;
+  gap: 4px;
+  padding: 5px;
   background: var(--ac-bg);
   border: 1px solid var(--ac-border);
   border-radius: var(--ac-radius);
-  padding: 10px 12px;
+}
+
+/* The whole field lights up, since the textarea itself has no visible border. */
+.agent-chat-composer:focus-within {
+  border-color: var(--ac-accent);
+}
+
+/*
+ * Height is driven by content: ChatPanel syncs it to `scrollHeight` on every
+ * keystroke, so the field grows from one line up to `max-height` and only then
+ * scrolls. `min-height` keeps it level with the buttons when empty.
+ */
+.agent-chat-input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--ac-control-h);
+  max-height: 40vh;
+  overflow-y: auto;
+  background: none;
+  border: none;
+  padding: 5px 6px;
   font-size: 13px;
   color: var(--ac-text);
   outline: none;
@@ -497,16 +553,101 @@
   line-height: 1.4;
 }
 
+/* Icon button: ghost until hover, and a square the same height as Send. */
+.agent-chat-btn-attach {
+  flex: none;
+  width: var(--ac-control-h);
+  height: var(--ac-control-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: calc(var(--ac-radius) - 2px);
+  color: var(--ac-muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.agent-chat-btn-attach:hover:not(:disabled) {
+  background: var(--ac-surface-hover);
+  color: var(--ac-text);
+}
+
+.agent-chat-btn-attach:focus-visible {
+  outline: 1px solid var(--ac-accent);
+  outline-offset: 1px;
+}
+
+.agent-chat-btn-attach:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.agent-chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 20px 0;
+  background: var(--ac-surface);
+  border-top: 1px solid var(--ac-border);
+}
+
+/* The composer sits right below the chips; drop its own top border so the two read as one block. */
+.agent-chat-attachments + .agent-chat-input-bar {
+  border-top: none;
+}
+
+/* Same chips, but inside a sent message: no surface of their own, no divider. */
+.agent-chat-attachments-sent {
+  padding: 6px 0 0;
+  background: none;
+  border-top: none;
+}
+
+.agent-chat-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--ac-bg);
+  border: 1px solid var(--ac-border);
+  border-radius: var(--ac-radius);
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--ac-text);
+}
+
+.agent-chat-attachment-remove {
+  background: none;
+  border: none;
+  color: var(--ac-muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+}
+
+.agent-chat-attachment-remove:hover {
+  color: var(--ac-red);
+}
+
 .agent-chat-btn-send,
 .agent-chat-btn-stop {
+  flex: none;
+  height: var(--ac-control-h);
   border: none;
   color: var(--ac-accent-text);
-  border-radius: var(--ac-radius);
-  padding: 10px 18px;
+  border-radius: calc(var(--ac-radius) - 2px);
+  padding: 0 12px;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  align-self: flex-end;
+}
+
+.agent-chat-btn-send:focus-visible,
+.agent-chat-btn-stop:focus-visible {
+  outline: 1px solid var(--ac-text);
+  outline-offset: 1px;
 }
 
 .agent-chat-btn-send {

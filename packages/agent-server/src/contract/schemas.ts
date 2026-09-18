@@ -228,11 +228,62 @@ export const SessionMessagesResponseSchema = z
 	})
 	.openapi("SessionMessagesResponse");
 
+/** Cap on how many attachment ids one prompt may reference. */
+export const MAX_PROMPT_ATTACHMENTS = 20;
+
+/**
+ * Cap on the base64 body of a single upload (~34M chars ≈ 25 MB decoded).
+ * `attachmentsRoutes` also enforces it as an HTTP body limit so an oversized
+ * request is rejected while streaming instead of after being fully buffered.
+ */
+export const MAX_ATTACHMENT_BASE64_CHARS = 34_000_000;
+
 export const PromptRequestSchema = z
 	.object({
 		text: z.string().min(1).openapi({ example: "find me events this weekend" }),
+		attachments: z
+			.array(z.string().min(1))
+			.max(MAX_PROMPT_ATTACHMENTS)
+			.optional()
+			.openapi({
+				description:
+					"Attachment ids (from POST /projects/{projectId}/attachments) to reference in this prompt. " +
+					"The server appends their workspace paths to the prompt so the agent can read them if needed.",
+			}),
 	})
 	.openapi("PromptRequest");
+
+/**
+ * Attachment upload body. Content travels as base64 inside JSON rather than
+ * multipart so the whole contract pipeline (zod-openapi → openapi.json →
+ * generated types → openapi-fetch) stays uniformly typed. The base64 length
+ * cap bounds the decoded payload at roughly 25 MB.
+ *
+ * `contentBase64` has no minimum: base64 of an empty file is the empty string,
+ * and uploading a zero-byte file is legitimate.
+ */
+export const UploadAttachmentRequestSchema = z
+	.object({
+		filename: z.string().min(1).max(255).openapi({ example: "report.pdf" }),
+		contentBase64: z
+			.string()
+			.max(MAX_ATTACHMENT_BASE64_CHARS)
+			.openapi({ description: "File content, standard base64 (max ~25 MB decoded). Empty for a zero-byte file." }),
+	})
+	.openapi("UploadAttachmentRequest");
+
+export const AttachmentInfoSchema = z
+	.object({
+		id: z.string(),
+		filename: z.string().openapi({ description: "Sanitized filename the attachment was stored under." }),
+		path: z.string().openapi({
+			description: "Path relative to the project workspace root (what the agent sees).",
+			example: "attachments/6f1e.../report.pdf",
+		}),
+		size: z.number().int().nonnegative(),
+		createdAt: z.string(),
+	})
+	.openapi("AttachmentInfo");
 
 export const OkResponseSchema = z
 	.object({

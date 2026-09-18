@@ -21,6 +21,7 @@
 import type { paths } from "@appx-org/agent-protocol";
 import createClient, { type Client } from "openapi-fetch";
 import type {
+	AgentAttachment,
 	AgentAuthProvider,
 	AgentCustomProvider,
 	AgentMessage,
@@ -69,6 +70,28 @@ export interface AgentClientConfig {
 
 /** The shape every `openapi-fetch` operation resolves to. */
 type ApiResult<TData> = { data?: TData; error?: unknown; response: Response };
+
+/**
+ * Encode attachment bytes as standard base64 for the JSON upload body.
+ * Chunked `btoa` in the browser; `Buffer` where available (Node, tests).
+ */
+async function toBase64(data: Blob | ArrayBuffer | Uint8Array): Promise<string> {
+	const bytes =
+		data instanceof Uint8Array
+			? data
+			: data instanceof ArrayBuffer
+				? new Uint8Array(data)
+				: new Uint8Array(await data.arrayBuffer());
+	if (typeof Buffer !== "undefined") {
+		return Buffer.from(bytes).toString("base64");
+	}
+	let binary = "";
+	const chunkSize = 0x8000;
+	for (let i = 0; i < bytes.length; i += chunkSize) {
+		binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+	}
+	return btoa(binary);
+}
 
 function extractErrorMessage(body: unknown, fallback: string): string {
 	if (!body) return fallback;
@@ -325,11 +348,32 @@ export class AgentClient {
 		);
 	}
 
-	async sendPrompt(projectId: string, sessionId: string, text: string): Promise<{ ok: true }> {
+	async sendPrompt(projectId: string, sessionId: string, text: string, attachments?: string[]): Promise<{ ok: true }> {
 		return this.unwrap(
 			await this.http.POST("/v1/projects/{projectId}/sessions/{id}/prompt", {
 				params: { path: { projectId, id: sessionId } },
-				body: { text },
+				body: attachments && attachments.length > 0 ? { text, attachments } : { text },
+			}),
+		);
+	}
+
+	// --- Attachments ----------------------------------------------------------
+
+	/**
+	 * Upload an opaque attachment into the project workspace. The client never
+	 * interprets the bytes; agent-server stores them where the agent can read
+	 * them. Reference the returned `id` in `sendPrompt`'s `attachments`.
+	 */
+	async uploadAttachment(
+		projectId: string,
+		filename: string,
+		data: Blob | ArrayBuffer | Uint8Array,
+	): Promise<AgentAttachment> {
+		const contentBase64 = await toBase64(data);
+		return this.unwrap(
+			await this.http.POST("/v1/projects/{projectId}/attachments", {
+				params: { path: { projectId } },
+				body: { filename, contentBase64 },
 			}),
 		);
 	}

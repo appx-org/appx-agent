@@ -4,7 +4,8 @@ import { useAgentChatContext } from "./context.js";
 
 export interface UseAgentSessionResult {
 	state: SessionState;
-	sendPrompt: (text: string) => Promise<void>;
+	/** Send a prompt, optionally referencing previously uploaded attachment ids. */
+	sendPrompt: (text: string, attachments?: string[]) => Promise<void>;
 	abort: () => Promise<void>;
 	respondExtensionRequest: (requestId: string, response: ExtensionUiResponse) => Promise<void>;
 	/** Load the model catalogue + active settings into the shared session state. */
@@ -41,9 +42,9 @@ export function useAgentSession(projectId: string, sessionId: string | null): Us
 	);
 
 	const sendPrompt = useCallback(
-		async (text: string) => {
+		async (text: string, attachments?: string[]) => {
 			if (!sessionId) return;
-			await store.sendPrompt(projectId, sessionId, text);
+			await store.sendPrompt(projectId, sessionId, text, attachments);
 		},
 		[store, projectId, sessionId],
 	);

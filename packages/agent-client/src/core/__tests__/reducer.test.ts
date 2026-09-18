@@ -334,6 +334,51 @@ describe("sessionReducer — history load", () => {
 	});
 });
 
+describe("sessionReducer — attachment note", () => {
+	/** What agent-server persists for a prompt that referenced two attachments. */
+	const withNote =
+		"read these\n\n<attached-files>\n" +
+		"The user attached the following files. They are stored in the project workspace; " +
+		"read them with your file tools if the task needs their contents.\n" +
+		"- attachments/6f1e/report.pdf\n- attachments/a2b3/notes.txt\n</attached-files>";
+
+	it("hides the note from the optimistic bubble when the server echo adopts it", () => {
+		let state = dispatch(initialSessionState, { type: "user_prompt_submitted", text: "read these", promptId: "p1" });
+		state = emit(state, {
+			type: "message_start",
+			message: { role: "user", content: withNote, timestamp: "t1" },
+		});
+
+		expect(state.messages).toHaveLength(1);
+		const parts = state.messages[0]!.parts;
+		expect(textPart(parts[0]).text).toBe("read these");
+		expect(parts[1]).toEqual({
+			type: "attachments",
+			contentIndex: 0,
+			files: [
+				{ path: "attachments/6f1e/report.pdf", filename: "report.pdf" },
+				{ path: "attachments/a2b3/notes.txt", filename: "notes.txt" },
+			],
+		});
+	});
+
+	it("hides the note when the message comes back from a history reload", () => {
+		const history = [{ role: "user", content: withNote, timestamp: "t0" }] as unknown as AgentMessage[];
+		const state = dispatch(initialSessionState, { type: "load_history", messages: history });
+
+		expect(textPart(state.messages[0]!.parts[0]).text).toBe("read these");
+		expect(state.messages[0]!.parts[1]!.type).toBe("attachments");
+	});
+
+	it("leaves assistant text alone", () => {
+		const state = emit(initialSessionState, {
+			type: "message_start",
+			message: { role: "assistant", content: [{ type: "text", text: withNote }], timestamp: "t1" },
+		});
+		expect(textPart(state.messages[0]!.parts[0]).text).toBe(withNote);
+	});
+});
+
 describe("sessionReducer — extension UI", () => {
 	it("queues a blocking request and clears it on response", () => {
 		let state = emit(initialSessionState, {

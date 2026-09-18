@@ -21,6 +21,7 @@ import type {
 } from "@appx-org/agent-protocol";
 
 export type {
+	AgentAttachment,
 	AgentAuthProvider,
 	AgentCustomProvider,
 	AgentCustomProviderApi,
@@ -61,6 +62,11 @@ export type AssistantMessagePartial = { content?: ContentBlock[] };
 
 export type UiMessagePart =
 	| { type: "text"; text: string; contentIndex?: number }
+	/**
+	 * Files the user attached to this prompt. Rendered as chips instead of the
+	 * raw note agent-server appends to the prompt text (see `stripAttachmentNote`).
+	 */
+	| { type: "attachments"; files: { path: string; filename: string }[]; contentIndex?: number }
 	| {
 			type: "tool";
 			id: string;
