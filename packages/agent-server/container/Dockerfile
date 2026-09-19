@@ -57,8 +57,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   uidmap         → newuidmap/newgidmap setuid helpers (subordinate id mapping)
 #   slirp4netns    → rootless network namespace + port forwarding
 #   fuse-overlayfs → overlay storage in nested user namespaces (T4 tests native)
+# golang-github-containernetworking-plugin-dnsname → the CNI `dnsname` plugin.
+# podman 4.9.3 on noble runs the CNI network backend, and container-NAME
+# resolution on a user network (`podman network create` + siblings reached as
+# `<project>-db-dev` etc., see the deploy-app skill) only works through this
+# plugin. It is a Recommends of podman, so --no-install-recommends silently
+# drops it — without it every DB/cache sidecar is unreachable by name.
+# (If the base ever moves to podman ≥ 5, CNI is gone: switch to
+# netavark + aardvark-dns instead.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       podman uidmap slirp4netns fuse-overlayfs \
+      golang-github-containernetworking-plugin-dnsname \
       ca-certificates curl git iproute2 libcap2-bin \
     && rm -rf /var/lib/apt/lists/*
 

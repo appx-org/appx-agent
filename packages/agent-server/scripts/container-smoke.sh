@@ -183,6 +183,31 @@ check "DEV bundle now contains the marker" bundle_contains "$DEV_PORT" "CSMOKE_M
 check "PROD bundle does NOT contain the marker (untouched)" \
 	bundle_lacks "$PROD_PORT" "CSMOKE_MARKER_V2"
 
+# ── 7b. db-sidecar mechanics: network DNS + durable per-env volume ───────────
+# The deploy-app skill's multi-container section: sidecars live on a labelled
+# `<project>` network and are reached BY NAME (needs the CNI dnsname plugin —
+# a podman Recommends that --no-install-recommends drops; the Dockerfile
+# installs it explicitly, and this step guards that from regressing). Data
+# lives in per-env named volumes that survive container replacement. Reuses
+# the app image as the "sidecar" so the step pulls nothing new.
+
+echo "[7b] db sidecar: labelled network, DNS by name, durable volume"
+check "podman network create (labelled)" \
+	outer_exec podman network create --label "appx.project=${PROJECT}" "${PROJECT}"
+check "podman volume create (labelled, per-env name)" \
+	outer_exec podman volume create --label "appx.project=${PROJECT}" "${PROJECT}-db-dev-data"
+check "run sidecar ${PROJECT}-db-dev on the network with the volume" \
+	outer_exec podman run -d --name "${PROJECT}-db-dev" --label "appx.project=${PROJECT}" \
+	--network "${PROJECT}" -v "${PROJECT}-db-dev-data:/data" "${PROJECT}-app:dev"
+check "sibling on the network reaches the sidecar BY NAME (dnsname)" \
+	outer_exec podman run --rm --network "${PROJECT}" "${PROJECT}-app:dev" \
+	sh -c "for i in 1 2 3 4 5; do wget -q -O /dev/null http://${PROJECT}-db-dev:${APP_PORT}/ && exit 0; sleep 1; done; exit 1"
+# Redeploy rule: replacing the container must not touch the data volume.
+check "volume data survives sidecar replacement" \
+	bash -c "docker exec $NAME podman run --rm --user 0 -v ${PROJECT}-db-dev-data:/data ${PROJECT}-app:dev sh -c 'echo CSMOKE_DB_V1 > /data/marker' \
+	         && docker exec $NAME podman rm -f ${PROJECT}-db-dev > /dev/null \
+	         && docker exec $NAME podman run --rm --user 0 -v ${PROJECT}-db-dev-data:/data ${PROJECT}-app:dev sh -c 'grep -q CSMOKE_DB_V1 /data/marker'"
+
 # ── 8. restart survival + recovery ───────────────────────────────────────────
 
 echo "[8] outer restart: registry + workspace survive, podman start --all recovers"
@@ -226,6 +251,13 @@ check "DEV port ${DEV_PORT} refuses connections" \
 	bash -c "! curl -fsS --max-time 5 http://127.0.0.1:${DEV_PORT}/ > /dev/null 2>&1"
 check "PROD port ${PROD_PORT} refuses connections" \
 	bash -c "! curl -fsS --max-time 5 http://127.0.0.1:${PROD_PORT}/ > /dev/null 2>&1"
+
+# The 7b network + volume carry the appx.project label, so the reaper must
+# remove them too (dependency order: containers → networks → volumes).
+check "labelled network is reaped" \
+	bash -c "! docker exec $NAME podman network ls --format '{{.Name}}' | grep -qx '${PROJECT}'"
+check "labelled data volume is reaped" \
+	bash -c "! docker exec $NAME podman volume ls --format '{{.Name}}' | grep -qx '${PROJECT}-db-dev-data'"
 
 check "project metadata + working dir are gone" \
 	bash -c "! curl -fsS -H 'Authorization: Bearer ${TOKEN}' http://127.0.0.1:4001/v1/projects | grep -q ${PROJECT} \
